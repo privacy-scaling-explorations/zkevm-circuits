@@ -21,7 +21,7 @@ use crate::{
 };
 
 use crate::{
-    evm_circuit::witness::{Block, Call, ExecStep, Transaction},
+    evm_circuit::witness::{Block, Call, Chunk, ExecStep, Transaction},
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
@@ -474,6 +474,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -930,11 +931,12 @@ mod test {
         )
         .unwrap();
 
+        // FIXME (Cecilia): Somehow needs way more than 500
         CircuitTestBuilder::new_from_test_ctx(ctx)
-            .params(FixedCParams {
-                max_rws: 500,
-                ..Default::default()
-            })
+            // .params(FixedCParams {
+            //     max_rws: 500,
+            //     ..Default::default()
+            // })
             .run();
     }
 

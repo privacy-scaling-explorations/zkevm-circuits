@@ -10,7 +10,7 @@ use crate::{
             },
             CachedRegion, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{word::WordExpr, Expr},
 };
@@ -63,8 +63,9 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
-        _transaction: &Transaction,
+        _: &Block<F>,
+        _: &Chunk<F>,
+        _: &Transaction,
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -139,7 +140,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .block_modifier(Box::new(|block| {
+            .modifier(Box::new(|block, _chunk| {
                 // The above block has 2 steps (GAS and STOP). We forcefully assign a
                 // wrong `gas_left` value for the second step, to assert that
                 // the circuit verification fails for this scenario.

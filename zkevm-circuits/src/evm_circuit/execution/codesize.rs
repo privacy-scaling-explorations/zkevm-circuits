@@ -12,7 +12,7 @@ use crate::{
             },
             CachedRegion, Cell, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{word::WordExpr, Expr},
 };
@@ -69,6 +69,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _transaction: &Transaction,
         _call: &Call,
         step: &ExecStep,

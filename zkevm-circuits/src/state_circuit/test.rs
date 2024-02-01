@@ -2,7 +2,7 @@ pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
     util::{unusable_rows, SubCircuit},
-    witness::{MptUpdates, Rw, RwMap},
+    witness::{chunk::*, MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
@@ -45,22 +45,9 @@ fn test_state_circuit_ok(
         storage: storage_ops,
         ..Default::default()
     });
+    let chunk = Chunk::new_from_rw_map(&rw_map);
 
-    let rwtable_fingerprints = get_permutation_fingerprint_of_rwmap(
-        &rw_map,
-        N_ROWS,
-        Fr::from(1),
-        Fr::from(1),
-        Fr::from(1),
-    );
-    let circuit = StateCircuit::<Fr>::new(
-        rw_map,
-        N_ROWS,
-        Fr::from(1),
-        Fr::from(1),
-        rwtable_fingerprints,
-        0,
-    );
+    let circuit = StateCircuit::<Fr>::new(&chunk);
     let instance = circuit.instance();
 
     let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
@@ -78,51 +65,20 @@ fn degree() {
 #[test]
 fn verifying_key_independent_of_rw_length() {
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
+    let mut chunk = Chunk::default();
 
-    let no_rows = StateCircuit::<Fr>::new(
-        RwMap::default(),
-        N_ROWS,
-        Fr::from(1),
-        Fr::from(1),
-        get_permutation_fingerprint_of_rwmap(
-            &RwMap::default(),
-            N_ROWS,
-            Fr::from(1),
-            Fr::from(1),
-            Fr::from(1),
-        ),
-        0,
-    );
-    let one_row = StateCircuit::<Fr>::new(
-        RwMap::from(&OperationContainer {
-            memory: vec![Operation::new(
-                RWCounter::from(1),
-                RWCounter::from(1),
-                RW::WRITE,
-                MemoryOp::new(1, MemoryAddress::from(0), 32),
-            )],
-            ..Default::default()
-        }),
-        N_ROWS,
-        Fr::from(1),
-        Fr::from(1),
-        get_permutation_fingerprint_of_rwmap(
-            &RwMap::from(&OperationContainer {
-                memory: vec![Operation::new(
-                    RWCounter::from(1),
-                    RWCounter::from(1),
-                    RW::WRITE,
-                    MemoryOp::new(1, MemoryAddress::from(0), 32),
-                )],
-                ..Default::default()
-            }),
-            N_ROWS,
-            Fr::from(1),
-            Fr::from(1),
-            Fr::from(1),
-        ),
-        0,
-    );
+    let no_rows = StateCircuit::<Fr>::new(&chunk);
+
+    chunk = Chunk::new_from_rw_map(&RwMap::from(&OperationContainer {
+        memory: vec![Operation::new(
+            RWCounter::from(1),
+            RWCounter::from(1),
+            RW::WRITE,
+            MemoryOp::new(1, MemoryAddress::from(0), 32),
+        )],
+        ..Default::default()
+    }));
+    let one_row = StateCircuit::<Fr>::new(&chunk);
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
     let vk_one_rows = keygen_vk(&params, &one_row).unwrap();
@@ -987,26 +943,8 @@ fn variadic_size_check() {
             value: U256::from(394500u64),
         },
     ];
-
-    let updates = MptUpdates::mock_from(&rows);
-    let circuit = StateCircuit::<Fr> {
-        rows: rows.clone(),
-        row_padding_and_overrides: Default::default(),
-        updates,
-        overrides: HashMap::default(),
-        n_rows: N_ROWS,
-        permu_alpha: Fr::from(1),
-        permu_gamma: Fr::from(1),
-        rw_table_permu_fingerprints: get_permutation_fingerprint_of_rwvec(
-            &rows,
-            N_ROWS,
-            Fr::from(1),
-            Fr::from(1),
-            Fr::from(1),
-        ),
-        rw_table_chunked_index: 0,
-        _marker: std::marker::PhantomData::default(),
-    };
+    // let rw_map: RwMap = rows.clone().into();
+    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&RwMap::from(rows.clone())));
     let power_of_randomness = circuit.instance();
     let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 
@@ -1027,22 +965,7 @@ fn variadic_size_check() {
         },
     ]);
 
-    let updates = MptUpdates::mock_from(&rows);
-    let rwtable_fingerprints =
-        get_permutation_fingerprint_of_rwvec(&rows, N_ROWS, Fr::from(1), Fr::from(1), Fr::from(1));
-
-    let circuit = StateCircuit::<Fr> {
-        rows,
-        row_padding_and_overrides: Default::default(),
-        updates,
-        overrides: HashMap::default(),
-        n_rows: N_ROWS,
-        permu_alpha: Fr::from(1),
-        permu_gamma: Fr::from(1),
-        rw_table_permu_fingerprints: rwtable_fingerprints,
-        rw_table_chunked_index: 0,
-        _marker: std::marker::PhantomData::default(),
-    };
+    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&rows.into()));
     let power_of_randomness = circuit.instance();
     let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 
@@ -1077,7 +1000,7 @@ fn bad_initial_tx_receipt_value() {
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
     // permu_next_continuous_fingerprint and rows override for negative-test
     #[allow(unused_assignments, unused_mut)]
-    let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, true);
+    let (rw_rows, _) = RwMap::table_assignments_padding(&rows, N_ROWS, None);
     let rw_rows: Vec<witness::RwRow<Value<Fr>>> =
         rw_overrides_skip_first_padding(&rw_rows, &overrides);
     let rwtable_fingerprints =
@@ -1093,8 +1016,8 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         n_rows: N_ROWS,
         permu_alpha: Fr::from(1),
         permu_gamma: Fr::from(1),
-        rw_table_permu_fingerprints: rwtable_fingerprints,
-        rw_table_chunked_index: 0,
+        rw_fingerprints: rwtable_fingerprints,
+        prev_chunk_last_rw: None,
         _marker: std::marker::PhantomData::default(),
     };
     let instance = circuit.instance();

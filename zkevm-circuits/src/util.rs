@@ -10,7 +10,10 @@ use halo2_proofs::{
     },
 };
 
-use crate::{table::TxLogFieldTag, witness};
+use crate::{
+    table::TxLogFieldTag,
+    witness::{self, Chunk},
+};
 use eth_types::{keccak256, Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -20,8 +23,8 @@ pub mod cell_manager;
 /// Cell Placement strategies
 pub mod cell_placement_strategy;
 
-/// Chunk Ctx Config
-pub mod chunkctx_config;
+/// Chunk context config
+pub mod chunk_ctx;
 
 /// Steal the expression from gate
 pub fn query_expression<F: Field, T>(
@@ -153,7 +156,7 @@ pub trait SubCircuit<F: Field> {
     fn unusable_rows() -> usize;
 
     /// Create a new SubCircuit from a witness Block
-    fn new_from_block(block: &witness::Block<F>) -> Self;
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self;
 
     /// Returns the instance columns required for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
@@ -172,7 +175,7 @@ pub trait SubCircuit<F: Field> {
 
     /// Return the minimum number of rows required to prove the block.
     /// Row numbers without/with padding are both returned.
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize);
 }
 
 /// SubCircuit configuration

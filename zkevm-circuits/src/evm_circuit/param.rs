@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::collections::HashMap;
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 131;
+pub(crate) const STEP_WIDTH: usize = 132;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 19;
 /// The height of the state of a step, used by gates that connect two
@@ -81,7 +81,7 @@ pub const KECCAK_TABLE_LOOKUPS: usize = 1;
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;
 
-/// ChunkCtx Table lookups done in EVMCircuit
+/// chunk_ctx Table lookups done in EVMCircuit
 pub const CHUNK_CTX_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping

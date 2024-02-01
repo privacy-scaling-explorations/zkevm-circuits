@@ -5,7 +5,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{constraint_builder::EVMConstraintBuilder, CachedRegion},
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::word::{WordCell, WordExpr},
 };
@@ -47,6 +47,7 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

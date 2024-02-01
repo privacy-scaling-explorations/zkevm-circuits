@@ -66,9 +66,8 @@ use crate::util::word::Word;
 #[cfg(test)]
 use crate::state_circuit::HashMap;
 #[cfg(test)]
-use crate::witness::{rw::RwTablePermutationFingerprints, rw::ToVec, Rw, RwMap, RwRow};
-#[cfg(test)]
-use gadgets::permutation::get_permutation_fingerprints;
+use crate::witness::{Rw, RwRow};
+
 #[cfg(test)]
 use halo2_proofs::{
     circuit::Value,
@@ -193,74 +192,4 @@ pub(crate) fn rw_overrides_skip_first_padding<F: Field>(
         column.rw_row_overrides(&mut rws[offset], f);
     }
     rws
-}
-
-#[cfg(test)]
-pub(crate) fn get_permutation_fingerprint_of_rwmap<F: Field>(
-    rwmap: &RwMap,
-    max_row: usize,
-    alpha: F,
-    gamma: F,
-    prev_continuous_fingerprint: F,
-) -> RwTablePermutationFingerprints<F> {
-    get_permutation_fingerprint_of_rwvec(
-        &rwmap.table_assignments(false),
-        max_row,
-        alpha,
-        gamma,
-        prev_continuous_fingerprint,
-    )
-}
-
-#[cfg(test)]
-pub(crate) fn get_permutation_fingerprint_of_rwvec<F: Field>(
-    rwvec: &[Rw],
-    max_row: usize,
-    alpha: F,
-    gamma: F,
-    prev_continuous_fingerprint: F,
-) -> RwTablePermutationFingerprints<F> {
-    get_permutation_fingerprint_of_rwrowvec(
-        &rwvec
-            .iter()
-            .map(|row| row.table_assignment())
-            .collect::<Vec<RwRow<Value<F>>>>(),
-        max_row,
-        alpha,
-        gamma,
-        prev_continuous_fingerprint,
-    )
-}
-
-#[cfg(test)]
-pub(crate) fn get_permutation_fingerprint_of_rwrowvec<F: Field>(
-    rwrowvec: &[RwRow<Value<F>>],
-    max_row: usize,
-    alpha: F,
-    gamma: F,
-    prev_continuous_fingerprint: F,
-) -> RwTablePermutationFingerprints<F> {
-    use crate::util::unwrap_value;
-
-    let (rows, _) = RwRow::padding(rwrowvec, max_row, true);
-    let x = rows.to2dvec();
-    let fingerprints = get_permutation_fingerprints(
-        &x,
-        Value::known(alpha),
-        Value::known(gamma),
-        Value::known(prev_continuous_fingerprint),
-    );
-
-    fingerprints
-        .first()
-        .zip(fingerprints.last())
-        .map(|((first_acc, first_row), (last_acc, last_row))| {
-            RwTablePermutationFingerprints::new(
-                unwrap_value(*first_row),
-                unwrap_value(*last_row),
-                unwrap_value(*first_acc),
-                unwrap_value(*last_acc),
-            )
-        })
-        .unwrap_or_default()
 }

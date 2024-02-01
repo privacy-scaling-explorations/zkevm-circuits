@@ -7,7 +7,7 @@ use crate::{
             common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder,
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -53,6 +53,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

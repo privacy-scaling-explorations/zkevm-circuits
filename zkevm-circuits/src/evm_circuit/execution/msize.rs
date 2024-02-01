@@ -11,7 +11,7 @@ use crate::{
             },
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{word::Word, Expr},
 };
@@ -66,6 +66,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         _: &Block<F>,
+        _: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

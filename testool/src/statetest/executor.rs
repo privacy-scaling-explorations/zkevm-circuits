@@ -14,7 +14,11 @@ use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
+use zkevm_circuits::{
+    super_circuit::SuperCircuit,
+    test_util::CircuitTestBuilder,
+    witness::{Block, Chunk},
+};
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -306,10 +310,11 @@ pub fn run_test(
         eth_block: eth_block.clone(),
     };
 
-    let mut builder;
+    let builder;
 
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
+            total_chunks: 1,
             max_txs: 1,
             max_rws: 55000,
             max_calldata: 5000,
@@ -321,19 +326,22 @@ pub fn run_test(
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
-        builder = block_data.new_circuit_input_builder();
-        builder
+        builder = block_data
+            .new_circuit_input_builder()
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
+        let chunk: Chunk<Fr> =
+            zkevm_circuits::evm_circuit::witness::chunk_convert(&builder, 0).unwrap();
 
-        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
+        CircuitTestBuilder::<1, 1>::new_from_block(block, chunk).run();
     } else {
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
+            total_chunks: 1,
             max_txs: 1,
             max_calldata: 32,
             max_rws: 256,

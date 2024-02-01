@@ -83,12 +83,13 @@ impl RwMap {
                 let value = row.value_assignment();
                 if is_first {
                     // value == init_value
-                    let init_value = updates
-                        .get(row)
-                        .map(|u| u.value_assignments().1)
-                        .unwrap_or_default();
-                    if value != init_value {
-                        errs.push((idx, err_msg_first, *row, *prev_row));
+                    if let Some(init_value) = updates.get(row).map(|u| u.value_assignments().1) {
+                        if value != init_value {
+                            errs.push((idx, err_msg_first, *row, *prev_row));
+                        }
+                    }
+                    if row.tag() == Target::CallContext {
+                        println!("call context value: {:?}", row);
                     }
                 } else {
                     // value == prev_value
@@ -132,7 +133,7 @@ impl RwMap {
     pub fn table_assignments_padding(
         rows: &[Rw],
         target_len: usize,
-        is_first_row_padding: bool,
+        prev_chunk_last_rw: Option<Rw>,
     ) -> (Vec<Rw>, usize) {
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed: Vec<Rw> = rows
@@ -142,7 +143,7 @@ impl RwMap {
             .collect();
         let padding_length = {
             let length = Self::padding_len(rows_trimmed.len(), target_len);
-            if is_first_row_padding {
+            if prev_chunk_last_rw.is_none() {
                 length.saturating_sub(1)
             } else {
                 length
@@ -160,11 +161,12 @@ impl RwMap {
             .max()
             .unwrap_or(1)
             + 1;
+
         let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
             iter::empty()
-                .chain(is_first_row_padding.then_some(Rw::Start { rw_counter: 1 }))
+                .chain([prev_chunk_last_rw.unwrap_or(Rw::Start { rw_counter: 1 })])
                 .chain(rows_trimmed.into_iter())
                 .chain(padding.into_iter())
                 .collect(),
@@ -191,8 +193,33 @@ impl RwMap {
 
         rows
     }
-}
 
+    /// Get RwMap for a chunk specified by start and end
+    pub fn from_chunked(
+        container: &operation::OperationContainer,
+        start: usize,
+        end: usize,
+    ) -> Self {
+        let mut rws: Self = container.into();
+        for rw in rws.0.values_mut() {
+            rw.retain(|r| r.rw_counter() >= start && r.rw_counter() < end)
+        }
+        rws
+    }
+
+    /// Get one Rw for a chunk specified by index
+    pub fn get_rw(container: &operation::OperationContainer, counter: usize) -> Option<Rw> {
+        let rws: Self = container.into();
+        for rwv in rws.0.values() {
+            for rw in rwv {
+                if rw.rw_counter() == counter {
+                    return Some(*rw);
+                }
+            }
+        }
+        None
+    }
+}
 #[allow(
     missing_docs,
     reason = "Some of the docs are tedious and can be found at https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md"
@@ -818,9 +845,112 @@ impl Rw {
     }
 }
 
+impl From<Vec<Rw>> for RwMap {
+    fn from(rws: Vec<Rw>) -> Self {
+        let mut rw_map = HashMap::<Target, Vec<Rw>>::default();
+        for rw in rws {
+            match rw {
+                Rw::Account { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Account) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Account, vec![rw]);
+                    }
+                }
+                Rw::AccountStorage { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Storage) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Storage, vec![rw]);
+                    }
+                }
+                Rw::TxAccessListAccount { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccount) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxAccessListAccount, vec![rw]);
+                    }
+                }
+                Rw::TxAccessListAccountStorage { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccountStorage) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxAccessListAccountStorage, vec![rw]);
+                    }
+                }
+                Rw::Padding { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Padding) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Padding, vec![rw]);
+                    }
+                }
+                Rw::Start { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Start) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Start, vec![rw]);
+                    }
+                }
+                Rw::Stack { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Stack) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Stack, vec![rw]);
+                    }
+                }
+                Rw::Memory { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Memory) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Memory, vec![rw]);
+                    }
+                }
+                Rw::CallContext { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::CallContext) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::CallContext, vec![rw]);
+                    }
+                }
+                Rw::TxLog { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxLog) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxLog, vec![rw]);
+                    }
+                }
+                Rw::TxReceipt { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxReceipt) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxReceipt, vec![rw]);
+                    }
+                }
+                Rw::TxRefund { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxRefund) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxRefund, vec![rw]);
+                    }
+                }
+                Rw::StepState { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::StepState) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::StepState, vec![rw]);
+                    }
+                }
+            };
+        }
+        Self(rw_map)
+    }
+}
+
 impl From<&operation::OperationContainer> for RwMap {
     fn from(container: &operation::OperationContainer) -> Self {
-        let mut rws = HashMap::default();
+        // Get rws raning all indices from the whole container
+        let mut rws = HashMap::<Target, Vec<Rw>>::default();
 
         rws.insert(
             Target::Padding,
@@ -1067,32 +1197,37 @@ impl From<&operation::OperationContainer> for RwMap {
                 })
                 .collect(),
         );
-
         Self(rws)
     }
 }
 
-/// RwTablePermutationFingerprints
-#[derive(Debug, Default, Clone)]
-pub struct RwTablePermutationFingerprints<F> {
-    /// acc_prev_fingerprints
-    pub acc_prev_fingerprints: F,
-    /// acc_next_fingerprints
-    pub acc_next_fingerprints: F,
-    /// row_pre_fingerprints
-    pub row_pre_fingerprints: F,
-    /// row_next_fingerprints
-    pub row_next_fingerprints: F,
+/// RwFingerprints
+#[derive(Debug, Clone)]
+pub struct RwFingerprints<F> {
+    /// last chunk fingerprint = row0 * row1 * ... rowi
+    pub prev_mul_acc: F,
+    /// cur chunk fingerprint
+    pub mul_acc: F,
+    /// last chunk last row = alpha - (gamma^1 x1 + gamma^2 x2 + ...)
+    pub prev_ending_row: F,
+    /// cur chunk last row
+    pub ending_row: F,
 }
 
-impl<F: Field> RwTablePermutationFingerprints<F> {
+impl<F: Field> RwFingerprints<F> {
     /// new by value
-    pub fn new(row_prev: F, row_next: F, acc_pref: F, acc_next: F) -> Self {
+    pub fn new(row_prev: F, row: F, acc_prev: F, acc: F) -> Self {
         Self {
-            acc_prev_fingerprints: acc_pref,
-            acc_next_fingerprints: acc_next,
-            row_pre_fingerprints: row_prev,
-            row_next_fingerprints: row_next,
+            prev_mul_acc: acc_prev,
+            mul_acc: acc,
+            prev_ending_row: row_prev,
+            ending_row: row,
         }
+    }
+}
+
+impl<F: Field> Default for RwFingerprints<F> {
+    fn default() -> Self {
+        Self::new(F::from(0), F::from(0), F::from(1), F::from(1))
     }
 }

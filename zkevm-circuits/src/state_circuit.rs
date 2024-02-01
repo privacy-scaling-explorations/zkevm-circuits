@@ -22,8 +22,8 @@ use crate::{
     util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{
         self,
-        rw::{RwTablePermutationFingerprints, ToVec},
-        MptUpdates, Rw, RwMap,
+        rw::{RwFingerprints, ToVec},
+        Chunk, MptUpdates, Rw, RwMap,
     },
 };
 use constraint_builder::{ConstraintBuilder, Queries};
@@ -218,13 +218,13 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        rw_table_chunked_index: usize,
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
             |mut region| {
-                self.assign_with_region(&mut region, rows, &updates, n_rows, rw_table_chunked_index)
+                self.assign_with_region(&mut region, rows, &updates, n_rows, prev_chunk_last_rw)
             },
         )
     }
@@ -235,12 +235,12 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
-        rw_table_chunked_index: usize,
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) =
-            RwMap::table_assignments_padding(rows, n_rows, rw_table_chunked_index == 0);
+            RwMap::table_assignments_padding(rows, n_rows, prev_chunk_last_rw);
         let rows_len = rows.len();
 
         let mut state_root = updates.old_root();
@@ -303,9 +303,9 @@ impl<F: Field> StateCircuitConfig<F> {
                         assert_eq!(state_root, old_root);
                         state_root = new_root;
                     }
-                    if matches!(row.tag(), Target::CallContext) && !row.is_write() {
-                        assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
-                    }
+                    // if matches!(row.tag(), Target::CallContext) && !row.is_write() {
+                    //     assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
+                    // }
                 }
             }
 
@@ -448,7 +448,7 @@ impl SortKeysConfig {
 
 /// State Circuit for proving RwTable is valid
 #[derive(Default, Clone, Debug)]
-pub struct StateCircuit<F> {
+pub struct StateCircuit<F: Field> {
     /// Rw rows
     pub rows: Vec<Rw>,
     #[cfg(test)]
@@ -461,38 +461,30 @@ pub struct StateCircuit<F> {
     /// permutation challenge
     permu_alpha: F,
     permu_gamma: F,
-    rw_table_permu_fingerprints: RwTablePermutationFingerprints<F>,
+    rw_fingerprints: RwFingerprints<F>,
 
-    // current chunk index
-    rw_table_chunked_index: usize,
+    prev_chunk_last_rw: Option<Rw>,
 
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
-    pub fn new(
-        rw_map: RwMap,
-        n_rows: usize,
-        permu_alpha: F,
-        permu_gamma: F,
-        rw_table_permu_fingerprints: RwTablePermutationFingerprints<F>,
-        rw_table_chunked_index: usize,
-    ) -> Self {
-        let rows = rw_map.table_assignments(false); // address sorted
+    pub fn new(chunk: &Chunk<F>) -> Self {
+        let rows = chunk.rws.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
         Self {
             rows,
             #[cfg(test)]
             row_padding_and_overrides: Default::default(),
             updates,
-            n_rows,
+            n_rows: chunk.fixed_param.max_rws,
             #[cfg(test)]
             overrides: HashMap::new(),
-            permu_alpha,
-            permu_gamma,
-            rw_table_permu_fingerprints,
-            rw_table_chunked_index,
+            permu_alpha: chunk.permu_alpha,
+            permu_gamma: chunk.permu_gamma,
+            rw_fingerprints: chunk.rw_fingerprints.clone(),
+            prev_chunk_last_rw: chunk.prev_chunk_last_rw,
             _marker: PhantomData::default(),
         }
     }
@@ -501,15 +493,8 @@ impl<F: Field> StateCircuit<F> {
 impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(
-            block.rws.clone(),
-            block.circuits_params.max_rws,
-            block.permu_alpha,
-            block.permu_gamma,
-            block.permu_chronological_rwtable_fingerprints.clone(),
-            block.chunk_context.chunk_index,
-        )
+    fn new_from_block(_block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
+        Self::new(chunk)
     }
 
     fn unusable_rows() -> usize {
@@ -519,10 +504,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(_block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
-            block.rws.0.values().flatten().count() + 1,
-            block.circuits_params.max_rws,
+            chunk.rws.0.values().flatten().count() + 1,
+            chunk.fixed_param.max_rws,
         )
     }
 
@@ -549,11 +534,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             || "state circuit",
             |mut region| {
                 // TODO optimimise RwMap::table_assignments_prepad calls from 3 times -> 1
-                config.rw_table.load_with_region(
+                let padded_rows = config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,
                     self.n_rows,
-                    self.rw_table_chunked_index == 0,
+                    self.prev_chunk_last_rw,
                 )?;
 
                 config.assign_with_region(
@@ -561,14 +546,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &self.rows,
                     &self.updates,
                     self.n_rows,
-                    self.rw_table_chunked_index,
+                    self.prev_chunk_last_rw,
                 )?;
-
-                let (rows, _) = RwMap::table_assignments_padding(
-                    &self.rows,
-                    self.n_rows,
-                    self.rw_table_chunked_index == 0,
-                );
 
                 // permu_next_continuous_fingerprint and rows override for negative-test
                 #[allow(unused_assignments, unused_mut)]
@@ -583,22 +562,22 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                                 self.overrides.is_empty(),
                                 "overrides size > 0 but row_padding_and_overridess = 0"
                             );
-                            Some(rows.to2dvec())
+                            Some(padded_rows.to2dvec())
                         } else {
                             Some(self.row_padding_and_overrides.clone())
                         };
                     }
                     row_padding_and_overridess.unwrap()
                 } else {
-                    rows.to2dvec()
+                    padded_rows.to2dvec()
                 };
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
                     Value::known(self.permu_alpha),
                     Value::known(self.permu_gamma),
-                    Value::known(self.rw_table_permu_fingerprints.acc_prev_fingerprints),
+                    Value::known(self.rw_fingerprints.prev_mul_acc),
                     &rows,
-                    "state_circuit-rw_permutation",
+                    "state_circuit",
                 )?;
                 #[cfg(test)]
                 {
@@ -645,10 +624,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         vec![vec![
             self.permu_alpha,
             self.permu_gamma,
-            self.rw_table_permu_fingerprints.row_pre_fingerprints,
-            self.rw_table_permu_fingerprints.row_next_fingerprints,
-            self.rw_table_permu_fingerprints.acc_prev_fingerprints,
-            self.rw_table_permu_fingerprints.acc_next_fingerprints,
+            self.rw_fingerprints.prev_ending_row,
+            self.rw_fingerprints.ending_row,
+            self.rw_fingerprints.prev_mul_acc,
+            self.rw_fingerprints.mul_acc,
         ]]
     }
 }

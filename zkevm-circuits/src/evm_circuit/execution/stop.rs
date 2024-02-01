@@ -12,7 +12,7 @@ use crate::{
             math_gadget::ComparisonGadget,
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
@@ -108,6 +108,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,

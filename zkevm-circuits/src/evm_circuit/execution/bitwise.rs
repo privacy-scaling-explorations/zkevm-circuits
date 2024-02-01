@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr},
@@ -84,6 +84,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

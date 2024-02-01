@@ -336,6 +336,7 @@ pub fn get_permutation_fingerprints<F: Field>(
     col_values
         .iter()
         .map(|row| {
+            // row = alpha - (gamma^1 x1 + gamma^2 x2 + ...)
             let tmp = row
                 .iter()
                 .zip_eq(power_of_gamma.iter())
@@ -345,6 +346,8 @@ pub fn get_permutation_fingerprints<F: Field>(
         })
         .enumerate()
         .for_each(|(i, value)| {
+            // fingerprint = row0 * row1 * ... rowi
+            // (fingerprinti, rowi)
             if i == 0 {
                 result.push((acc_fingerprints_prev, value));
             } else {

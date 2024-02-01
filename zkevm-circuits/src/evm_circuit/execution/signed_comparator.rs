@@ -9,7 +9,7 @@ use crate::{
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
             select, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word, Word32Cell, WordExpr},
@@ -144,6 +144,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _transaction: &Transaction,
         _call: &Call,
         step: &ExecStep,

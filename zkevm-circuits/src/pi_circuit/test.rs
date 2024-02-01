@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{pi_circuit::dev::PiCircuitParams, util::unusable_rows, witness::block_convert};
+use crate::{
+    pi_circuit::dev::PiCircuitParams,
+    util::unusable_rows,
+    witness::{block_convert, chunk_convert},
+};
 
 use super::*;
 use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
@@ -111,7 +115,7 @@ fn test_1tx_1maxtx() {
     wallets.insert(wallet_a.address(), wallet_a);
 
     let mut block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(
+    let builder = BlockData::new_from_geth_data_with_params(
         block.clone(),
         FixedCParams {
             max_txs: MAX_TXS,
@@ -120,17 +124,15 @@ fn test_1tx_1maxtx() {
             ..Default::default()
         },
     )
-    .new_circuit_input_builder();
+    .new_circuit_input_builder()
+    .handle_block(&block.eth_block, &block.geth_traces)
+    .unwrap();
 
     block.sign(&wallets);
-
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-
     let block = block_convert(&builder).unwrap();
+    let chunk = chunk_convert(&builder, 0).unwrap();
     // MAX_TXS, MAX_TXS align with `CircuitsParams`
-    let circuit = PiCircuit::<Fr>::new_from_block(&block);
+    let circuit = PiCircuit::<Fr>::new_from_block(&block, &chunk);
     let public_inputs = circuit.instance();
 
     let prover = match MockProver::run(degree, &circuit, public_inputs) {

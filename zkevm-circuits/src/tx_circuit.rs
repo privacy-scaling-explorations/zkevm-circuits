@@ -16,7 +16,7 @@ pub use dev::TxCircuit as TestTxCircuit;
 use crate::{
     table::{KeccakTable, TxFieldTag, TxTable},
     util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self, Chunk},
 };
 use eth_types::{geth_types::Transaction, sign_types::SignData, Field};
 use halo2_proofs::{
@@ -303,26 +303,23 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         Self::new(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
+            chunk.fixed_param.max_txs,
+            chunk.fixed_param.max_calldata,
             block.context.chain_id.as_u64(),
             block.txs.iter().map(|tx| tx.deref().clone()).collect_vec(),
         )
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
             Self::min_num_rows(
                 block.txs.len(),
                 block.txs.iter().map(|tx| tx.call_data.len()).sum(),
             ),
-            Self::min_num_rows(
-                block.circuits_params.max_txs,
-                block.circuits_params.max_calldata,
-            ),
+            Self::min_num_rows(chunk.fixed_param.max_txs, chunk.fixed_param.max_calldata),
         )
     }
 

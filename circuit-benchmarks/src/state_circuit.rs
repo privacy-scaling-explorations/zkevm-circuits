@@ -21,10 +21,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::{
-        evm_circuit::witness::RwMap, state_circuit::StateCircuit, util::SubCircuit,
-        witness::rw::RwTablePermutationFingerprints,
-    };
+    use zkevm_circuits::{state_circuit::StateCircuit, util::SubCircuit, witness::Chunk};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -40,14 +37,7 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = StateCircuit::<Fr>::new(
-            RwMap::default(),
-            1 << 16,
-            Fr::from(1),
-            Fr::from(1),
-            RwTablePermutationFingerprints::new(Fr::from(1), Fr::from(1), Fr::from(1), Fr::from(1)),
-            0,
-        );
+        let empty_circuit = StateCircuit::<Fr>::new(&Chunk::default());
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([

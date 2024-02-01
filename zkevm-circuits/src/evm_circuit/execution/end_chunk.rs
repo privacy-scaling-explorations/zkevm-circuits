@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -54,6 +54,7 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
@@ -62,6 +63,7 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
             region,
             offset,
             block,
+            chunk,
             (step.rwc_inner_chunk.0 - 1 + step.bus_mapping_instance.len()) as u64,
             step,
         )?;
@@ -71,38 +73,73 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{test_util::CircuitTestBuilder, witness::Rw};
-    use bus_mapping::{circuit_input_builder::ChunkContext, operation::Target};
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::{circuit_input_builder::FixedCParams, operation::Target};
     use eth_types::bytecode;
     use mock::TestContext;
 
-    // fn test_ok(bytecode: bytecode::Bytecode) {
-    //     CircuitTestBuilder::new_from_test_ctx(
-    //         TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-    //     )
-    //     .run()
-    // }
+    #[test]
+    fn test_intermediate_single_chunk() {
+        let bytecode = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(0x10_0000) // addr
+            PUSH32(0x10_0000) // gas
+            CALL
+            PUSH2(0xaa)
+        };
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .modifier(Box::new(move |_block, chunk| {
+            // TODO FIXME padding start as a workaround. The practical should be last chunk last row
+            // rws
+            // if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
+            //     a.push(Rw::Start { rw_counter: 1 });
+            // }
+            println!(
+                "=> FIXME is fixed? {:?}",
+                chunk.rws.0.get_mut(&Target::Start)
+            );
+        }))
+        .run_dynamic_chunk(4, 2);
+    }
 
     #[test]
-    #[ignore] // still under development and testing
-    fn test_intermediate_single_chunk() {
-        // TODO test multiple chunk logic
-        let intermediate_single_chunkctx = ChunkContext::new(3, 10);
+    fn test_intermediate_single_chunk_fixed() {
+        let bytecode = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(0x10_0000) // addr
+            PUSH32(0x10_0000) // gas
+            CALL
+            PUSH2(0xaa)
+        };
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .params(FixedCParams {
+            total_chunks: 2,
+            max_rws: 60,
+            ..Default::default()
+        })
+        .run_chunk(1);
+    }
+
+    #[test]
+    fn test_single_chunk() {
         let bytecode = bytecode! {
             STOP
         };
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .block_modifier(Box::new(move |block| {
-            block.circuits_params.max_evm_rows = 0; // auto padding
-
-            // TODO FIXME padding start as a workaround. The practical should be last chunk last row
-            // rws
-            if let Some(a) = block.rws.0.get_mut(&Target::Start) {
-                a.push(Rw::Start { rw_counter: 1 });
-            }
-        }))
-        .run_with_chunkctx(Some(intermediate_single_chunkctx));
+        .run();
     }
 }

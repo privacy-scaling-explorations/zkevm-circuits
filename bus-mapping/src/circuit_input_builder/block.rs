@@ -1,9 +1,6 @@
 //! Block-related utility module
 
-use super::{
-    chunk::ChunkContext, execution::ExecState, transaction::Transaction, CopyEvent, ExecStep,
-    ExpEvent,
-};
+use super::{execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -16,7 +13,7 @@ use std::collections::HashMap;
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
-    pub(crate) rwc: RWCounter,
+    pub rwc: RWCounter,
     /// Map call_id to (tx_index, call_index) (where tx_index is the index used
     /// in Block.txs and call_index is the index used in Transaction.
     /// calls).
@@ -42,24 +39,9 @@ impl BlockContext {
     }
 }
 
-/// Block-wise execution steps that don't belong to any Transaction.
-#[derive(Debug)]
-pub struct BlockSteps {
-    /// EndBlock step that is repeated after the last transaction and before
-    /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
-    /// TODO Define and move chunk related step to Chunk struct
-    /// Begin op of a chunk
-    pub begin_chunk: ExecStep,
-    /// End op of a chunk
-    pub end_chunk: Option<ExecStep>,
-}
-
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     /// chain id
     pub chain_id: Word,
@@ -84,10 +66,11 @@ pub struct Block {
     pub container: OperationContainer,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
-    /// Block-wise steps
-    pub block_steps: BlockSteps,
-    /// Chunk context
-    pub chunk_context: ChunkContext,
+    /// End block step
+    pub end_block: ExecStep,
+
+    // /// Chunk context
+    // pub chunk_context: ChunkContext,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
@@ -131,25 +114,10 @@ impl Block {
             prev_state_root,
             container: OperationContainer::new(),
             txs: Vec::new(),
-            block_steps: BlockSteps {
-                begin_chunk: ExecStep {
-                    exec_state: ExecState::BeginChunk,
-                    ..ExecStep::default()
-                },
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_chunk: Some(ExecStep {
-                    exec_state: ExecState::EndChunk,
-                    ..ExecStep::default()
-                }),
+            end_block: ExecStep {
+                exec_state: ExecState::EndBlock,
+                ..ExecStep::default()
             },
-            chunk_context: ChunkContext::new(0, 1),
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),

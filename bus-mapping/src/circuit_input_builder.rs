@@ -11,7 +11,7 @@ mod input_state_ref;
 mod tracer_tests;
 mod transaction;
 
-use self::access::gen_state_access_trace;
+use self::{access::gen_state_access_trace, chunk::Chunk};
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_associated_steps},
@@ -42,9 +42,12 @@ use log::warn;
 use std::{collections::HashMap, ops::Deref};
 pub use transaction::{Transaction, TransactionContext};
 
+const RW_BUFFER: usize = 30;
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
+    ///
+    pub total_chunks: usize,
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
@@ -80,18 +83,63 @@ pub struct FixedCParams {
 /// To reduce the testing overhead, we determine the parameters by the testing inputs.
 /// A new [`FixedCParams`] will be computed from the generated circuit witness.
 #[derive(Debug, Clone, Copy)]
-pub struct DynamicCParams {}
-
+pub struct DynamicCParams {
+    /// Toatal number of chunks
+    pub total_chunks: usize,
+}
 /// Circuit Setup Parameters. These can be fixed/concrete or unset/dynamic.
-pub trait CircuitsParams: Debug + Copy {}
+pub trait CircuitsParams: Debug + Copy {
+    /// Return the total number of chunks
+    fn total_chunks(&self) -> usize;
+    /// Set total number of chunks
+    fn set_total_chunk(&mut self, total_chunks: usize);
+    /// Return the maximun Rw
+    fn max_rws(&self) -> usize;
+    /// Return whether the parameters are dynamic.
+    /// If true, the `total_chunks` and `max_rws` will serve as a target value for chunking
+    /// and [`FixedCParams`] will be recomputed from each generated chunk witness.
+    fn dynamic_update(&self) -> bool;
+}
 
-impl CircuitsParams for FixedCParams {}
-impl CircuitsParams for DynamicCParams {}
+impl CircuitsParams for FixedCParams {
+    fn total_chunks(&self) -> usize {
+        self.total_chunks
+    }
+    fn set_total_chunk(&mut self, total_chunks: usize) {
+        self.total_chunks = total_chunks;
+    }
+    fn max_rws(&self) -> usize {
+        self.max_rws
+    }
+    fn dynamic_update(&self) -> bool {
+        false
+    }
+}
+impl CircuitsParams for DynamicCParams {
+    fn total_chunks(&self) -> usize {
+        self.total_chunks
+    }
+    fn set_total_chunk(&mut self, total_chunks: usize) {
+        self.total_chunks = total_chunks;
+    }
+    fn max_rws(&self) -> usize {
+        unreachable!()
+    }
+    fn dynamic_update(&self) -> bool {
+        true
+    }
+}
 
+impl Default for DynamicCParams {
+    fn default() -> Self {
+        DynamicCParams { total_chunks: 1 }
+    }
+}
 impl Default for FixedCParams {
     /// Default values for most of the unit tests of the Circuit Parameters
     fn default() -> Self {
         FixedCParams {
+            total_chunks: 1,
             max_rws: 1000,
             max_txs: 1,
             max_calldata: 256,
@@ -115,7 +163,9 @@ impl Default for FixedCParams {
 /// the block. 2. For each [`eth_types::Transaction`] in the block, take the
 /// [`eth_types::GethExecTrace`] to build the circuit input associated with
 /// each transaction, and the bus-mapping operations associated with each
-/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
+/// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`]. 3. If `Rw`s
+/// generated during Transactions exceed the `max_rws` threshold, seperate witness
+/// into multiple chunks.
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,
@@ -124,7 +174,7 @@ impl Default for FixedCParams {
 /// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CircuitInputBuilder<C: CircuitsParams> {
     /// StateDB key-value DB
     pub sdb: StateDB,
@@ -132,26 +182,39 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub code_db: CodeDB,
     /// Block
     pub block: Block,
-    /// Circuits Setup Paramteres
-    pub circuits_params: C,
+    /// Chunk
+    pub chunks: Vec<Chunk>,
     /// Block Context
     pub block_ctx: BlockContext,
     /// Chunk Context
-    pub chunk_ctx: Option<ChunkContext>,
+    pub chunk_ctx: ChunkContext,
+    /// Circuit Params before chunking
+    pub circuits_params: C,
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
     pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
+        let total_chunks = params.total_chunks();
+        let chunks = vec![Chunk::default(); total_chunks];
         Self {
             sdb,
             code_db,
             block,
-            circuits_params: params,
+            chunks,
             block_ctx: BlockContext::new(),
-            chunk_ctx: Some(ChunkContext::new_one_chunk()),
+            chunk_ctx: ChunkContext::new(total_chunks, params.dynamic_update()),
+            circuits_params: params,
         }
+    }
+
+    /// Set the total number of chunks for existing CircuitInputBuilder,
+    /// API for chunking the existing tests then run with a specific chunk
+    pub fn set_total_chunk(&mut self, total_chunks: usize) {
+        self.circuits_params.set_total_chunk(total_chunks);
+        self.chunks = vec![Chunk::default(); total_chunks];
+        self.chunk_ctx.total_chunks = total_chunks;
     }
 
     /// Obtain a mutable reference to the state that the `CircuitInputBuilder`
@@ -167,7 +230,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             code_db: &mut self.code_db,
             block: &mut self.block,
             block_ctx: &mut self.block_ctx,
-            chunk_ctx: self.chunk_ctx.as_mut(),
+            chunk_ctx: &mut self.chunk_ctx,
             tx,
             tx_ctx,
         }
@@ -224,20 +287,81 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         }
     }
 
+    fn check_and_chunk(
+        &mut self,
+        geth_trace: &GethExecTrace,
+        tx: Transaction,
+        tx_ctx: TransactionContext,
+        geth_steps: Option<(usize, &GethExecStep)>,
+        last_call: Option<Call>,
+    ) -> Result<(), Error> {
+        if !self.chunk_ctx.enable {
+            return Ok(());
+        }
+        let is_last_tx = tx_ctx.is_last_tx();
+        let dynamic = self.chunk_ctx.dynamic_update;
+        let mut gen_chunk =
+            // No lookahead, if chunk_rws exceed max just chunk then update param
+            (dynamic && self.chunk_rws() > self.circuits_params.max_rws() - self.rws_reserve())
+            // Lookahead, chunk_rws should never exceed, never update param
+            || (!dynamic && self.chunk_rws() + RW_BUFFER >= self.circuits_params.max_rws() - self.rws_reserve());
+
+        if gen_chunk {
+            // Optain the first op of the next GethExecStep, for fixed case also lookahead
+            let (mut cib, mut tx, mut tx_ctx_) = (self.clone(), tx, tx_ctx);
+            let mut cib_ref = cib.state_ref(&mut tx, &mut tx_ctx_);
+            let ops = if let Some((i, step)) = geth_steps {
+                log::trace!("chunk at {}th opcode {:?} ", i, step.op);
+                gen_associated_ops(&step.op, &mut cib_ref, &geth_trace.struct_logs[i..])?
+            } else {
+                log::trace!("chunk at EndTx");
+                let end_tx_step = gen_associated_steps(&mut cib_ref, ExecState::EndTx)?;
+                // When there's next Tx lined up, also peek BeginTx
+                // because we don't check btw EndTx & BeginTx
+                if !is_last_tx {
+                    gen_associated_steps(&mut cib_ref, ExecState::BeginTx)?;
+                }
+                vec![end_tx_step]
+            };
+
+            // Check again, 1) if dynamic keep chunking 2) if fixed chunk when lookahead exceed
+            // 3) gen chunk steps there're more chunks after
+            gen_chunk = !self.chunk_ctx.is_last_chunk()
+                && (dynamic
+                    || cib.chunk_rws() > self.circuits_params.max_rws() - cib.rws_reserve());
+            if dynamic {
+                self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+            }
+            if gen_chunk {
+                let last_copy = self.block.copy_events.len();
+                // Generate EndChunk and proceed to the next if it's not the last chunk
+                // Set next step pre-state as end_chunk state
+                self.set_end_chunk(&ops[0]);
+                self.commit_chunk(true, tx.id as usize, last_copy, last_call);
+                self.set_begin_chunk(&ops[0]);
+            }
+        }
+        Ok(())
+    }
+
     /// Handle a transaction with its corresponding execution trace to generate
     /// all the associated operations.  Each operation is registered in
     /// `self.block.container`, and each step stores the
     /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
     /// generated operations.
+    /// When dynamic builder handles Tx with is_chuncked = false, we don't chunk
+    /// When fixed builder handles Tx with is_chuncked = true, we chunk
     fn handle_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
         tx_index: u64,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Call>, Error> {
         let mut tx = self.new_tx(tx_index, eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
+        // Prev chunk last call
+        let mut last_call = None;
 
         // Generate BeginTx step
         let begin_tx_step = gen_associated_steps(
@@ -246,16 +370,42 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         )?;
         tx.steps_mut().push(begin_tx_step);
 
-        for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
-            let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
-            let exec_steps = gen_associated_ops(
-                &geth_step.op,
-                &mut state_ref,
-                &geth_trace.struct_logs[index..],
+        let mut trace = geth_trace.struct_logs.iter().enumerate().peekable();
+        while let Some((peek_i, peek_step)) = trace.peek() {
+            // Check the peek_sted and chunk if needed
+            self.check_and_chunk(
+                geth_trace,
+                tx.clone(),
+                tx_ctx.clone(),
+                Some((*peek_i, peek_step)),
+                last_call.clone(),
             )?;
+            // Proceed to the next step
+            let (i, step) = trace.next().expect("Peeked step should exist");
+            log::trace!(
+                "handle {}th opcode {:?} rws = {:?}",
+                i,
+                step.op,
+                self.chunk_rws()
+            );
+            let exec_steps = gen_associated_ops(
+                &step.op,
+                &mut self.state_ref(&mut tx, &mut tx_ctx),
+                &geth_trace.struct_logs[i..],
+            )?;
+            last_call = exec_steps
+                .last()
+                .map(|step| tx.calls().get(step.call_index).unwrap().clone());
             tx.steps_mut().extend(exec_steps);
         }
+        // Peek the end_tx_step
+        self.check_and_chunk(
+            geth_trace,
+            tx.clone(),
+            tx_ctx.clone(),
+            None,
+            last_call.clone(),
+        )?;
 
         // Generate EndTx step
         let end_tx_step =
@@ -265,7 +415,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         self.sdb.commit_tx();
         self.block.txs.push(tx);
 
-        Ok(())
+        Ok(last_call)
     }
 
     // TODO Fix this, for current logic on processing `call` is incorrect
@@ -280,11 +430,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             .collect::<Vec<RWCounter>>();
         // just bump rwc in chunk_ctx as block_ctx rwc to assure same delta apply
         let rw_counters_inner_chunk = (0..STEP_STATE_LEN)
-            .map(|_| {
-                self.chunk_ctx
-                    .as_mut()
-                    .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc.inc_pre())
-            })
+            .map(|_| self.chunk_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
 
         let tags = {
@@ -342,9 +488,123 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             });
     }
 
-    /// set chunk context
-    pub fn set_chunkctx(&mut self, chunk_ctx: ChunkContext) {
-        self.chunk_ctx = Some(chunk_ctx);
+    /// Set the end status of a chunk including the current globle rwc
+    /// and commit the current chunk context, proceed to the next chunk
+    /// if needed
+    pub fn commit_chunk(
+        &mut self,
+        to_next: bool,
+        end_tx: usize,
+        end_copy: usize,
+        last_call: Option<Call>,
+    ) {
+        self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
+        self.chunk_ctx.end_tx = end_tx;
+        self.chunk_ctx.end_copy = end_copy;
+        self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
+        if to_next {
+            self.chunk_ctx.bump(self.block_ctx.rwc.0, end_tx, end_copy);
+            self.cur_chunk_mut().prev_last_call = last_call;
+        }
+    }
+
+    fn set_begin_chunk(&mut self, last_step: &ExecStep) {
+        let mut begin_chunk = last_step.clone();
+        begin_chunk.exec_state = ExecState::BeginChunk;
+        self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
+        self.chunks[self.chunk_ctx.idx].begin_chunk = Some(begin_chunk);
+    }
+
+    fn set_end_chunk(&mut self, last_step: &ExecStep) {
+        let mut end_chunk = last_step.clone();
+        end_chunk.exec_state = ExecState::EndChunk;
+        end_chunk.rwc = self.block_ctx.rwc;
+        end_chunk.rwc_inner_chunk = self.chunk_ctx.rwc;
+        self.gen_chunk_associated_steps(&mut end_chunk, RW::WRITE);
+        self.gen_chunk_padding(&mut end_chunk);
+        self.chunks[self.chunk_ctx.idx].end_chunk = Some(end_chunk);
+    }
+
+    fn gen_chunk_padding(&mut self, step: &mut ExecStep) {
+        // rwc index start from 1
+        let end_rwc = self.chunk_ctx.rwc.0;
+        let total_rws = end_rwc - 1;
+        let max_rws = self.cur_chunk().fixed_param.max_rws;
+
+        // We need at least 1 extra row at offset 0 for chunk continuous
+        // FIXME(Cecilia): adding + 1 fail some tests
+        assert!(
+            total_rws < max_rws,
+            "total_rws <= max_rws, total_rws={}, max_rws={}",
+            total_rws,
+            max_rws
+        );
+
+        let mut padding = step.clone();
+        padding.exec_state = ExecState::Padding;
+        padding.bus_mapping_instance = vec![]; // there is no rw in padding step
+
+        if self.chunk_ctx.is_first_chunk() {
+            push_op(
+                &mut self.block.container,
+                step,
+                RWCounter(1),
+                RWCounter(1),
+                RW::READ,
+                StartOp {},
+            );
+        }
+
+        if max_rws - total_rws > 1 {
+            let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
+            push_op(
+                &mut self.block.container,
+                step,
+                RWCounter(padding_start),
+                RWCounter(padding_start),
+                RW::READ,
+                PaddingOp {},
+            );
+            if padding_end != padding_start {
+                push_op(
+                    &mut self.block.container,
+                    step,
+                    RWCounter(padding_end),
+                    RWCounter(padding_end),
+                    RW::READ,
+                    PaddingOp {},
+                );
+            }
+        }
+        self.chunks[self.chunk_ctx.idx].padding = Some(padding);
+    }
+
+    /// Get the i-th chunk
+    pub fn get_chunk(&self, i: usize) -> Chunk {
+        self.chunks.get(i).expect("Chunk does not exist").clone()
+    }
+
+    /// Get the current chunk
+    pub fn cur_chunk(&self) -> Chunk {
+        self.chunks[self.chunk_ctx.idx].clone()
+    }
+
+    /// Get a mutable reference of current chunk
+    pub fn cur_chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.chunks[self.chunk_ctx.idx]
+    }
+
+    /// Get the previous chunk
+    pub fn prev_chunk(&self) -> Option<Chunk> {
+        if self.chunk_ctx.idx == 0 {
+            return None;
+        }
+        self.chunks.get(self.chunk_ctx.idx - 1).cloned()
+    }
+
+    /// Total Rw in this chunk
+    pub fn chunk_rws(&self) -> usize {
+        self.chunk_ctx.rwc.0 - 1
     }
 }
 
@@ -352,185 +612,60 @@ impl CircuitInputBuilder<FixedCParams> {
     /// Handle a block by handling each transaction to generate all the
     /// associated operations.
     pub fn handle_block(
-        &mut self,
+        mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<&CircuitInputBuilder<FixedCParams>, Error> {
+    ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
+        println!("--------------{:?}", self.circuits_params);
         // accumulates gas across all txs in the block
-        self.begin_handle_block(eth_block, geth_traces)?;
-        self.set_end_chunk_or_block(self.circuits_params.max_rws);
+        let last_call = self.begin_handle_block(eth_block, geth_traces)?;
+        // At the last chunk fixed param also need to be updated
+        if self.chunk_ctx.dynamic_update {
+            self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
+        } else {
+            self.cur_chunk_mut().fixed_param = self.circuits_params;
+        }
+        self.set_end_block();
+        let last_copy = self.block.copy_events.len();
+        self.commit_chunk(false, eth_block.transactions.len(), last_copy, last_call);
+
+        let used_chunks = self.chunk_ctx.idx + 1;
+        assert!(
+            used_chunks <= self.circuits_params.total_chunks(),
+            "Used more chunks than given total_chunks"
+        );
+
+        // Truncate chunks to the actual used amount & correct ctx.total_chunks
+        // Set length to the actual used amount of chunks
+        self.chunks.truncate(self.chunk_ctx.idx + 1);
+        self.chunks.iter_mut().for_each(|chunk| {
+            chunk.ctx.total_chunks = used_chunks;
+        });
+
         Ok(self)
     }
 
-    fn set_end_chunk_or_block(&mut self, max_rws: usize) {
-        if self
-            .chunk_ctx
-            .as_ref()
-            .map_or(false, |chunk_ctx| !chunk_ctx.is_last_chunk())
-        {
-            self.set_end_chunk(max_rws);
-            return;
-        }
+    fn set_end_block(&mut self) {
+        let mut end_block = self.block.end_block.clone();
+        end_block.rwc = self.block_ctx.rwc;
+        end_block.rwc_inner_chunk = self.chunk_ctx.rwc;
 
-        // set end block
-        let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
-        let mut end_block_last = self.block.block_steps.end_block_last.clone();
-        end_block_not_last.rwc = self.block_ctx.rwc;
-        end_block_last.rwc = self.block_ctx.rwc;
-        end_block_not_last.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        end_block_last.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        let is_first_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or(true, |chunk_ctx| chunk_ctx.is_first_chunk());
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
         if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
-                &mut end_block_last,
+                &mut end_block,
                 call_id,
                 CallContextField::TxId,
                 Word::from(state.block.txs.len() as u64),
             );
         }
 
-        // rwc index start from 1
-        let end_rwc = state.block_ctx.rwc.0;
-        let total_rws = end_rwc - 1;
-
-        // We need at least 1 extra Start row
-        // because total_rws exclude Rw::Start
-        #[allow(clippy::int_plus_one)]
-        {
-            assert!(
-                total_rws + 1 <= max_rws,
-                "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
-                total_rws,
-                max_rws
-            );
-        }
-
-        if is_first_chunk {
-            push_op(
-                &mut state.block.container,
-                &mut end_block_last,
-                RWCounter(1),
-                RWCounter(1),
-                RW::READ,
-                StartOp {},
-            );
-        }
-        // TODO fix below to adapt multiple chunk
-        if max_rws - total_rws > 1 {
-            let (padding_start, padding_end) = (total_rws + 1, max_rws - 1);
-            push_op(
-                &mut state.block.container,
-                &mut end_block_last,
-                RWCounter(padding_start),
-                RWCounter(padding_start),
-                RW::READ,
-                PaddingOp {},
-            );
-            if padding_end != padding_start {
-                push_op(
-                    &mut state.block.container,
-                    &mut end_block_last,
-                    RWCounter(padding_end),
-                    RWCounter(padding_end),
-                    RW::READ,
-                    PaddingOp {},
-                );
-            }
-        }
-
-        self.block.block_steps.end_block_not_last = end_block_not_last;
-        self.block.block_steps.end_block_last = end_block_last;
-
-        // set final rwc value to chunkctx
-        if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {
-            chunk_ctx.end_rwc = end_rwc
-        }
-    }
-
-    fn set_end_chunk(&mut self, max_rws: usize) {
-        let mut end_chunk = self.block.block_steps.end_chunk.clone().unwrap();
-        end_chunk.rwc = self.block_ctx.rwc;
-        end_chunk.rwc_inner_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or_else(RWCounter::new, |chunk_ctx| chunk_ctx.rwc);
-        let is_first_chunk = self
-            .chunk_ctx
-            .as_ref()
-            .map_or(true, |chunk_ctx| chunk_ctx.is_first_chunk());
-
-        let mut dummy_tx = Transaction::default();
-        let mut dummy_tx_ctx = TransactionContext::default();
-        self.gen_chunk_associated_steps(&mut end_chunk, RW::WRITE);
-        let state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
-
-        // rwc index start from 1
-        let end_rwc = state.chunk_ctx.map_or(1, |chunk_ctx| chunk_ctx.rwc.0);
-        let total_inner_rws = end_rwc - 1;
-
-        // We need at least 1 extra row at offset 0 for chunk continuous
-        #[allow(clippy::int_plus_one)]
-        {
-            assert!(
-                total_inner_rws + 1 <= max_rws,
-                "total_inner_rws + 1 <= max_rws, total_inner_rws={}, max_rws={}",
-                total_inner_rws,
-                max_rws
-            );
-        }
-
-        if is_first_chunk {
-            push_op(
-                &mut state.block.container,
-                &mut end_chunk,
-                RWCounter(1),
-                RWCounter(1),
-                RW::READ,
-                StartOp {},
-            );
-        }
-        // TODO fix below to adapt multiple chunk
-        if max_rws - total_inner_rws > 1 {
-            let (padding_start, padding_end) = (total_inner_rws + 1, max_rws - 1);
-            push_op(
-                &mut state.block.container,
-                &mut end_chunk,
-                RWCounter(padding_start),
-                RWCounter(padding_start),
-                RW::READ,
-                PaddingOp {},
-            );
-            if padding_end != padding_start {
-                push_op(
-                    &mut state.block.container,
-                    &mut end_chunk,
-                    RWCounter(padding_end),
-                    RWCounter(padding_end),
-                    RW::READ,
-                    PaddingOp {},
-                );
-            }
-        }
-
-        self.block.block_steps.end_chunk = Some(end_chunk);
-
-        // set final rwc value to chunkctx
-        if let Some(chunk_ctx) = self.chunk_ctx.as_mut() {
-            chunk_ctx.end_rwc = end_rwc
-        }
+        // EndBlock step should also be padded to max_rws similar to EndChunk
+        self.gen_chunk_padding(&mut end_block);
+        self.block.end_block = end_block;
     }
 }
 
@@ -547,29 +682,35 @@ fn push_op<T: Op>(
 }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
-    /// First part of handle_block, common for dynamic and static circuit parameters.
+    /// First part of handle_block, only called by fixed Builder
     pub fn begin_handle_block(
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<(), Error> {
-        if self
-            .chunk_ctx
-            .as_ref()
-            .map(|chunk_ctx| !chunk_ctx.is_first_chunk())
-            .unwrap_or(false)
-        {
-            let mut begin_chunk = self.block.block_steps.begin_chunk.clone();
-            self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
-            self.block.block_steps.begin_chunk = begin_chunk;
+    ) -> Result<Option<Call>, Error> {
+        assert!(
+            self.circuits_params.max_rws() > self.rws_reserve(),
+            "Fixed max_rws not enough for rws reserve"
+        );
+        self.chunk_ctx.enable = true;
+        if !self.chunk_ctx.is_first_chunk() {
+            // Last step of previous chunk contains the same transition witness
+            // needed for current begin_chunk step
+            let last_step = &self
+                .prev_chunk()
+                .unwrap()
+                .end_chunk
+                .expect("Last chunk is incomplete");
+            self.set_begin_chunk(last_step);
         }
 
         // accumulates gas across all txs in the block
+        let mut last_call = None;
         for (idx, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[idx];
             // Transaction index starts from 1
             let tx_id = idx + 1;
-            self.handle_tx(
+            last_call = self.handle_tx(
                 tx,
                 geth_trace,
                 tx_id == eth_block.transactions.len(),
@@ -579,89 +720,137 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         // set eth_block
         self.block.eth_block = eth_block.clone();
         self.set_value_ops_call_context_rwc_eor();
-        Ok(())
+        Ok(last_call)
+    }
+
+    ///
+    pub fn rws_reserve(&self) -> usize {
+        // This is the last chunk of a block, reserve for EndBlock, not EndChunk
+        let end_block_rws = if self.chunk_ctx.is_last_chunk() && self.chunk_rws() > 0 {
+            1
+        } else {
+            0
+        };
+        // This is not the last chunk, reserve for EndChunk
+        let end_chunk_rws = if !self.chunk_ctx.is_last_chunk() {
+            10
+        } else {
+            0
+        };
+        end_block_rws + end_chunk_rws + 1
+    }
+
+    fn compute_param(&self, eth_block: &EthBlock) -> FixedCParams {
+        let max_txs = eth_block.transactions.len();
+        let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
+
+        let max_calldata = eth_block
+            .transactions
+            .iter()
+            .fold(0, |acc, tx| acc + tx.input.len());
+        let max_exp_steps = self
+            .block
+            .exp_events
+            .iter()
+            .fold(0usize, |acc, e| acc + e.steps.len());
+        // The `+ 2` is used to take into account the two extra empty copy rows needed
+        // to satisfy the query at `Rotation(2)` performed inside of the
+        // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
+        // Accumulation gate.
+        let max_copy_rows = self
+            .block
+            .copy_events
+            .iter()
+            .fold(0, |acc, c| acc + c.bytes.len())
+            * 2
+            + 4; // disabled and unused rows.
+
+        let max_rws = self.chunk_rws() + self.rws_reserve();
+
+        // Computing the number of rows for the EVM circuit requires the size of ExecStep,
+        // which is determined in the code of zkevm-circuits and cannot be imported here.
+        // When the evm circuit receives a 0 value it dynamically computes the minimum
+        // number of rows necessary.
+        let max_evm_rows = 0;
+        // Similarly, computing the number of rows for the Keccak circuit requires
+        // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
+        // With a 0 value the keccak circuit computes dynamically the minimum number of rows
+        // needed.
+        let max_keccak_rows = 0;
+        FixedCParams {
+            total_chunks: self.circuits_params.total_chunks(),
+            max_rws,
+            max_txs,
+            max_calldata,
+            max_copy_rows,
+            max_exp_steps,
+            max_bytecode,
+            max_evm_rows,
+            max_keccak_rows,
+        }
     }
 }
+
 impl CircuitInputBuilder<DynamicCParams> {
+    fn dry_run(
+        &self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+    ) -> Result<CircuitInputBuilder<DynamicCParams>, Error> {
+        let mut cib = self.clone();
+        cib.circuits_params.total_chunks = 1;
+        cib.chunk_ctx.total_chunks = 1;
+        cib.chunk_ctx.enable = false;
+        // accumulates gas across all txs in the block
+        for (idx, tx) in eth_block.transactions.iter().enumerate() {
+            let geth_trace = &geth_traces[idx];
+            // Transaction index starts from 1
+            let tx_id = idx + 1;
+            cib.handle_tx(
+                tx,
+                geth_trace,
+                tx_id == eth_block.transactions.len(),
+                tx_id as u64,
+            )?;
+        }
+        // set eth_block
+        cib.block.eth_block = eth_block.clone();
+        cib.set_value_ops_call_context_rwc_eor();
+
+        Ok(cib)
+    }
+
     /// Handle a block by handling each transaction to generate all the
-    /// associated operations. From these operations, the optimal circuit parameters
-    /// are derived and set.
+    /// associated operations. Dry run the block to determind the target
+    /// [`FixedCParams`] from to total number of chunks.
     pub fn handle_block(
-        mut self,
+        self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
-        self.begin_handle_block(eth_block, geth_traces)?;
+        // Run the block without chunking and compute the blockwise params
+        let mut target_params = self
+            .dry_run(eth_block, geth_traces)
+            .expect("Dry run failure")
+            .compute_param(eth_block);
 
-        // Compute subcircuits parameters
-        let c_params = {
-            let max_txs = eth_block.transactions.len();
-            let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
+        // Calculate the chunkwise params from total number of chunks
+        let total_chunks = self.circuits_params.total_chunks;
+        target_params.total_chunks = total_chunks;
+        target_params.max_rws = (target_params.max_rws + 1) / total_chunks;
 
-            let max_calldata = eth_block
-                .transactions
-                .iter()
-                .fold(0, |acc, tx| acc + tx.input.len());
-            let max_exp_steps = self
-                .block
-                .exp_events
-                .iter()
-                .fold(0usize, |acc, e| acc + e.steps.len());
-            // The `+ 2` is used to take into account the two extra empty copy rows needed
-            // to satisfy the query at `Rotation(2)` performed inside of the
-            // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
-            // Accumulation gate.
-            let max_copy_rows = self
-                .block
-                .copy_events
-                .iter()
-                .fold(0, |acc, c| acc + c.bytes.len())
-                * 2
-                + 4; // disabled and unused rows.
-
-            // TODO fix below logic for multiple rw_table chunks
-            let total_rws_before_end_block: usize =
-                <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1; // -1 since rwc start from index `1`
-            let max_rws = total_rws_before_end_block
-                + {
-                    1 // +1 for reserving RW::Start at row 1 (offset 0)
-                    + if self.chunk_ctx.as_ref().map(|chunk_ctx|chunk_ctx.is_last_chunk()).unwrap_or(true) && total_rws_before_end_block > 0 { 1 /*end_block -> CallContextFieldTag::TxId lookup*/ } else { 0 }
-                    + if self.chunk_ctx.as_ref().map(|chunk_ctx|!chunk_ctx.is_last_chunk()).unwrap_or(false) {
-                        10  /* stepstate lookup */
-                    } else {0}
-                };
-            // Computing the number of rows for the EVM circuit requires the size of ExecStep,
-            // which is determined in the code of zkevm-circuits and cannot be imported here.
-            // When the evm circuit receives a 0 value it dynamically computes the minimum
-            // number of rows necessary.
-            let max_evm_rows = 0;
-            // Similarly, computing the number of rows for the Keccak circuit requires
-            // constants that cannot be accessed from here (NUM_ROUNDS and KECCAK_ROWS).
-            // With a 0 value the keccak circuit computes dynamically the minimum number of rows
-            // needed.
-            let max_keccak_rows = 0;
-            FixedCParams {
-                max_rws,
-                max_txs,
-                max_calldata,
-                max_copy_rows,
-                max_exp_steps,
-                max_bytecode,
-                max_evm_rows,
-                max_keccak_rows,
-            }
-        };
-        let mut cib = CircuitInputBuilder::<FixedCParams> {
+        // Use a new builder with targeted params to handle the block
+        // chunking context is set to dynamic so for the actual param is update per chunk
+        let cib = CircuitInputBuilder::<FixedCParams> {
             sdb: self.sdb,
             code_db: self.code_db,
             block: self.block,
-            circuits_params: c_params,
+            chunks: self.chunks,
             block_ctx: self.block_ctx,
-            chunk_ctx: self.chunk_ctx,
+            chunk_ctx: ChunkContext::new(total_chunks, true),
+            circuits_params: target_params,
         };
-
-        cib.set_end_chunk_or_block(c_params.max_rws);
-        Ok(cib)
+        cib.handle_block(eth_block, geth_traces)
     }
 }
 
@@ -938,9 +1127,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
-        builder.handle_block(eth_block, geth_traces)?;
-        Ok(builder)
+        let builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
+        builder.handle_block(eth_block, geth_traces)
     }
 
     /// Perform all the steps to generate the circuit inputs

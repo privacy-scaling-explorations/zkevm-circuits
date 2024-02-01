@@ -15,7 +15,7 @@ use crate::{
         },
     },
     util::{word::Word32Cell, Expr},
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use eth_types::{
     evm_types::{
@@ -118,6 +118,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

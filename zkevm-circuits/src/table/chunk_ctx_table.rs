@@ -65,10 +65,10 @@ impl ChunkCtxTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        chunkctx: &ChunkContext,
+        chunk_ctx: &ChunkContext,
     ) -> Result<ChunkCtxTableAssignedCells<F>, Error> {
         layouter.assign_region(
-            || "chunkctx table",
+            || "chunk_ctx table",
             |mut region| {
                 let mut offset = 0;
 
@@ -78,27 +78,27 @@ impl ChunkCtxTable {
                     // CurrentChunkIndex
                     (
                         F::from(ChunkCtxFieldTag::CurrentChunkIndex as u64),
-                        F::from(chunkctx.chunk_index as u64),
+                        F::from(chunk_ctx.idx as u64),
                     ),
                     // NextChunkIndex
                     (
                         F::from(ChunkCtxFieldTag::NextChunkIndex as u64),
-                        F::from(chunkctx.chunk_index as u64 + 1u64),
+                        F::from(chunk_ctx.idx as u64 + 1u64),
                     ),
                     // TotalChunks
                     (
                         F::from(ChunkCtxFieldTag::TotalChunks as u64),
-                        F::from(chunkctx.total_chunks as u64),
+                        F::from(chunk_ctx.total_chunks as u64),
                     ),
                     // InitialRWC
                     (
                         F::from(ChunkCtxFieldTag::InitialRWC as u64),
-                        F::from(chunkctx.initial_rwc as u64),
+                        F::from(chunk_ctx.initial_rwc as u64),
                     ),
                     // EndRWC
                     (
                         F::from(ChunkCtxFieldTag::EndRWC as u64),
-                        F::from(chunkctx.end_rwc as u64),
+                        F::from(chunk_ctx.end_rwc as u64),
                     ),
                     // Empty row for disable lookup
                     (F::ZERO, F::ZERO),
@@ -106,14 +106,14 @@ impl ChunkCtxTable {
                 .iter()
                 .map(|(tag, value)| {
                     region.assign_fixed(
-                        || format!("chunkctx table tag {}", offset),
+                        || format!("chunk_ctx table tag {}", offset),
                         self.tag,
                         offset,
                         || Value::known(*tag),
                     )?;
 
                     let assigned_value = region.assign_advice(
-                        || format!("chunkctx table value {}", offset),
+                        || format!("chunk_ctx table value {}", offset),
                         self.value,
                         offset,
                         || Value::known(*value),

@@ -20,12 +20,12 @@ use crate::{
             not, or, Cell,
         },
     },
-    table::{chunkctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
+    table::{chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word, Word32, Word32Cell, WordCell, WordExpr},
         Expr,
     },
-    witness::{Block, Call, ExecStep},
+    witness::{Block, Call, Chunk, ExecStep},
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, ToWord, U256};
@@ -1309,27 +1309,25 @@ impl<F: Field> RwTablePaddingGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        _block: &Block<F>,
+        chunk: &Chunk<F>,
         inner_rws_before_padding: u64,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let total_rwc = u64::from(step.rwc) - 1;
         self.is_empty_rwc
             .assign(region, offset, F::from(total_rwc))?;
-        let max_rws = F::from(block.circuits_params.max_rws as u64);
+        let max_rws = F::from(chunk.fixed_param.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 
         self.chunk_index.assign(
             region,
             offset,
-            Value::known(F::from(block.chunk_context.chunk_index as u64)),
+            Value::known(F::from(chunk.chunk_context.idx as u64)),
         )?;
 
-        self.is_first_chunk.assign(
-            region,
-            offset,
-            F::from(block.chunk_context.chunk_index as u64),
-        )?;
+        self.is_first_chunk
+            .assign(region, offset, F::from(chunk.chunk_context.idx as u64))?;
 
         self.is_end_padding_exist.assign(
             region,

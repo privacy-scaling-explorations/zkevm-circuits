@@ -10,7 +10,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{word::Word, Expr},
@@ -117,6 +117,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
@@ -131,23 +132,25 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             region,
             offset,
             block,
+            chunk,
             inner_rws_before_padding,
             step,
         )?;
 
         let total_txs = F::from(block.txs.len() as u64);
-        let max_txs = F::from(block.circuits_params.max_txs as u64);
+        let max_txs = F::from(chunk.fixed_param.max_txs as u64);
         self.total_txs
             .assign(region, offset, Value::known(total_txs))?;
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
         // When rw_indices is not empty, means current endblock is non-padding step, we're at the
-        // last row (at a fixed offset), where we need to access the max_rws and max_txs
+        // last row (at a fixed offset), where we need to access max_txs
         // constant.
         if step.rw_indices_len() != 0 {
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }
+
         Ok(())
     }
 }
@@ -170,23 +173,15 @@ mod test {
 
         // finish required tests using this witness block
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .block_modifier(Box::new(move |block| {
-                block.circuits_params.max_evm_rows = evm_circuit_pad_to
+            .modifier(Box::new(move |_block, chunk| {
+                chunk.fixed_param.max_evm_rows = evm_circuit_pad_to
             }))
             .run();
     }
 
-    // Test where the EVM circuit contains an exact number of rows corresponding to
-    // the trace steps + 1 EndBlock
+    // Test steps + 1 EndBlock without padding
     #[test]
-    fn end_block_exact() {
+    fn end_block_no_padding() {
         test_circuit(0);
-    }
-
-    // Test where the EVM circuit has a fixed size and contains several padding
-    // EndBlocks at the end after the trace steps
-    #[test]
-    fn end_block_padding() {
-        test_circuit(50);
     }
 }

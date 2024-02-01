@@ -1,5 +1,5 @@
 use super::{
-    rw::{RwTablePermutationFingerprints, ToVec},
+    rw::{RwFingerprints, ToVec},
     ExecStep, Rw, RwMap, Transaction,
 };
 use crate::{
@@ -8,36 +8,30 @@ use crate::{
     instance::public_data_convert,
     table::BlockContextFieldTag,
     util::{log2_ceil, unwrap_value, word, SubCircuit},
+    witness::Chunk,
 };
 use bus_mapping::{
-    circuit_input_builder::{self, ChunkContext, CopyEvent, ExpEvent, FixedCParams},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
     state_db::CodeDB,
     Error,
 };
 use eth_types::{Address, Field, ToScalar, Word};
+
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 
 // TODO: Remove fields that are duplicated in`eth_block`
-/// Block is the struct used by all circuits, which contains all the needed
-/// data for witness generation.
+/// [`Block`] is the struct used by all circuits, which contains blockwise
+/// data for witness generation. Used with [`Chunk`] for the i-th chunck witness.
 #[derive(Debug, Clone, Default)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
-    /// BeginChunk step to propagate State
-    pub begin_chunk: ExecStep,
-    /// EndChunk step that appears in the last EVM row for all the chunks other than the last.
-    pub end_chunk: Option<ExecStep>,
-    /// chunk context
-    pub chunk_context: ChunkContext,
+    pub end_block: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
@@ -60,18 +54,6 @@ pub struct Block<F> {
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
-
-    /// permutation challenge alpha
-    pub permu_alpha: F,
-    /// permutation challenge gamma
-    pub permu_gamma: F,
-    /// rw_table fingerprints
-    pub permu_rwtable_fingerprints: RwTablePermutationFingerprints<F>,
-    /// chronological rw_table fingerprints
-    pub permu_chronological_rwtable_fingerprints: RwTablePermutationFingerprints<F>,
-
-    /// prev_chunk_last_call
-    pub prev_block: Box<Option<Block<F>>>,
 }
 
 impl<F: Field> Block<F> {
@@ -100,9 +82,9 @@ impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
-    pub fn get_test_degree(&self) -> u32 {
+    pub fn get_test_degree(&self, chunk: &Chunk<F>) -> u32 {
         let num_rows_required_for_execution_steps: usize =
-            EvmCircuit::<F>::get_num_rows_required(self);
+            EvmCircuit::<F>::get_num_rows_required(self, chunk);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(self)
             .iter()
@@ -278,23 +260,12 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
-
-        // TODO get permutation fingerprint & challenges
-        permu_alpha: F::from(103),
-        permu_gamma: F::from(101),
-        end_block_not_last: block.block_steps.end_block_not_last.clone(),
-        end_block_last: block.block_steps.end_block_last.clone(),
-        // TODO refactor chunk related field to chunk structure
-        begin_chunk: block.block_steps.begin_chunk.clone(),
-        end_chunk: block.block_steps.end_chunk.clone(),
-        chunk_context: builder
-            .chunk_ctx
-            .clone()
-            .unwrap_or_else(ChunkContext::new_one_chunk),
-        prev_block: Box::new(None),
-        ..Default::default()
+        end_block: block.end_block.clone(),
     };
     let public_data = public_data_convert(&block);
+
+    // We can use params from block
+    // because max_txs and max_calldata are independent from Chunk
     let rpi_bytes = public_data.get_pi_bytes(
         block.circuits_params.max_txs,
         block.circuits_params.max_calldata,
@@ -302,34 +273,16 @@ pub fn block_convert<F: Field>(
     // PI Circuit
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
 
-    // Permutation fingerprints
-    let (rws_rows, _) = RwMap::table_assignments_padding(
-        &block.rws.table_assignments(false),
-        block.circuits_params.max_rws,
-        block.chunk_context.is_first_chunk(),
-    );
-    let (chronological_rws_rows, _) = RwMap::table_assignments_padding(
-        &block.rws.table_assignments(true),
-        block.circuits_params.max_rws,
-        block.chunk_context.is_first_chunk(),
-    );
-    block.permu_rwtable_fingerprints =
-        get_rwtable_fingerprints(block.permu_alpha, block.permu_gamma, F::from(1), &rws_rows);
-    block.permu_chronological_rwtable_fingerprints = get_rwtable_fingerprints(
-        block.permu_alpha,
-        block.permu_gamma,
-        F::from(1),
-        &chronological_rws_rows,
-    );
     Ok(block)
 }
 
+#[allow(dead_code)]
 fn get_rwtable_fingerprints<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
     rows: &Vec<Rw>,
-) -> RwTablePermutationFingerprints<F> {
+) -> RwFingerprints<F> {
     let x = rows.to2dvec();
     let fingerprints = get_permutation_fingerprints(
         &x,
@@ -342,7 +295,7 @@ fn get_rwtable_fingerprints<F: Field>(
         .first()
         .zip(fingerprints.last())
         .map(|((first_acc, first_row), (last_acc, last_row))| {
-            RwTablePermutationFingerprints::new(
+            RwFingerprints::new(
                 unwrap_value(*first_row),
                 unwrap_value(*last_row),
                 unwrap_value(*first_acc),

@@ -46,12 +46,13 @@ use zkevm_circuits::{
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
-    witness::{block_convert, Block},
+    witness::{block_convert, chunk_convert, Block, Chunk},
 };
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-
+///
+const TOTAL_CHUNKS: usize = 1;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
@@ -70,6 +71,7 @@ const MAX_EXP_STEPS: usize = 1000;
 const MAX_KECCAK_ROWS: usize = 38000;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
+    total_chunks: TOTAL_CHUNKS,
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
@@ -284,8 +286,8 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         match self.key.clone() {
             Some(key) => key,
             None => {
-                let block = new_empty_block();
-                let circuit = C::new_from_block(&block);
+                let (block, chunk) = new_empty_block_chunk();
+                let circuit = C::new_from_block(&block, &chunk);
                 let general_params = get_general_params(self.degree);
 
                 let verifying_key =
@@ -305,8 +307,8 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let params = get_general_params(self.degree);
                 let pk = self.get_key();
 
-                let block = new_empty_block();
-                let circuit = C::new_from_block(&block);
+                let (block, chunk) = new_empty_block_chunk();
+                let circuit = C::new_from_block(&block, &chunk);
                 let instance = circuit.instance();
 
                 let protocol = compile(
@@ -419,8 +421,9 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_tag,
         );
         let mut block = block_convert(&builder).unwrap();
+        let chunk = chunk_convert(&builder, 0).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
-        let circuit = C::new_from_block(&block);
+        let circuit = C::new_from_block(&block, &chunk);
         let instance = circuit.instance();
 
         #[allow(clippy::collapsible_else_if)]
@@ -501,16 +504,18 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-fn new_empty_block() -> Block<Fr> {
+fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
-        .new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
+        .new_circuit_input_builder()
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    block_convert(&builder).unwrap()
+    (
+        block_convert(&builder).unwrap(),
+        chunk_convert(&builder, 0).unwrap(),
+    )
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {

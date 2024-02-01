@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -41,6 +41,7 @@ impl<F: Field> ExecutionGadget<F> for BeginChunkGadget<F> {
         _region: &mut CachedRegion<'_, '_, F>,
         _offset: usize,
         _block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         _step: &ExecStep,

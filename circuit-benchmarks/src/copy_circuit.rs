@@ -26,7 +26,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::{
         copy_circuit::TestCopyCircuit,
-        evm_circuit::witness::{block_convert, Block},
+        evm_circuit::witness::{block_convert, chunk_convert, Block, Chunk},
         util::SubCircuit,
     };
 
@@ -51,8 +51,8 @@ mod tests {
         ]);
 
         // Create the circuit
-        let block = generate_full_events_block(degree);
-        let circuit = TestCopyCircuit::<Fr>::new_from_block(&block);
+        let (block, chunk) = generate_full_events_block(degree);
+        let circuit = TestCopyCircuit::<Fr>::new_from_block(&block, &chunk);
 
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
@@ -108,7 +108,7 @@ mod tests {
     }
 
     /// generate enough copy events to fillup copy circuit
-    fn generate_full_events_block(degree: u32) -> Block<Fr> {
+    fn generate_full_events_block(degree: u32) -> (Block<Fr>, Chunk<Fr>) {
         // A empiric value 55 here to let the code generate enough copy event without
         // exceed the max_rws limit.
         let copy_event_num = (1 << degree) / 55;
@@ -143,19 +143,19 @@ mod tests {
         )
         .unwrap();
         let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data_with_params(
+        let builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             FixedCParams {
                 max_rws: 1 << (degree - 1),
                 ..Default::default()
             },
         )
-        .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
         let block = block_convert(&builder).unwrap();
+        let chunk = chunk_convert(&builder, 0).unwrap();
         assert_eq!(block.copy_events.len(), copy_event_num);
-        block
+        (block, chunk)
     }
 }

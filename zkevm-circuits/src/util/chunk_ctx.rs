@@ -13,7 +13,7 @@ use halo2_proofs::{
 use crate::{
     evm_circuit::util::rlc,
     table::{
-        chunkctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
+        chunk_ctx_table::{ChunkCtxFieldTag, ChunkCtxTable},
         LookupTable,
     },
 };
@@ -36,9 +36,9 @@ pub struct ChunkContextConfig<F> {
     pub is_last_chunk: IsZeroConfig<F>,
 
     /// ChunkCtxTable
-    pub chunkctx_table: ChunkCtxTable,
+    pub chunk_ctx_table: ChunkCtxTable,
     /// instance column for chunk context
-    pub pi_chunkctx: Column<Instance>,
+    pub pi_chunk_ctx: Column<Instance>,
 
     /// Lt chip to check: chunk_index < total_chunks.
     /// Assume `total_chunks` < 2**8 = 256
@@ -55,11 +55,11 @@ impl<F: Field> ChunkContextConfig<F> {
         let chunk_diff = meta.advice_column();
         let total_chunks = meta.advice_column();
 
-        let pi_chunkctx = meta.instance_column();
-        meta.enable_equality(pi_chunkctx);
+        let pi_chunk_ctx = meta.instance_column();
+        meta.enable_equality(pi_chunk_ctx);
 
-        let chunkctx_table = ChunkCtxTable::construct(meta);
-        chunkctx_table.annotate_columns(meta);
+        let chunk_ctx_table = ChunkCtxTable::construct(meta);
+        chunk_ctx_table.annotate_columns(meta);
 
         [
             (ChunkCtxFieldTag::CurrentChunkIndex.expr(), chunk_index),
@@ -78,7 +78,10 @@ impl<F: Field> ChunkContextConfig<F> {
                             &[tag_expr.clone(), value_col_expr],
                             challenges.lookup_input(),
                         ),
-                    rlc::expr(&chunkctx_table.table_exprs(meta), challenges.lookup_input()),
+                    rlc::expr(
+                        &chunk_ctx_table.table_exprs(meta),
+                        challenges.lookup_input(),
+                    ),
                 )]
             });
         });
@@ -122,8 +125,8 @@ impl<F: Field> ChunkContextConfig<F> {
             total_chunks,
             is_first_chunk,
             is_last_chunk,
-            chunkctx_table,
-            pi_chunkctx,
+            chunk_ctx_table,
+            pi_chunk_ctx,
             is_chunk_index_lt_total_chunks,
         }
     }
@@ -144,7 +147,7 @@ impl<F: Field> ChunkContextConfig<F> {
             total_chunk_cell,
             initial_rwc_cell,
             end_rwc_cell,
-        ) = self.chunkctx_table.load(layouter, chunk_context)?;
+        ) = self.chunk_ctx_table.load(layouter, chunk_context)?;
 
         let is_first_chunk = IsZeroChip::construct(self.is_first_chunk.clone());
         let is_last_chunk = IsZeroChip::construct(self.is_last_chunk.clone());
@@ -154,12 +157,12 @@ impl<F: Field> ChunkContextConfig<F> {
                 region.name_column(|| "chunk_index", self.chunk_index);
                 region.name_column(|| "chunk_index_next", self.chunk_index_next);
                 region.name_column(|| "total_chunks", self.total_chunks);
-                region.name_column(|| "pi_chunkctx", self.pi_chunkctx);
+                region.name_column(|| "pi_chunk_ctx", self.pi_chunk_ctx);
                 self.is_first_chunk
                     .annotate_columns_in_region(&mut region, "is_first_chunk");
                 self.is_last_chunk
                     .annotate_columns_in_region(&mut region, "is_last_chunk");
-                self.chunkctx_table.annotate_columns_in_region(&mut region);
+                self.chunk_ctx_table.annotate_columns_in_region(&mut region);
 
                 for offset in 0..max_offset_index + 1 {
                     self.q_chunk_context.enable(&mut region, offset)?;
@@ -168,14 +171,14 @@ impl<F: Field> ChunkContextConfig<F> {
                         || "chunk_index",
                         self.chunk_index,
                         offset,
-                        || Value::known(F::from(chunk_context.chunk_index as u64)),
+                        || Value::known(F::from(chunk_context.idx as u64)),
                     )?;
 
                     region.assign_advice(
                         || "chunk_index_next",
                         self.chunk_index_next,
                         offset,
-                        || Value::known(F::from(chunk_context.chunk_index as u64 + 1u64)),
+                        || Value::known(F::from(chunk_context.idx as u64 + 1u64)),
                     )?;
 
                     region.assign_advice(
@@ -188,19 +191,19 @@ impl<F: Field> ChunkContextConfig<F> {
                     is_first_chunk.assign(
                         &mut region,
                         offset,
-                        Value::known(F::from(chunk_context.chunk_index as u64)),
+                        Value::known(F::from(chunk_context.idx as u64)),
                     )?;
                     is_last_chunk.assign(
                         &mut region,
                         offset,
                         Value::known(F::from(
-                            (chunk_context.total_chunks - chunk_context.chunk_index - 1) as u64,
+                            (chunk_context.total_chunks - chunk_context.idx - 1) as u64,
                         )),
                     )?;
                     is_chunk_index_lt_total_chunks.assign(
                         &mut region,
                         offset,
-                        Value::known(F::from(chunk_context.chunk_index as u64)),
+                        Value::known(F::from(chunk_context.idx as u64)),
                         Value::known(F::from(chunk_context.total_chunks as u64)),
                     )?;
                 }
@@ -217,7 +220,7 @@ impl<F: Field> ChunkContextConfig<F> {
         ]
         .iter()
         .enumerate()
-        .try_for_each(|(i, cell)| layouter.constrain_instance(cell.cell(), self.pi_chunkctx, i))?;
+        .try_for_each(|(i, cell)| layouter.constrain_instance(cell.cell(), self.pi_chunk_ctx, i))?;
         Ok(())
     }
 }

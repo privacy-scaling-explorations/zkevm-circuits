@@ -15,7 +15,7 @@ use crate::{
             },
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag,
@@ -180,7 +180,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
 
         cb.condition(
-            cb.next.execution_state_selector([ExecutionState::EndBlock]),
+            cb.next
+                .execution_state_selector([ExecutionState::EndBlock, ExecutionState::Padding]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(9.expr() - is_first_tx.expr() + coinbase_reward.rw_delta()),
@@ -218,6 +219,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
