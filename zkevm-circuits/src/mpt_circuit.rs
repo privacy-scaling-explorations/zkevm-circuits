@@ -807,7 +807,7 @@ mod tests {
                 println!("{} {:?}", idx, path);
                 let prover = MockProver::<Fr>::run(degree as u32, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                // assert_eq!(prover.verify_par(), Ok(()));
+                // assert_eq!(prover.verify(), Ok(()));
                 // prover.assert_satisfied();
             });
     }

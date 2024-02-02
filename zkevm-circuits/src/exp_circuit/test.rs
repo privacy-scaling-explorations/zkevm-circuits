@@ -26,7 +26,7 @@ pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {
         block.circuits_params.max_exp_steps,
     );
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-    prover.assert_satisfied_par()
+    prover.assert_satisfied()
 }
 
 fn gen_code_single(base: Word, exponent: Word) -> Bytecode {

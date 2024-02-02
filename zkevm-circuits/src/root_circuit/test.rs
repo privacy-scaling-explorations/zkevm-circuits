@@ -73,7 +73,7 @@ fn test_root_circuit() {
     assert_eq!(
         MockProver::run(26, &root_circuit, root_circuit.instance())
             .unwrap()
-            .verify_par(),
+            .verify(),
         Ok(())
     );
 }

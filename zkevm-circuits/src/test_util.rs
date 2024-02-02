@@ -204,7 +204,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         })?;
 
         prover
-            .verify_at_rows_par(
+            .verify_at_rows(
                 active_gate_rows.iter().cloned(),
                 active_lookup_rows.iter().cloned(),
             )
@@ -234,12 +234,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             .filter(|rw| !matches!(rw, Rw::Start { .. }))
             .count();
         let rows = max_rws - non_start_rows_len..max_rws;
-        prover
-            .verify_at_rows_par(rows.clone(), rows)
-            .map_err(|err| CircuitTestError::VerificationFailed {
+        prover.verify_at_rows(rows.clone(), rows).map_err(|err| {
+            CircuitTestError::VerificationFailed {
                 circuit: Circuit::EVM,
                 reasons: err,
-            })
+            }
+        })
     }
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
