@@ -599,7 +599,7 @@ impl<F: Field> StorageLeafConfig<F> {
             new_value = word::Word::zero_f();
         } else if is_non_existing_proof {
             new_value = word::Word::zero_f();
-           old_value = word::Word::zero_f();
+            old_value = word::Word::zero_f();
         }
         mpt_config.mpt_table.assign_cached(
             region,
