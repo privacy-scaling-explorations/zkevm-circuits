@@ -99,7 +99,7 @@ fn prover_error() {
     let circuit = SuperCircuit::new_from_block(&block_witness);
     let res = MockProver::run(k, &circuit, circuit.instance())
         .expect("MockProver::run")
-        .verify_par();
+        .verify();
     println!("MockProver: {res:#?}");
-    res.expect("verify_par");
+    res.expect("verify");
 }

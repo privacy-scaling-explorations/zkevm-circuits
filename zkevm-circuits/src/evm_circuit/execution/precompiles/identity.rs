@@ -159,8 +159,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
 #[cfg(test)]
 mod test {
     use bus_mapping::{
-        evm::{OpcodeId, PrecompileCallArgs},
-        precompile::PrecompileCalls,
+        evm::OpcodeId,
+        precompile::{PrecompileCallArgs, PrecompileCalls},
     };
     use eth_types::{bytecode, word, ToWord};
     use itertools::Itertools;

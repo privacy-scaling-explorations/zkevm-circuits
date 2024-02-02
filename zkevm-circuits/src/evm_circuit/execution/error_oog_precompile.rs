@@ -218,7 +218,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{evm::PrecompileCallArgs, precompile::PrecompileCalls};
+    use bus_mapping::precompile::{PrecompileCallArgs, PrecompileCalls};
     use eth_types::{
         bytecode,
         evm_types::{GasCost, OpcodeId},

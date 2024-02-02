@@ -99,7 +99,7 @@ impl StateUpdateCircuit<Fr> {
 
         let prover =
             MockProver::<Fr>::run(self.degree as u32, self, vec![public_inputs.0]).unwrap();
-        prover.assert_satisfied_at_rows_par(0..num_rows, 0..num_rows);
+        prover.assert_satisfied_at_rows(0..num_rows, 0..num_rows);
     }
 
     pub fn prove(self, keys: &StateUpdateCircuitKeys) -> Result<Vec<u8>> {
