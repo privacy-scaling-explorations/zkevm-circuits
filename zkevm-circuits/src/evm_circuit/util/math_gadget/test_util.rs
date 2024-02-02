@@ -1,3 +1,4 @@
+use bus_mapping::circuit_input_builder::FeatureConfig;
 use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
@@ -122,6 +123,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             step_next,
             &challenges_exprs,
             ExecutionState::STOP,
+            FeatureConfig::default(),
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
         let (constraints, stored_expressions, _, _) = cb.build();
@@ -202,7 +204,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         )?;
 
         // assign fixed range tables only as they are the only tables referred by a
-        // specfic math gadget -- ConstantDivisionGadget.
+        // specific math gadget -- ConstantDivisionGadget.
         layouter.assign_region(
             || "fixed table",
             |mut region| {

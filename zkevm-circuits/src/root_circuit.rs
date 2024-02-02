@@ -3,7 +3,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::serde::SerdeObject,
+    halo2curves::{serde::SerdeObject, CurveAffine, CurveExt},
     plonk::{Any, Circuit, Column, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -114,11 +114,14 @@ pub struct UserChallenge {
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
 #[derive(Clone)]
-pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
+pub struct RootCircuit<'a, M: MultiMillerLoop, As>
+where
+    M::G1Affine: CurveAffine,
+{
     svk: KzgSvk<M>,
     protocol: &'a PlonkProtocol<M::G1Affine>,
     snark_witnesses: Vec<SnarkWitness<'a, M::G1Affine>>,
-    instance: Vec<M::Scalar>,
+    instance: Vec<M::Fr>,
     user_challenges: Option<&'a UserChallenge>,
     _marker: PhantomData<As>,
 }
@@ -126,9 +129,10 @@ pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
 impl<'a, M, As> RootCircuit<'a, M, As>
 where
     M: MultiMillerLoop,
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
-    M::Scalar: Field,
+    M::Fr: Field,
+    M::G1: CurveExt<AffineExt = M::G1Affine, ScalarExt = M::Fr>,
+    M::G1Affine: SerdeObject + CurveAffine<ScalarExt = M::Fr, CurveExt = M::G1>,
+    M::G2Affine: SerdeObject + CurveAffine,
     As: PolynomialCommitmentScheme<
             M::G1Affine,
             NativeLoader,
@@ -153,8 +157,8 @@ where
         // compute real instance value
         let (flatten_first_chunk_instances, accumulator_limbs) = {
             let (mut instance, mut accumulator_limbs) = (
-                vec![M::Scalar::ZERO; num_raw_instances],
-                Ok(vec![M::Scalar::ZERO; 4 * LIMBS]),
+                vec![M::Fr::ZERO; num_raw_instances],
+                Ok(vec![M::Fr::ZERO; 4 * LIMBS]),
             );
             // compute aggregate_limbs
             snark_witnesses
@@ -220,15 +224,16 @@ where
     }
 
     /// Returns instance
-    pub fn instance(&self) -> Vec<Vec<M::Scalar>> {
+    pub fn instance(&self) -> Vec<Vec<M::Fr>> {
         vec![self.instance.clone()]
     }
 }
 
-impl<'a, M, As> Circuit<M::Scalar> for RootCircuit<'a, M, As>
+impl<'a, M, As> Circuit<M::Fr> for RootCircuit<'a, M, As>
 where
     M: MultiMillerLoop,
-    M::Scalar: Field,
+    M::Fr: Field,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
     for<'b> As: PolynomialCommitmentScheme<
             M::G1Affine,
             Rc<Halo2Loader<'b, M::G1Affine>>,
@@ -255,19 +260,19 @@ where
                 .map(|snark_witness| snark_witness.without_witnesses())
                 .collect_vec(),
             user_challenges: self.user_challenges,
-            instance: vec![M::Scalar::ZERO; self.instance.len()],
+            instance: vec![M::Fr::ZERO; self.instance.len()],
             _marker: PhantomData,
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<M::Scalar>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<M::Fr>) -> Self::Config {
         AggregationConfig::configure::<M::G1Affine>(meta)
     }
 
     fn synthesize(
         &self,
         config: Self::Config,
-        mut layouter: impl Layouter<M::Scalar>,
+        mut layouter: impl Layouter<M::Fr>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
         let key = &self.svk;
@@ -310,15 +315,15 @@ where
                         let (zero_const, one_const, total_chunk_const) = {
                             let zero_const = loader
                                 .scalar_chip()
-                                .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(0))
+                                .assign_constant(&mut loader.ctx_mut(), M::Fr::from(0))
                                 .unwrap();
                             let one_const = loader
                                 .scalar_chip()
-                                .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
+                                .assign_constant(&mut loader.ctx_mut(), M::Fr::from(1))
                                 .unwrap();
                             let total_chunk_const = loader
                                 .scalar_chip()
-                                .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(1))
+                                .assign_constant(&mut loader.ctx_mut(), M::Fr::from(1))
                                 .unwrap();
                             (zero_const, one_const, total_chunk_const)
                         };

@@ -15,9 +15,11 @@ use crate::{
         Challenges, Expr,
     },
 };
-use bus_mapping::{operation::Target, state_db::EMPTY_CODE_HASH_LE};
+use bus_mapping::{
+    circuit_input_builder::FeatureConfig, operation::Target, state_db::EMPTY_CODE_HASH_LE,
+};
 use eth_types::Field;
-use gadgets::util::not;
+use gadgets::util::{not, sum};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -28,8 +30,7 @@ use halo2_proofs::{
 };
 
 use super::{
-    address_word_to_expr, rlc, AccountAddress, CachedRegion, CellType, MemoryAddress,
-    StoredExpression, U64Cell,
+    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -162,6 +163,13 @@ impl<F: Field> ReversionInfo<F> {
         self.is_persistent
             .assign(region, offset, Value::known(F::from(is_persistent as u64)))?;
         Ok(())
+    }
+
+    pub(crate) fn rw_delta(&self) -> Expression<F> {
+        // From definition, rws include:
+        // Field [`CallContextFieldTag::RwCounterEndOfReversion`] read from call context.
+        // Field [`CallContextFieldTag::IsPersistent`] read from call context.
+        2.expr()
     }
 }
 
@@ -322,6 +330,7 @@ pub(crate) struct EVMConstraintBuilder<'a, F: Field> {
     stored_expressions: Vec<StoredExpression<F>>,
     pub(crate) debug_expressions: Vec<(String, Expression<F>)>,
     meta: &'a mut ConstraintSystem<F>,
+    pub(crate) feature_config: FeatureConfig,
 }
 
 impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
@@ -337,6 +346,8 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     }
 }
 
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
+
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
         meta: &'a mut ConstraintSystem<F>,
@@ -344,6 +355,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
         execution_state: ExecutionState,
+        feature_config: FeatureConfig,
     ) -> Self {
         Self {
             curr,
@@ -365,6 +377,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             stored_expressions: Vec::new(),
             meta,
             debug_expressions: Vec::new(),
+            feature_config,
         }
     }
 
@@ -628,6 +641,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // precompiled contract information
+    pub(crate) fn precompile_info_lookup(
+        &mut self,
+        execution_state: Expression<F>,
+        address: Expression<F>,
+        base_gas_cost: Expression<F>,
+    ) {
+        self.add_lookup(
+            "precompiles info",
+            Lookup::Fixed {
+                tag: FixedTableTag::PrecompileInfo.expr(),
+                values: [execution_state, address, base_gas_cost],
+            },
+        )
+    }
+
     // constant gas
     pub(crate) fn constant_gas_lookup(&mut self, opcode: Expression<F>, gas: Expression<F>) {
         self.add_lookup(
@@ -871,7 +900,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 Word::zero(),
                 Word::from_lo_unchecked(value),
@@ -894,7 +923,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccount,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 Word::zero(),
                 Word::from_lo_unchecked(value.clone()),
@@ -917,7 +946,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 storage_key,
                 value,
@@ -941,7 +970,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::TxAccessListAccountStorage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 storage_key,
                 value.clone(),
@@ -1006,7 +1035,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Account,
             RwValues::new(
                 0.expr(),
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 field_tag.expr(),
                 Word::zero(),
                 value.clone(),
@@ -1029,7 +1058,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Account,
             RwValues::new(
                 0.expr(),
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 field_tag.expr(),
                 Word::zero(),
                 value,
@@ -1055,7 +1084,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Storage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 key,
                 value.clone(),
@@ -1081,7 +1110,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Target::Storage,
             RwValues::new(
                 tx_id,
-                address_word_to_expr(account_address),
+                account_address.compress(),
                 0.expr(),
                 key,
                 value,
@@ -1093,7 +1122,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Call context
-
     pub(crate) fn call_context(
         &mut self,
         call_id: Option<Expression<F>>,
@@ -1131,6 +1159,32 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.rw_lookup(
             "CallContext lookup",
             0.expr(),
+            Target::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                Word::zero(),
+                value,
+                Word::zero(),
+                Word::zero(),
+            ),
+        );
+    }
+
+    // same as call_context_lookup_write with bypassing external rwc
+    // Note: will not bumping internal rwc
+    pub(crate) fn call_context_lookup_write_with_counter(
+        &mut self,
+        rw_counter: Expression<F>,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup_with_counter(
+            "CallContext lookup",
+            rw_counter,
+            1.expr(),
             Target::CallContext,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
@@ -1566,6 +1620,64 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ret
     }
 
+    /// Constrain the next step, given mutually exclusive conditions to determine the next state
+    /// and constrain it using the provided respective constraint. This mechanism is specifically
+    /// used for constraining the internal states for precompile calls. Each precompile call
+    /// expects a different cell layout, but since the next state can be at the most one precompile
+    /// state, we can re-use cells assgined across all thos conditions.
+    pub(crate) fn constrain_mutually_exclusive_next_step(
+        &mut self,
+        conditions: Vec<Expression<F>>,
+        next_states: Vec<ExecutionState>,
+        constraints: Vec<BoxedClosure<F>>,
+    ) {
+        assert_eq!(conditions.len(), constraints.len());
+        assert_eq!(conditions.len(), next_states.len());
+
+        self.require_boolean(
+            "at the most one condition is true from mutually exclusive conditions",
+            sum::expr(&conditions),
+        );
+
+        // TODO: constraining the same cells repeatedly requires a height-resetting mechanism
+        // on the cell manager. In this case, since only identity precompile is added
+        // this height management maneuver is temporarily left out.
+        for ((&next_state, condition), constraint) in next_states
+            .iter()
+            .zip(conditions.into_iter())
+            .zip(constraints.into_iter())
+        {
+            // constrain the next step.
+            self.constrain_next_step(next_state, Some(condition), constraint);
+        }
+    }
+
+    /// This function needs to be used with extra precaution. You need to make
+    /// sure the layout is the same as the gadget for `next_step_state`.
+    /// `query_cell` will return cells in the next step in the `constraint`
+    /// function.
+    pub(crate) fn constrain_next_step<R>(
+        &mut self,
+        next_step_state: ExecutionState,
+        condition: Option<Expression<F>>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        assert!(!self.in_next_step, "Already in the next step");
+        self.in_next_step = true;
+        let ret = match condition {
+            None => {
+                self.require_next_state(next_step_state);
+                constraint(self)
+            }
+            Some(cond) => self.condition(cond, |cb| {
+                cb.require_next_state(next_step_state);
+                constraint(cb)
+            }),
+        };
+        self.in_next_step = false;
+        ret
+    }
+
     /// TODO: Doc
     fn constraint_at_location<R>(
         &mut self,
@@ -1582,17 +1694,18 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.constraints_location = ConstraintLocation::Step;
         ret
     }
-    /// TODO: Doc
+
+    /// register constraints to be applied `step_first` selector
     pub(crate) fn step_first<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::StepFirst, constraint)
     }
 
-    /// TODO: Doc
+    /// register constraints to be applied on step other than first step
     pub(crate) fn not_step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
         self.constraint_at_location(ConstraintLocation::NotStepLast, constraint)
     }
 
-    /// TODO: Doc
+    /// register constraints to be applied on respective selector later
     fn push_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         match self.constraints_location {
             ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
@@ -1604,6 +1717,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
+        debug_assert_eq!(
+            self.constraints_location,
+            ConstraintLocation::Step,
+            "lookup do not support conditional on constraint location other than `ConstraintLocation::Step`"
+        );
         let lookup = match self.condition_expr_opt() {
             Some(condition) => lookup.conditional(condition),
             None => lookup,

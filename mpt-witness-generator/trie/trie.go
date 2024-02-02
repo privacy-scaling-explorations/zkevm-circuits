@@ -335,10 +335,6 @@ func (t *Trie) insert(n Node, prefix, key []byte, value Node) (bool, Node, error
 		}
 		// Otherwise, replace it with a short node leading up to the branch.
 		// (this is extension node)
-		if matchlen > 2 {
-			fmt.Println(matchlen)
-			fmt.Println("====")
-		}
 		return true, &ShortNode{key[:matchlen], branch, t.newFlag()}, nil
 
 	case *FullNode:

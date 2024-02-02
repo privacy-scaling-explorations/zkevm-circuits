@@ -21,7 +21,7 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
+    use std::{env::var, ops::Deref};
     use zkevm_circuits::mpt_circuit::{load_proof, witness_row::Node, MPTCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -34,7 +34,7 @@ mod tests {
         const BENCHMARK_ID: &str = "MPT Circuit";
 
         let degree: u32 = var("DEGREE")
-            .expect("No DEGREE env var was provided")
+            .unwrap_or("15".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
@@ -44,14 +44,16 @@ mod tests {
         let mut keccak_data = vec![];
         for node in nodes.iter() {
             for k in node.keccak_data.iter() {
-                keccak_data.push(k.clone());
+                keccak_data.push(k.deref().clone());
             }
         }
 
+        let max_nodes = 720;
         let circuit = MPTCircuit::<Fr> {
             nodes,
             keccak_data,
             degree: degree as usize,
+            max_nodes,
             disable_preimage_check: false,
             _marker: PhantomData,
         };

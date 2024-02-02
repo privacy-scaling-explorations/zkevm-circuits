@@ -139,6 +139,7 @@
 //! let geth_trace = GethExecTrace {
 //!     return_value: "".to_string(),
 //!     gas: block.eth_block.transactions[0].gas.as_u64(),
+//!     invalid: false,
 //!     failed: false,
 //!     struct_logs: geth_steps,
 //! };
@@ -221,6 +222,11 @@
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 #![feature(type_changing_struct_update)]
+
+#[cfg(all(target_arch = "wasm32", feature = "notwasm"))]
+compile_error!("bus-mapping: notwasm feature must be disabled when target arch is wasm");
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "notwasm")))]
+compile_error!("bus-mapping: notwasm feature must be enabled when target arch is not wasm");
 
 extern crate alloc;
 extern crate core;

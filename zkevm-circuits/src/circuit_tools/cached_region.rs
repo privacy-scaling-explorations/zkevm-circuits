@@ -65,7 +65,8 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         cb: &ConstraintBuilder<F, C>,
         challenges: &S,
     ) -> Result<(), Error> {
-        for (offset, region_id) in self.regions.clone() {
+        for n in 0..self.regions.len() {
+            let (offset, region_id) = self.regions[n];
             for stored_expression in cb.get_stored_expressions(region_id).iter() {
                 stored_expression.assign(self, challenges, offset)?;
             }
@@ -76,14 +77,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     pub(crate) fn annotate_columns<C: CellType>(&mut self, cell_columns: &[CellColumn<F, C>]) {
         for c in cell_columns {
             self.region.name_column(
-                || {
-                    format!(
-                        "{:?} {:?}: {:?} queried",
-                        c.cell_type.clone(),
-                        c.index,
-                        c.height
-                    )
-                },
+                || format!("{:?} {:?}: {:?} queried", c.cell_type, c.index, c.height),
                 c.column,
             );
         }
@@ -106,7 +100,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         // Actually set the value
         let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // Note that the `value_field` in `AssignedCell` might be `Value::unknown` if
         // the column has different phase than current one, so we call to `to`
         // again here to cache the value.
         if res.is_ok() {
@@ -147,7 +141,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         // Actually set the value
         let res = self.region.assign_fixed(annotation, column, offset, &to);
         // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // Note that the `value_field` in `AssignedCell` might be `Value::unknown` if
         // the column has different phase than current one, so we call to `to`
         // again here to cache the value.
         if res.is_ok() {

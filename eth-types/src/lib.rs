@@ -446,6 +446,9 @@ pub struct GethExecTrace {
     pub gas: u64,
     /// True when the transaction has failed.
     pub failed: bool,
+    /// True when the tx could not execute
+    #[serde(default)]
+    pub invalid: bool,
     /// Return value of execution which is a hex encoded byte array
     #[serde(rename = "returnValue")]
     pub return_value: String,
@@ -561,6 +564,7 @@ mod tests {
             GethExecTrace {
                 gas: 26809,
                 failed: false,
+                invalid: false,
                 return_value: "".to_owned(),
                 struct_logs: vec![
                     GethExecStep {

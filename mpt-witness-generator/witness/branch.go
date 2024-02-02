@@ -25,6 +25,7 @@ func isBranch(proofEl []byte) bool {
 // S occupies the first 34 columns, C occupies the next 34 columns.
 // The branch children are positioned each in its own row.
 func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchRLPOffset int) {
+	branchNodeRLPLen := 2 // we have two positions for RLP meta data
 	rowInd := 1
 	colInd := branchNodeRLPLen - 1
 
@@ -65,7 +66,7 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 }
 
 func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd,
-	branchC16, branchC1 byte, isBranchSPlaceholder, isBranchCPlaceholder, isExtension, isSModExtension, isCModExtension bool) Node {
+	branchC16, branchC1 byte, isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
 	extensionNode := ExtensionNode{
 		ListRlpBytes: extListRlpBytes,
 	}
@@ -112,11 +113,10 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	}
 
 	extensionBranch := ExtensionBranchNode{
-		IsExtension:    isExtension,
-		IsModExtension: [2]bool{isSModExtension, isCModExtension},
-		IsPlaceholder:  [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
-		Extension:      extensionNode,
-		Branch:         branchNode,
+		IsExtension:   isExtension,
+		IsPlaceholder: [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
+		Extension:     extensionNode,
+		Branch:        branchNode,
 	}
 
 	values := make([][]byte, 17)
@@ -248,14 +248,14 @@ func addBranchAndPlaceholder(proof1, proof2,
 		Now we want to add a leaf at position n1 n2 n3 n4 n5 m1 where m1 != n6.
 		The adding algorithm walks through the trie, but it bumps into an extension node where
 		it should put this leaf. So a new extension node is added at position n1 n2 n3 n4 which only
-		has one nibble: n5. So at n1 n2 n3 n4 n5 we have a branch now. In this brach, at position m we
+		has one nibble: n5. So at n1 n2 n3 n4 n5 we have a branch now. In this branch, at position m we
 		have a leaf, while at position n6 we have another extension node with one extension nibble: n7.
 		At this position (n7) we have the branch from the original extension node.
 
 		When an extension node is inserted because of the added key, C proof will contain this new
 		extension node and the underlying branch. However, S proof will stop at the old extension node.
 		This old extension node is not part of the C proof, but we need to ensure that it is in the C trie.
-		We need to take into accout that in the C trie the old extension node has a shortened extension.
+		We need to take into account that in the C trie the old extension node has a shortened extension.
 
 		The problem is where to store the old extension node. Note that in the above code the new
 		extension node and the underlying branch rows are prepared. For example, when len2 > len1 we
@@ -282,15 +282,6 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 	// Note that isModifiedExtNode happens also when we have a branch instead of shortExtNode
 	isModifiedExtNode := !isBranch(longExtNode) && !isShorterProofLastLeaf
-	isSModifiedExtNode := false
-	isCModifiedExtNode := false
-	if isModifiedExtNode {
-		if len1 < len2 {
-			isSModifiedExtNode = true
-		} else {
-			isCModifiedExtNode = true
-		}
-	}
 
 	if len1 > len2 {
 		// We now get the first nibble of the leaf that was turned into branch.
@@ -300,7 +291,7 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 		node = prepareBranchNode(proof1[len1-2], proof1[len1-2], extNode, extNode, extListRlpBytes, extValues,
 			key[keyIndex+numberOfNibbles], driftedInd,
-			branchC16, branchC1, false, true, isExtension, isSModifiedExtNode, isCModifiedExtNode)
+			branchC16, branchC1, false, true, isExtension)
 
 		// We now get the first nibble of the leaf that was turned into branch.
 		// This first nibble presents the position of the leaf once it moved
@@ -313,7 +304,7 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 		node = prepareBranchNode(proof2[len2-2], proof2[len2-2], extNode, extNode, extListRlpBytes, extValues,
 			key[keyIndex+numberOfNibbles], driftedInd,
-			branchC16, branchC1, true, false, isExtension, isSModifiedExtNode, isCModifiedExtNode)
+			branchC16, branchC1, true, false, isExtension)
 	}
 
 	return isModifiedExtNode, isExtension, numberOfNibbles, branchC16, node

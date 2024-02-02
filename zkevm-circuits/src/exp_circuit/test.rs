@@ -24,7 +24,7 @@ fn exp_circuit_unusable_rows() {
 pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>, chunk: Chunk<F>) {
     let circuit = ExpCircuit::<F>::new(block.exp_events, chunk.fixed_param.max_exp_steps);
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-    prover.assert_satisfied_par()
+    prover.assert_satisfied()
 }
 
 fn gen_code_single(base: Word, exponent: Word) -> Bytecode {

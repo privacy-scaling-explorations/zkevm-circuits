@@ -55,6 +55,8 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 const TOTAL_CHUNKS: usize = 1;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
+/// MAX_WITHDRAWALS
+const MAX_WITHDRAWALS: usize = 4;
 /// MAX_CALLDATA
 const MAX_CALLDATA: usize = 512;
 /// MAX_RWS
@@ -74,6 +76,7 @@ const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     total_chunks: TOTAL_CHUNKS,
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
+    max_withdrawals: MAX_WITHDRAWALS,
     max_calldata: MAX_CALLDATA,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,
@@ -347,7 +350,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         self.test_variadic(&mock_prover);
 
         mock_prover
-            .verify_par()
+            .verify()
             .expect("mock prover verification failed");
     }
 
@@ -486,7 +489,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                         .unwrap();
                 self.test_root_variadic(&mock_prover);
                 mock_prover
-                    .verify_par()
+                    .verify()
                     .expect("mock prover verification failed");
             }
         } else {

@@ -11,14 +11,15 @@ use crate::{
     witness::Chunk,
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, ExpEvent, FixedCParams},
+    circuit_input_builder::{self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, Withdrawal},
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Address, Field, ToScalar, Word};
+use eth_types::{Address, Field, ToScalar, Word, H256};
 
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// [`Block`] is the struct used by all circuits, which contains blockwise
@@ -46,6 +47,8 @@ pub struct Block<F> {
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: FixedCParams,
+    /// Feature Config
+    pub feature_config: FeatureConfig,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
@@ -67,7 +70,7 @@ impl<F: Field> Block<F> {
                 println!("> Step {:?}", step.exec_state);
                 for rw_idx in 0..step.bus_mapping_instance.len() {
                     let rw = self.get_rws(step, rw_idx);
-                    let rw_str = if rw.is_write() { "READ" } else { "WRIT" };
+                    let rw_str = if rw.is_write() { "WRIT" } else { "READ" };
                     println!("  {} {} {:?}", rw.rw_counter(), rw_str, rw);
                 }
             }
@@ -77,6 +80,30 @@ impl<F: Field> Block<F> {
     /// Get a read-write record
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
+    }
+
+    /// Return the list of withdrawals of this block.
+    pub fn withdrawals(&self) -> Vec<Withdrawal> {
+        let eth_withdrawals = self.eth_block.withdrawals.clone().unwrap_or_default();
+        eth_withdrawals
+            .iter()
+            .map({
+                |w| {
+                    Withdrawal::new(
+                        w.index.as_u64(),
+                        w.validator_index.as_u64(),
+                        w.address,
+                        w.amount.as_u64(),
+                    )
+                    .unwrap()
+                }
+            })
+            .collect_vec()
+    }
+
+    /// Return the root of withdrawals in this block
+    pub fn withdrawals_root(&self) -> H256 {
+        self.eth_block.withdrawals_root.unwrap_or_default()
     }
 
     /// Obtains the expected Circuit degree needed in order to be able to test
@@ -118,7 +145,7 @@ impl<F: Field> Block<F> {
 
         let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
         log::debug!(
-            "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
+            "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
             num_rows_required_for_rw_table,
             num_rows_required_for_fixed_table,
@@ -152,6 +179,8 @@ pub struct BlockContext {
     pub history_hashes: Vec<Word>,
     /// The chain id
     pub chain_id: Word,
+    /// The withdrawal root
+    pub withdrawals_root: Word,
 }
 
 impl BlockContext {
@@ -201,6 +230,12 @@ impl BlockContext {
                     Value::known(word::Word::from(self.chain_id).lo()),
                     Value::known(word::Word::from(self.chain_id).hi()),
                 ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::WithdrawalRoot as u64)),
+                    Value::known(F::ZERO),
+                    Value::known(word::Word::from(self.withdrawals_root).lo()),
+                    Value::known(word::Word::from(self.withdrawals_root).hi()),
+                ],
             ],
             {
                 let len_history = self.history_hashes.len();
@@ -233,6 +268,7 @@ impl From<&circuit_input_builder::Block> for BlockContext {
             base_fee: block.base_fee,
             history_hashes: block.history_hashes.clone(),
             chain_id: block.chain_id,
+            withdrawals_root: block.withdrawals_root().as_fixed_bytes().into(),
         }
     }
 }
@@ -256,6 +292,7 @@ pub fn block_convert<F: Field>(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: builder.circuits_params,
+        feature_config: builder.feature_config,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
@@ -268,6 +305,7 @@ pub fn block_convert<F: Field>(
     // because max_txs and max_calldata are independent from Chunk
     let rpi_bytes = public_data.get_pi_bytes(
         block.circuits_params.max_txs,
+        block.circuits_params.max_withdrawals,
         block.circuits_params.max_calldata,
     );
     // PI Circuit

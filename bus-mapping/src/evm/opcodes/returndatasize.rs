@@ -24,7 +24,7 @@ impl Opcode for Returndatasize {
             state.call()?.call_id,
             CallContextField::LastCalleeReturnDataLength,
             value,
-        );
+        )?;
 
         state.stack_write(
             &mut exec_step,

@@ -686,3 +686,186 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         self.selectors[idx].expr()
     }
 }
+
+#[cfg(test)]
+mod test_util;
+
+#[cfg(test)]
+mod test {
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell, U64Cell};
+    use eth_types::Word;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
+
+    use super::{test_util::*, *};
+
+    #[derive(Clone)]
+    struct BufferReaderGadgetTestContainer<
+        F,
+        const MAX_BYTES: usize,
+        const ADDR_SIZE_IN_BYTES: usize,
+    > {
+        buffer_reader_gadget: BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>,
+        addr_start: U64Cell<F>,
+        addr_end: U64Cell<F>,
+        bytes: [Cell<F>; MAX_BYTES],
+    }
+
+    impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> MemoryGadgetContainer<F>
+        for BufferReaderGadgetTestContainer<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+    {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
+            let addr_start = cb.query_u64();
+            let addr_end = cb.query_u64();
+            let buffer_reader_gadget =
+                BufferReaderGadget::<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>::construct(
+                    cb,
+                    addr_start.expr(),
+                    addr_end.expr(),
+                );
+            let bytes = cb.query_bytes();
+            let bytes_expr: Vec<Expression<F>> = bytes
+                .iter()
+                .map(|e| e.expr())
+                .collect::<Vec<Expression<F>>>();
+            let buffer_reader_gadget_bytes_expr = (0..MAX_BYTES)
+                .map(|e| buffer_reader_gadget.byte(e))
+                .collect::<Vec<Expression<F>>>();
+            let buffer_reader_gadget_seletor = (0..MAX_BYTES)
+                .clone()
+                .map(|e| buffer_reader_gadget.read_flag(e))
+                .collect::<Vec<Expression<F>>>();
+
+            // test byte API
+            for (byte_expr, buffer_reader_gadget_byte_expr) in bytes_expr
+                .iter()
+                .zip(buffer_reader_gadget_bytes_expr.iter())
+            {
+                cb.require_equal(
+                    "every byte equal",
+                    byte_expr.expr(),
+                    buffer_reader_gadget_byte_expr.expr(),
+                );
+            }
+
+            // test read_flag API
+            cb.require_equal(
+                "selector length equal",
+                sum::expr(buffer_reader_gadget_seletor),
+                addr_end.expr() - addr_start.expr(),
+            );
+
+            BufferReaderGadgetTestContainer {
+                buffer_reader_gadget,
+                addr_start,
+                addr_end,
+                bytes,
+            }
+        }
+
+        fn assign_gadget_container(
+            &self,
+            witnesses: &[Word],
+            region: &mut CachedRegion<'_, '_, F>,
+        ) -> Result<(), Error> {
+            let offset = 0;
+            let addr_start =
+                u64::from_le_bytes(witnesses[0].to_le_bytes()[..8].try_into().unwrap());
+            let addr_end = u64::from_le_bytes(witnesses[1].to_le_bytes()[..8].try_into().unwrap());
+            let mut input_bytes: Vec<u8> = Vec::new();
+            input_bytes
+                .extend_from_slice(&witnesses[2].to_le_bytes()[0..required_bytes(witnesses[2])]);
+            self.addr_start
+                .assign(region, offset, Some(addr_start.to_le_bytes()))?;
+            self.addr_end
+                .assign(region, offset, Some(addr_end.to_le_bytes()))?;
+            self.bytes
+                .iter()
+                .zip(input_bytes.iter())
+                .map(|(byte, input_byte)| {
+                    byte.assign(region, offset, Value::known(F::from(*input_byte as u64)))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.buffer_reader_gadget.assign(
+                region,
+                offset,
+                addr_start,
+                addr_end,
+                &input_bytes[..],
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_buffer_reader_gadget_completness() {
+        // buffer len = data len
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(0),
+                Word::from(2),
+                Word::from(256),
+            ],
+            true,
+        );
+
+        // buffer len > data len
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(0),
+                Word::from(2),
+                Word::from(256),
+            ],
+            true,
+        );
+    }
+
+    #[test]
+    fn test_buffer_reader_gadget_soundness() {
+        // buffer len < data len
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(0),
+                Word::from(1),
+                Word::from(256),
+            ],
+            false,
+        );
+
+        // buffer len <= 0
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(1),
+                Word::from(0),
+                Word::from(256),
+            ],
+            false,
+        );
+
+        // empty buffer
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(0),
+                Word::from(0),
+                Word::from(256),
+            ],
+            false,
+        );
+
+        // MAX_BYTES < buffer size
+        try_test!(
+            BufferReaderGadgetTestContainer<Fr, 2, 10>,
+            vec![
+                Word::from(0),
+                Word::from(31),
+                Word::from(256),
+            ],
+            false,
+        );
+    }
+}

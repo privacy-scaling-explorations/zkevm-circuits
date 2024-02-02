@@ -1,5 +1,4 @@
 pub use crate::util::{
-    query_expression,
     word::{Word, WordExpr},
     Challenges, Expr,
 };
@@ -27,6 +26,8 @@ pub(crate) mod constraint_builder;
 pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
+pub(crate) mod precompile_gadget;
+pub(crate) mod tx;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
@@ -113,7 +114,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         // Actually set the value
         let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
-        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // Note that the `value_field` in `AssignedCell` might be `Value::unknown` if
         // the column has different phase than current one, so we call to `to`
         // again here to cache the value.
         if res.is_ok() {
@@ -448,15 +449,6 @@ pub(crate) fn is_precompiled(address: &Address) -> bool {
     address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
 }
 
-const BASE_128_BYTES: [u8; 32] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-/// convert address (h160) to single expression.
-pub fn address_word_to_expr<F: Field>(address: Word<Expression<F>>) -> Expression<F> {
-    address.lo() + address.hi() * Expression::Constant(F::from_repr(BASE_128_BYTES).unwrap())
-}
-
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
     rws: &'a RwMap,
@@ -473,9 +465,9 @@ impl<'a> StepRws<'a> {
             offset: 0,
         }
     }
-    /// Increment the step rw operation offset by `offset`.
-    pub(crate) fn offset_add(&mut self, offset: usize) {
-        self.offset = offset
+    /// Increment the step rw operation offset by `inc`.
+    pub(crate) fn offset_add(&mut self, inc: usize) {
+        self.offset += inc
     }
     /// Return the next rw operation from the step.
     pub(crate) fn next(&mut self) -> Rw {

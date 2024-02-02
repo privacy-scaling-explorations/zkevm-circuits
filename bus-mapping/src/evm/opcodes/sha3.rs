@@ -57,7 +57,7 @@ impl Opcode for Sha3 {
         let mut steps = Vec::with_capacity(size.as_usize());
         for (i, byte) in memory.iter().enumerate() {
             // Read step
-            state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
+            state.memory_read(&mut exec_step, (offset.as_usize() + i).into())?;
             steps.push((*byte, false));
         }
         state.block.sha3_inputs.push(memory);

@@ -390,8 +390,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 .collect();
             // Align the length of values and table
             assert!(lookup.table.len() >= values.len());
-            while values.len() < lookup.table.len() {
-                values.push(0.expr());
+            if values.len() < lookup.table.len() {
+                values.resize(lookup.table.len(), 0.expr());
             }
             meta.lookup_any(
                 Box::leak(lookup.description.clone().into_boxed_str()),

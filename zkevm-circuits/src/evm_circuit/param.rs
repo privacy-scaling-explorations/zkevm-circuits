@@ -1,6 +1,7 @@
 //! Constants and parameters for the EVM circuit
 use super::table::Table;
 use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
+use bus_mapping::circuit_input_builder::FeatureConfig;
 use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
@@ -8,7 +9,7 @@ use halo2_proofs::{
 use std::collections::HashMap;
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 132;
+pub(crate) const STEP_WIDTH: usize = 138;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 19;
 /// The height of the state of a step, used by gates that connect two
@@ -129,6 +130,7 @@ pub(crate) const N_BYTES_DIFFICULTY: usize = N_BYTES_WORD;
 pub(crate) const N_BYTES_BASE_FEE: usize = N_BYTES_WORD;
 pub(crate) const N_BYTES_CHAIN_ID: usize = N_BYTES_U64;
 pub(crate) const N_BYTES_PREV_HASH: usize = 256 * N_BYTES_WORD;
+pub(crate) const N_BYTES_WITHDRAWAL_ROOT: usize = N_BYTES_WORD;
 
 pub(crate) const N_BYTES_BLOCK: usize = N_BYTES_COINBASE
     + N_BYTES_GAS_LIMIT
@@ -137,7 +139,8 @@ pub(crate) const N_BYTES_BLOCK: usize = N_BYTES_COINBASE
     + N_BYTES_DIFFICULTY
     + N_BYTES_BASE_FEE
     + N_BYTES_CHAIN_ID
-    + N_BYTES_PREV_HASH;
+    + N_BYTES_PREV_HASH
+    + N_BYTES_WITHDRAWAL_ROOT;
 
 pub(crate) const N_BYTES_EXTRA_VALUE: usize = N_BYTES_WORD // block hash
     + N_BYTES_WORD // state root
@@ -165,13 +168,41 @@ pub(crate) const N_BYTES_TX: usize = N_BYTES_TX_NONCE
     + N_BYTES_TX_CALLDATA_GASCOST
     + N_BYTES_TX_TXSIGNHASH;
 
-lazy_static::lazy_static! {
-    // Step slot height in evm circuit
-    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
-}
-fn get_step_height_map() -> HashMap<ExecutionState, usize> {
-    let mut meta = ConstraintSystem::<Fr>::default();
-    let circuit = EvmCircuit::configure(&mut meta);
+pub(crate) const N_BYTES_WITHDRAWAL: usize = N_BYTES_U64 //id
+    + N_BYTES_U64 // validator id
+    + N_BYTES_ACCOUNT_ADDRESS // address
+    + N_BYTES_U64; // amount
 
+lazy_static::lazy_static! {
+    static ref INVALID_TX_CONFIG: FeatureConfig = FeatureConfig {
+        invalid_tx: true,
+        ..Default::default()
+    };
+    // Step slot height in evm circuit
+    // We enable the invalid_tx feature to get invalid tx's ExecutionState height
+    // We garentee the heights of other ExecutionStates remains unchanged in the following test
+    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map(*INVALID_TX_CONFIG);
+}
+fn get_step_height_map(feature_config: FeatureConfig) -> HashMap<ExecutionState, usize> {
+    let mut meta = ConstraintSystem::<Fr>::default();
+    let circuit = EvmCircuit::configure_with_params(&mut meta, feature_config);
     circuit.0.execution.height_map
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_step_height_map() {
+        let mainnet_config = FeatureConfig::default();
+        let map_mainnet = get_step_height_map(mainnet_config);
+
+        let map_invalid_tx = {
+            let mut map = EXECUTION_STATE_HEIGHT_MAP.clone();
+            map.remove(&ExecutionState::InvalidTx);
+            map
+        };
+        // We show that the invalid tx feature affects none of the other execution state heights
+        assert_eq!(map_invalid_tx, map_mainnet);
+    }
 }

@@ -28,6 +28,7 @@ mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
 mod gasprice;
+mod invalid_tx;
 mod logs;
 mod mload;
 mod mstore;
@@ -52,15 +53,19 @@ mod error_oog_call;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_precompile;
 mod error_oog_sload_sstore;
+mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
 
+mod precompiles;
+
 #[cfg(test)]
 mod memory_expansion_test;
 
-use self::sha3::Sha3;
+use self::{invalid_tx::InvalidTx, sha3::Sha3};
 use address::Address;
 use balance::Balance;
 use begin_end_tx::BeginEndTx;
@@ -104,6 +109,9 @@ use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
+
+#[cfg(feature = "test")]
+pub use crate::precompile::PrecompileCallArgs;
 
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
@@ -393,7 +401,7 @@ pub fn gen_associated_ops(
                 need_restore = false;
             }
 
-            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
+            state.handle_return(&mut [&mut exec_step], geth_steps, need_restore)?;
             return Ok(vec![exec_step]);
         }
     }
@@ -408,6 +416,7 @@ pub fn gen_associated_steps(
 ) -> Result<ExecStep, Error> {
     let fn_gen_associated_steps = match execution_step {
         ExecState::BeginTx | ExecState::EndTx => BeginEndTx::gen_associated_steps,
+        ExecState::InvalidTx => InvalidTx::gen_associated_steps,
         _ => {
             unreachable!()
         }
@@ -501,6 +510,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(&mut exec_step, geth_steps, !state.call()?.is_root)?;
+    state.handle_return(&mut [&mut exec_step], geth_steps, !state.call()?.is_root)?;
     Ok(vec![exec_step])
 }

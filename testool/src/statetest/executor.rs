@@ -7,7 +7,7 @@ use bus_mapping::{
 use eth_types::{geth_types, Address, Bytes, Error, GethExecTrace, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest, Withdrawal},
 };
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
@@ -16,8 +16,13 @@ use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
     super_circuit::SuperCircuit,
+<<<<<<< HEAD
     test_util::CircuitTestBuilder,
     witness::{Block, Chunk},
+=======
+    test_util::{CircuitTestBuilder, CircuitTestError},
+    witness::Block,
+>>>>>>> main
 };
 
 #[derive(PartialEq, Eq, Error, Debug)]
@@ -283,6 +288,19 @@ pub fn run_test(
         })
         .collect();
 
+    let withdrawals = trace_config
+        .withdrawals
+        .into_iter()
+        .map(|wd| {
+            Some(Withdrawal {
+                index: wd.id.into(),
+                validator_index: wd.validator_id.into(),
+                address: wd.address,
+                amount: wd.amount.into(),
+            })
+        })
+        .collect();
+
     let eth_block = eth_types::Block {
         author: Some(trace_config.block_constants.coinbase),
         timestamp: trace_config.block_constants.timestamp,
@@ -290,6 +308,7 @@ pub fn run_test(
         difficulty: trace_config.block_constants.difficulty,
         gas_limit: trace_config.block_constants.gas_limit,
         base_fee_per_gas: Some(trace_config.block_constants.base_fee),
+        withdrawals,
         transactions,
         ..eth_types::Block::default()
     };
@@ -316,6 +335,7 @@ pub fn run_test(
         let circuits_params = FixedCParams {
             total_chunks: 1,
             max_txs: 1,
+            max_withdrawals: 1,
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
@@ -336,13 +356,31 @@ pub fn run_test(
         let chunk: Chunk<Fr> =
             zkevm_circuits::evm_circuit::witness::chunk_convert(&builder, 0).unwrap();
 
+<<<<<<< HEAD
         CircuitTestBuilder::<1, 1>::new_from_block(block, chunk).run();
+=======
+        CircuitTestBuilder::<1, 1>::new_from_block(block)
+            .run_with_result()
+            .map_err(|err| match err {
+                CircuitTestError::VerificationFailed { reasons, .. } => {
+                    StateTestError::CircuitUnsatisfied {
+                        num_failure: reasons.len(),
+                        first_failure: reasons[0].to_string(),
+                    }
+                }
+                err => StateTestError::Exception {
+                    expected: false,
+                    found: err.to_string(),
+                },
+            })?;
+>>>>>>> main
     } else {
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
             total_chunks: 1,
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
@@ -357,7 +395,7 @@ pub fn run_test(
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover
-            .verify_par()
+            .verify()
             .map_err(|err| StateTestError::CircuitUnsatisfied {
                 num_failure: err.len(),
                 first_failure: err[0].to_string(),

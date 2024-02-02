@@ -37,7 +37,7 @@ mod tests {
         const BENCHMARK_ID: &str = "Super Circuit";
 
         let degree: u32 = var("DEGREE")
-            .expect("No DEGREE env var was provided")
+            .unwrap_or("19".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
@@ -82,6 +82,7 @@ mod tests {
         let circuits_params = FixedCParams {
             total_chunks: 1,
             max_txs: 1,
+            max_withdrawals: 1,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,

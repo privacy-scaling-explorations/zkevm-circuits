@@ -40,7 +40,7 @@ mod tests {
         const MAX_CALLDATA: usize = 1024;
 
         let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "19".to_string())
+            .unwrap_or("19".to_string())
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 

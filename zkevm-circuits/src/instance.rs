@@ -1,5 +1,6 @@
 //! The instance definition.
 
+use bus_mapping::circuit_input_builder::Withdrawal;
 use eth_types::{geth_types::BlockConstants, BigEndianHash, Field, Keccak};
 use std::{iter, ops::Deref};
 
@@ -28,6 +29,8 @@ pub struct BlockValues {
     pub base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
     /// chain_id
     pub chain_id: u64,
+    /// withdrawals_root
+    pub withdrawals_root: Word,
     /// history_hashes
     pub history_hashes: Vec<H256>,
 }
@@ -68,7 +71,7 @@ pub struct ExtraValues {
     pub prev_state_root: H256,
 }
 
-/// PublicData contains all the values that the PiCircuit recieves as input
+/// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
@@ -78,6 +81,8 @@ pub struct PublicData {
     pub history_hashes: Vec<Word>,
     /// Block Transactions
     pub transactions: Vec<Transaction>,
+    /// Block Withdrawals
+    pub withdrawals: Vec<Withdrawal>,
     /// Block State Root
     pub state_root: H256,
     /// Previous block root
@@ -86,6 +91,8 @@ pub struct PublicData {
     pub block_constants: BlockConstants,
     /// Block Hash
     pub block_hash: Option<H256>,
+    /// withdrawals_root
+    pub withdrawals_root: H256,
 }
 
 impl Default for PublicData {
@@ -94,10 +101,12 @@ impl Default for PublicData {
             chain_id: Word::default(),
             history_hashes: vec![],
             transactions: vec![],
+            withdrawals: vec![],
             state_root: H256::zero(),
             prev_state_root: H256::zero(),
             block_constants: BlockConstants::default(),
             block_hash: None,
+            withdrawals_root: H256::zero(),
         }
     }
 }
@@ -121,6 +130,7 @@ impl PublicData {
             difficulty: self.block_constants.difficulty,
             base_fee: self.block_constants.base_fee,
             chain_id: self.chain_id.as_u64(),
+            withdrawals_root: self.withdrawals_root.as_fixed_bytes().into(),
             history_hashes,
         }
     }
@@ -168,7 +178,12 @@ impl PublicData {
     }
 
     /// get the serialized public data bytes
-    pub fn get_pi_bytes(&self, max_txs: usize, max_calldata: usize) -> Vec<u8> {
+    pub fn get_pi_bytes(
+        &self,
+        max_txs: usize,
+        max_withdrawals: usize,
+        max_calldata: usize,
+    ) -> Vec<u8> {
         // Assign block table
         let block_values = self.get_block_table_values();
         let result = iter::empty()
@@ -180,6 +195,7 @@ impl PublicData {
             .chain(block_values.difficulty.to_be_bytes()) // difficulty
             .chain(block_values.base_fee.to_be_bytes()) // base_fee
             .chain(block_values.chain_id.to_be_bytes()) // chain_id
+            .chain(block_values.withdrawals_root.to_be_bytes()) // withdrawals root
             .chain(
                 block_values
                     .history_hashes
@@ -248,17 +264,34 @@ impl PublicData {
         let calldata_chain = iter::empty()
             .chain(all_calldata)
             .chain((0..max_calldata - calldata_count).map(|_| 0u8));
-        result.chain(calldata_chain).collect_vec()
+        let result = result.chain(calldata_chain);
+
+        // serialize withdrawals
+        let wd_bytes_fn = |wd: Withdrawal| {
+            iter::empty()
+                .chain(wd.id.to_be_bytes()) // id
+                .chain(wd.validator_id.to_be_bytes()) // validator_id
+                .chain(wd.address.as_fixed_bytes().to_vec()) // address
+                .chain(wd.amount.to_be_bytes()) // amount
+        };
+        let wd_defaults = Withdrawal::default();
+        let all_wd_bytes = iter::empty()
+            .chain(self.withdrawals.clone())
+            .chain((0..(max_withdrawals - self.withdrawals.len())).map(|_| wd_defaults))
+            .flat_map(wd_bytes_fn);
+
+        result.chain(all_wd_bytes).collect_vec()
     }
 
     /// generate public data from validator perspective
     pub fn get_rpi_digest_word<F: Field>(
         &self,
         max_txs: usize,
+        max_withdrawals: usize,
         max_calldata: usize,
     ) -> word::Word<F> {
         let mut keccak = Keccak::default();
-        keccak.update(&self.get_pi_bytes(max_txs, max_calldata));
+        keccak.update(&self.get_pi_bytes(max_txs, max_withdrawals, max_calldata));
         let digest = keccak.digest();
         word::Word::from(Word::from_big_endian(&digest))
     }
@@ -270,6 +303,7 @@ pub fn public_data_convert<F: Field>(block: &Block<F>) -> PublicData {
         chain_id: block.context.chain_id,
         history_hashes: block.context.history_hashes.clone(),
         transactions: block.txs.iter().map(|tx| tx.deref().clone()).collect_vec(),
+        withdrawals: block.withdrawals(),
         state_root: block.eth_block.state_root,
         prev_state_root: H256::from_uint(&block.prev_state_root),
         block_hash: block.eth_block.hash,
@@ -281,5 +315,6 @@ pub fn public_data_convert<F: Field>(block: &Block<F>) -> PublicData {
             gas_limit: block.context.gas_limit.into(),
             base_fee: block.context.base_fee,
         },
+        withdrawals_root: block.withdrawals_root(),
     }
 }

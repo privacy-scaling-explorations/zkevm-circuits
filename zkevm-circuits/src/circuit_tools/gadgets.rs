@@ -25,10 +25,7 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct<C: CellType>(
-        cb: &mut ConstraintBuilder<F, C>,
-        value: Expression<F>,
-    ) -> Self {
+    pub fn construct<C: CellType>(cb: &mut ConstraintBuilder<F, C>, value: Expression<F>) -> Self {
         circuit!([meta, cb], {
             let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 

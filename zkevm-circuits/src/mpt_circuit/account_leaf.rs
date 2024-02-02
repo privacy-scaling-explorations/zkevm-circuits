@@ -7,6 +7,7 @@ use halo2_proofs::{
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
+    mod_extension::ModExtensionGadget,
     rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
 };
@@ -50,6 +51,8 @@ pub(crate) struct AccountLeafConfig<F> {
     is_balance_mod: IsEqualGadget<F>,
     is_storage_mod: IsEqualGadget<F>,
     is_codehash_mod: IsEqualGadget<F>,
+    is_mod_extension: [Cell<F>; 2],
+    mod_extension: ModExtensionGadget<F>,
 }
 
 impl<F: Field> AccountLeafConfig<F> {
@@ -135,118 +138,125 @@ impl<F: Field> AccountLeafConfig<F> {
             );
             let key_item = ctx.rlp_item(meta, cb, AccountRowType::Key as usize, RlpItemType::Hash);
 
+            for is_s in [true, false] {
+                config.is_mod_extension[is_s.idx()] = cb.query_bool();
+            }
+
             config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
             // Don't allow an account node to follow an account node
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut nonce = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut balance = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut storage = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
-            let mut codehash = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut nonce = vec![Word::zero(); 2];
+            let mut balance = vec![Word::zero(); 2];
+            let mut storage = vec![Word::zero(); 2];
+            let mut codehash = vec![Word::zero(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
+
+            let parent_data = &mut config.parent_data;
+            parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+
+            let key_data = &mut config.key_data;
+            key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
+            key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
+
             for is_s in [true, false] {
-                // Key data
-                let key_data = &mut config.key_data[is_s.idx()];
-                *key_data = KeyData::load(cb, &mut ctx.memory[key_memory(is_s)], 0.expr());
+                ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
+                    // Placeholder leaf checks
+                    config.is_placeholder_leaf[is_s.idx()] =
+                        IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
 
-                // Parent data
-                let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data = ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
+                    // Calculate the key RLC
+                    let rlp_key = &mut config.rlp_key[is_s.idx()];
+                    *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
 
-                // Placeholder leaf checks
-                config.is_placeholder_leaf[is_s.idx()] =
-                    IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
-
-                // Calculate the key RLC
-                let rlp_key = &mut config.rlp_key[is_s.idx()];
-                *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
-
-                let nonce_rlp_rlc;
-                let balance_rlp_rlc;
-                let storage_rlp_rlc;
-                let codehash_rlp_rlc;
-                (nonce[is_s.idx()], nonce_rlp_rlc) = (
-                    nonce_items[is_s.idx()].word(),
-                    nonce_items[is_s.idx()].rlc_chain_data(),
-                );
-                (balance[is_s.idx()], balance_rlp_rlc) = (
-                    balance_items[is_s.idx()].word(),
-                    balance_items[is_s.idx()].rlc_chain_data(),
-                );
-                (storage[is_s.idx()], storage_rlp_rlc) = (
-                    storage_items[is_s.idx()].word(),
-                    storage_items[is_s.idx()].rlc_chain_data(),
-                );
-                (codehash[is_s.idx()], codehash_rlp_rlc) = (
-                    codehash_items[is_s.idx()].word(),
-                    codehash_items[is_s.idx()].rlc_chain_data(),
-                );
-
-                // Calculate the leaf RLC
-                let keccak_r = &cb.keccak_r;
-                let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
-                let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
-                leaf_no_key_rlc[is_s.idx()] = value_rlp_bytes
-                    .rlc_rev(keccak_r)
-                    .rlc_chain_rev((
-                        value_list_rlp_bytes.rlc_rev(keccak_r),
-                        pow::expr(keccak_r.expr(), 2),
-                    ))
-                    .rlc_chain_rev(nonce_rlp_rlc.clone())
-                    .rlc_chain_rev(balance_rlp_rlc.clone())
-                    .rlc_chain_rev(storage_rlp_rlc.clone())
-                    .rlc_chain_rev(codehash_rlp_rlc.clone());
-                leaf_no_key_rlc_mult[is_s.idx()] = pow::expr(keccak_r.expr(), 4)
-                    * nonce_rlp_rlc.1
-                    * balance_rlp_rlc.1
-                    * storage_rlp_rlc.1
-                    * codehash_rlp_rlc.1;
-                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((
-                    leaf_no_key_rlc[is_s.idx()].expr(),
-                    leaf_no_key_rlc_mult[is_s.idx()].expr(),
-                ));
-
-                // Key
-                key_rlc[is_s.idx()] = key_data.rlc.expr()
-                    + rlp_key.key.expr(
-                        cb,
-                        rlp_key.key_value.clone(),
-                        key_data.mult.expr(),
-                        key_data.is_odd.expr(),
-                        &cb.key_r.expr(),
+                    let nonce_rlp_rlc;
+                    let balance_rlp_rlc;
+                    let storage_rlp_rlc;
+                    let codehash_rlp_rlc;
+                    (nonce[is_s.idx()], nonce_rlp_rlc) = (
+                        nonce_items[is_s.idx()].word(),
+                        nonce_items[is_s.idx()].rlc_chain_data(),
                     );
-                // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
-                let num_nibbles =
-                    num_nibbles::expr(rlp_key.key_value.len(), key_data.is_odd.expr());
-                require!(key_data.num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+                    (balance[is_s.idx()], balance_rlp_rlc) = (
+                        balance_items[is_s.idx()].word(),
+                        balance_items[is_s.idx()].rlc_chain_data(),
+                    );
+                    (storage[is_s.idx()], storage_rlp_rlc) = (
+                        storage_items[is_s.idx()].word(),
+                        storage_items[is_s.idx()].rlc_chain_data(),
+                    );
+                    (codehash[is_s.idx()], codehash_rlp_rlc) = (
+                        codehash_items[is_s.idx()].word(),
+                        codehash_items[is_s.idx()].rlc_chain_data(),
+                    );
 
-                // Check if the account is in its parent.
-                // Check is skipped for placeholder leaves which are dummy leaves
-                ifx! {not!(and::expr(&[not!(parent_data.is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
-                    let hash = parent_data.hash.expr();
-                    require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
-                }}
+                    // Calculate the leaf RLC
+                    let keccak_r = &cb.keccak_r;
+                    let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
+                    let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
+                    leaf_no_key_rlc[is_s.idx()] = value_rlp_bytes
+                        .rlc_rev(keccak_r)
+                        .rlc_chain_rev((
+                            value_list_rlp_bytes.rlc_rev(keccak_r),
+                            pow::expr(keccak_r.expr(), 2),
+                        ))
+                        .rlc_chain_rev(nonce_rlp_rlc.clone())
+                        .rlc_chain_rev(balance_rlp_rlc.clone())
+                        .rlc_chain_rev(storage_rlp_rlc.clone())
+                        .rlc_chain_rev(codehash_rlp_rlc.clone());
+                    leaf_no_key_rlc_mult[is_s.idx()] = pow::expr(keccak_r.expr(), 4)
+                        * nonce_rlp_rlc.1
+                        * balance_rlp_rlc.1
+                        * storage_rlp_rlc.1
+                        * codehash_rlp_rlc.1;
+                    let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((
+                        leaf_no_key_rlc[is_s.idx()].expr(),
+                        leaf_no_key_rlc_mult[is_s.idx()].expr(),
+                    ));
 
-                // Check the RLP encoding consistency.
-                // RLP encoding: account = [key, "[nonce, balance, storage, codehash]"]
-                // We always store between 55 and 256 bytes of data in the values list.
-                require!(value_rlp_bytes[0] => RLP_LONG + 1);
-                // The RLP encoded list always has 2 RLP bytes.
-                require!(value_rlp_bytes[1] => value_list_rlp_bytes[1].expr() + 2.expr());
-                // The first RLP byte of the list is always RLP_LIST_LONG + 1.
-                require!(value_list_rlp_bytes[0] => RLP_LIST_LONG + 1);
-                // The length of the list is `#(nonce) + #(balance) + 2 * (1 + #(hash))`.
-                require!(value_list_rlp_bytes[1] => nonce_items[is_s.idx()].num_bytes() + balance_items[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
-                // Now check that the the key and value list length matches the account length.
-                // The RLP encoded string always has 2 RLP bytes.
-                value_list_num_bytes[is_s.idx()] = value_rlp_bytes[1].expr() + 2.expr();
+                    // Key
+                    key_rlc[is_s.idx()] = key_data[is_s.idx()].rlc.expr()
+                        + rlp_key.key.expr(
+                            cb,
+                            rlp_key.key_value.clone(),
+                            key_data[is_s.idx()].mult.expr(),
+                            key_data[is_s.idx()].is_odd.expr(),
+                            &cb.key_r.expr(),
+                        );
+                    // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
+                    let num_nibbles =
+                        num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
+                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
 
-                // Account length needs to equal all key bytes and all values list bytes.
-                require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes[is_s.idx()].expr());
+                    // Check if the account is in its parent.
+                    // Check is skipped for placeholder leaves which are dummy leaves
+                    ifx! {not!(and::expr(&[not!(parent_data[is_s.idx()].is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
+                        let hash = parent_data[is_s.idx()].hash.expr();
+                        require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                    }}
+
+                    // Check the RLP encoding consistency.
+                    // RLP encoding: account = [key, "[nonce, balance, storage, codehash]"]
+                    // We always store between 55 and 256 bytes of data in the values list.
+                    require!(value_rlp_bytes[0] => RLP_LONG + 1);
+                    // The RLP encoded list always has 2 RLP bytes.
+                    require!(value_rlp_bytes[1] => value_list_rlp_bytes[1].expr() + 2.expr());
+                    // The first RLP byte of the list is always RLP_LIST_LONG + 1.
+                    require!(value_list_rlp_bytes[0] => RLP_LIST_LONG + 1);
+                    // The length of the list is `#(nonce) + #(balance) + 2 * (1 + #(hash))`.
+                    require!(value_list_rlp_bytes[1] => nonce_items[is_s.idx()].num_bytes() + balance_items[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
+                    // Now check that the the key and value list length matches the account length.
+                    // The RLP encoded string always has 2 RLP bytes.
+                    value_list_num_bytes[is_s.idx()] = value_rlp_bytes[1].expr() + 2.expr();
+
+                    // Account length needs to equal all key bytes and all values list bytes.
+                    require!(config.rlp_key[is_s.idx()].rlp_list.len() => config.rlp_key[is_s.idx()].key_value.num_bytes() + value_list_num_bytes[is_s.idx()].expr());
+                }};
 
                 // Key done, set the starting values
                 KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
@@ -261,6 +271,17 @@ impl<F: Field> AccountLeafConfig<F> {
                     storage_items[is_s.idx()].word(),
                 );
             }
+
+            ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
+                config.mod_extension = ModExtensionGadget::configure(
+                    meta,
+                    cb,
+                    ctx.clone(),
+                    parent_data,
+                    key_data,
+                );
+            }};
+
             // Proof types
             config.is_non_existing_account_proof = IsEqualGadget::construct(
                 &mut cb.base,
@@ -303,6 +324,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &leaf_no_key_rlc,
                 &leaf_no_key_rlc_mult,
                 &drifted_bytes,
+                &config.is_mod_extension,
                 &cb.key_r.expr(),
             );
 
@@ -328,8 +350,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 [
                     config.main_data.proof_type.expr(),
                     true.expr(),
-                    address_item.word().lo()
-                        + address_item.word().hi() * pow::value::<F>(256.scalar(), 16),
+                    address_item.word().compress(),
                     config.main_data.new_root.lo().expr(),
                     config.main_data.new_root.hi().expr(),
                     config.main_data.old_root.lo().expr(),
@@ -351,22 +372,25 @@ impl<F: Field> AccountLeafConfig<F> {
                     config.parent_data[false.idx()].is_placeholder.expr()
                 ]) => true);
             } elsex {
-                // Check that there is only one modification (except when the account is being deleted).
-                // Nonce needs to remain the same when not modifying the nonce
-                ifx!{not!(config.is_nonce_mod) => {
-                    require!(nonce[false.idx()] => nonce[true.idx()]);
-                }}
-                // Balance needs to remain the same when not modifying the balance
-                ifx!{not!(config.is_balance_mod) => {
-                    require!(balance[false.idx()] => balance[true.idx()]);
-                }}
-                // Storage root needs to remain the same when not modifying the storage root
-                ifx!{not!(config.is_storage_mod) => {
-                    require!(storage[false.idx()] => storage[true.idx()]);
-                }}
-                // Codehash root needs to remain the same when not modifying the codehash
-                ifx!{not!(config.is_codehash_mod) => {
-                    require!(codehash[false.idx()] => codehash[true.idx()]);
+                ifx! {and::expr(&[not!(config.parent_data[true.idx()].is_placeholder), not!(config.parent_data[false.idx()].is_placeholder)]) => {
+                    // Check that there is only one modification, except when the account is being deleted or
+                    // the parent branch is a placeholder (meaning the account leafs in S are C are different).
+                    // Nonce needs to remain the same when not modifying the nonce
+                    ifx!{not!(config.is_nonce_mod) => {
+                        require!(nonce[false.idx()] => nonce[true.idx()]);
+                    }}
+                    // Balance needs to remain the same when not modifying the balance
+                    ifx!{not!(config.is_balance_mod) => {
+                        require!(balance[false.idx()] => balance[true.idx()]);
+                    }}
+                    // Storage root needs to remain the same when not modifying the storage root
+                    ifx!{not!(config.is_storage_mod) => {
+                        require!(storage[false.idx()] => storage[true.idx()]);
+                    }}
+                    // Codehash root needs to remain the same when not modifying the codehash
+                    ifx!{not!(config.is_codehash_mod) => {
+                        require!(codehash[false.idx()] => codehash[true.idx()]);
+                    }}
                 }}
             }}
             ifx! {config.is_non_existing_account_proof => {
@@ -399,21 +423,33 @@ impl<F: Field> AccountLeafConfig<F> {
                     require!((1.expr(), address_item.bytes_le()[1..21].rlc(&cb.keccak_r), 20.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
-            let to_hi = Expression::<F>::Constant(pow::value::<F>(256.scalar(), 16));
-            let lo = address_item.word().lo();
-            let hi = address_item.word().hi() * to_hi;
-            let address = lo + hi;
-            ctx.mpt_table.constrain(
-                meta,
-                &mut cb.base,
-                address,
-                proof_type,
-                Word::<Expression<F>>::new([0.expr(), 0.expr()]),
-                config.main_data.new_root.expr(),
-                config.main_data.old_root.expr(),
-                Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
-                Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
-            );
+            let address = address_item.word().compress();
+
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    address.clone(),
+                    proof_type.clone(),
+                    Word::zero(),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
+                    Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
+                );
+            } elsex {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    address,
+                    proof_type,
+                    Word::zero(),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::zero(),
+                    Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
+                );
+            }};
         });
 
         config
@@ -462,13 +498,19 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut nonce = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
-        let mut balance = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
-        let mut storage = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
-        let mut codehash = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
+        let mut nonce = vec![Word::zero_f(); 2];
+        let mut balance = vec![Word::zero_f(); 2];
+        let mut storage = vec![Word::zero_f(); 2];
+        let mut codehash = vec![Word::zero_f(); 2];
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
+            self.is_mod_extension[is_s.idx()].assign(
+                region,
+                offset,
+                account.is_mod_extension[is_s.idx()].scalar(),
+            )?;
+
             for (cell, byte) in self.value_rlp_bytes[is_s.idx()]
                 .iter()
                 .zip(account.value_rlp_bytes[is_s.idx()].iter())
@@ -608,16 +650,13 @@ impl<F: Field> AccountLeafConfig<F> {
         )?;
 
         // Anything following this node is below the account
-        let lo = address_item.word::<F>().lo();
-        let hi: F = address_item.word::<F>().hi() * pow::value::<F>(256.scalar(), 16);
-        let address = lo + hi;
         MainData::witness_store(
             region,
             offset,
             &mut memory[main_memory()],
             main_data.proof_type,
             true,
-            address,
+            address_item.word().compress_f(),
             main_data.new_root,
             main_data.old_root,
         )?;
@@ -632,22 +671,26 @@ impl<F: Field> AccountLeafConfig<F> {
         } else if is_codehash_mod {
             (MPTProofType::CodeHashChanged, codehash)
         } else if is_account_delete_mod {
-            (
-                MPTProofType::AccountDestructed,
-                vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
-            )
+            (MPTProofType::AccountDestructed, vec![Word::zero_f(); 2])
         } else if is_non_existing_proof {
-            (
-                MPTProofType::AccountDoesNotExist,
-                vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
-            )
+            (MPTProofType::AccountDoesNotExist, vec![Word::zero_f(); 2])
         } else {
-            (
-                MPTProofType::Disabled,
-                vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2],
-            )
+            (MPTProofType::Disabled, vec![Word::zero_f(); 2])
         };
 
+        if account.is_mod_extension[0] || account.is_mod_extension[1] {
+            let mod_list_rlp_bytes: [&[u8]; 2] = [
+                &account.mod_list_rlp_bytes[0],
+                &account.mod_list_rlp_bytes[1],
+            ];
+            self.mod_extension
+                .assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
+        }
+
+        let mut new_value = value[false.idx()];
+        if parent_data[false.idx()].is_placeholder {
+            new_value = word::Word::zero_f();
+        }
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
@@ -655,11 +698,11 @@ impl<F: Field> AccountLeafConfig<F> {
                 address: Value::known(from_bytes::value(
                     &account.address.iter().cloned().rev().collect::<Vec<_>>(),
                 )),
-                storage_key: word::Word::<F>::new([0.scalar(), 0.scalar()]).into_value(),
+                storage_key: word::Word::zero_f().into_value(),
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
-                new_value: value[false.idx()].into_value(),
+                new_value: new_value.into_value(),
                 old_value: value[true.idx()].into_value(),
             },
         )?;

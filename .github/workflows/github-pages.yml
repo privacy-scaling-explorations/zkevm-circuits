@@ -33,7 +33,7 @@ jobs:
       # Create a index.html outside of the subdirectories for requirement of GitHub pages
       - name: Generate Docs
         run: |
-          cargo doc --no-deps
+          cargo doc --no-deps --workspace --exclude integration-tests
           echo "<meta http-equiv=\"refresh\" content=\"0; url=zkevm_circuits\">" > target/doc/index.html
       # Archive the artifact with the correct permissions
       # https://github.com/actions/deploy-pages/issues/188

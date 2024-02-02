@@ -14,8 +14,10 @@ fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
     let params = SuperCircuitParams {
         max_txs: 1,
+        max_withdrawals: 5,
         max_calldata: 32,
         mock_randomness: Fr::from(0x100),
+        feature_config: FeatureConfig::default(),
     };
     SuperCircuit::configure_with_params(&mut cs, params);
     log::info!("super circuit degree: {}", cs.degree());
@@ -27,7 +29,7 @@ fn test_super_circuit(block: GethData, circuits_params: FixedCParams, mock_rando
     let (k, circuit, instance, _) =
         SuperCircuit::<Fr>::build(block, circuits_params, mock_randomness).unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify_par();
+    let res = prover.verify();
     if let Err(err) = res {
         error!("Verification failures: {:#?}", err);
         panic!("Failed verification");
@@ -131,6 +133,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
     let circuits_params = FixedCParams {
         total_chunks: 1,
         max_txs: 1,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
@@ -148,6 +151,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
     let circuits_params = FixedCParams {
         total_chunks: 1,
         max_txs: 2,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
@@ -165,6 +169,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
     let circuits_params = FixedCParams {
         total_chunks: 1,
         max_txs: 2,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,

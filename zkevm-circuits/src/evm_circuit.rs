@@ -28,7 +28,7 @@ use crate::{
     util::{chunk_ctx::ChunkContextConfig, Challenges, SubCircuit, SubCircuitConfig},
     witness::{Chunk, RwMap},
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::FeatureConfig, evm::OpcodeId};
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -86,6 +86,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u16_table: UXTable<16>,
     /// chunk_ctx config
     pub chunk_ctx_config: ChunkContextConfig<F>,
+    /// Feature config
+    pub feature_config: FeatureConfig,
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -106,6 +108,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             u8_table,
             u16_table,
             chunk_ctx_config,
+            feature_config,
         }: Self::ConfigArgs,
     ) -> Self {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
@@ -126,6 +129,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &chunk_ctx_config.chunk_ctx_table,
             &chunk_ctx_config.is_first_chunk,
             &chunk_ctx_config.is_last_chunk,
+            feature_config,
         ));
 
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {
@@ -442,7 +446,8 @@ pub(crate) mod cached {
         /// Circuit configuration.  These values are calculated just once.
         static ref CACHE: Cache = {
             let mut meta = ConstraintSystem::<Fr>::default();
-            let config = EvmCircuit::<Fr>::configure(&mut meta);
+            // Cached EVM circuit is configured with Mainnet FeatureConfig
+            let config = EvmCircuit::<Fr>::configure_with_params(&mut meta, FeatureConfig::default());
             Cache { cs: meta, config }
         };
     }
@@ -492,13 +497,21 @@ pub(crate) mod cached {
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+    type Params = FeatureConfig;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+    /// Try to get the [`FeatureConfig`] from the block or fallback to default
+    fn params(&self) -> Self::Params {
+        self.block
+            .as_ref()
+            .map(|block| block.feature_config)
+            .unwrap_or_default()
+    }
+
+    fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
@@ -528,10 +541,15 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     u8_table,
                     u16_table,
                     chunk_ctx_config,
+                    feature_config: params,
                 },
             ),
             challenges,
         )
+    }
+
+    fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {
+        unreachable!();
     }
 
     fn synthesize(
@@ -586,7 +604,10 @@ mod evm_circuit_stats {
         util::{unusable_rows, SubCircuit},
         witness::{block_convert, chunk_convert},
     };
-    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
+    use bus_mapping::{
+        circuit_input_builder::{FeatureConfig, FixedCParams},
+        mock::BlockData,
+    };
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
     use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
@@ -598,9 +619,20 @@ mod evm_circuit_stats {
 
     #[test]
     fn evm_circuit_unusable_rows() {
+        let computed = EvmCircuit::<Fr>::unusable_rows();
+        let mainnet_config = FeatureConfig::default();
+        let invalid_tx_config = FeatureConfig {
+            invalid_tx: true,
+            ..Default::default()
+        };
+
         assert_eq!(
-            EvmCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, EvmCircuit::<Fr>>(()),
+            computed,
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(mainnet_config),
+        );
+        assert_eq!(
+            computed,
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(invalid_tx_config),
         )
     }
 
@@ -617,7 +649,7 @@ mod evm_circuit_stats {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
-        .modifier(Box::new(|_block, chunk| {
+        .block_modifier(Box::new(|_block, chunk| {
             chunk.fixed_param.max_evm_rows = (1 << 18) - 100
         }))
         .run();
@@ -656,6 +688,7 @@ mod evm_circuit_stats {
         let circuits_params = FixedCParams {
             total_chunks: 1,
             max_txs: 1,
+            max_withdrawals: 5,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,

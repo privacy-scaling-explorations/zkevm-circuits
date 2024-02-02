@@ -173,7 +173,7 @@ mod test {
 
         // finish required tests using this witness block
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .modifier(Box::new(move |_block, chunk| {
+            .block_modifier(Box::new(move |_block, chunk| {
                 chunk.fixed_param.max_evm_rows = evm_circuit_pad_to
             }))
             .run();

@@ -1061,6 +1061,8 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
             VerifyFailure::CellNotAssigned { .. } => false,
             VerifyFailure::ConstraintPoisoned { .. } => false,
             VerifyFailure::Permutation { .. } => false,
+            VerifyFailure::InstanceCellNotAssigned { .. } => false,
+            VerifyFailure::Shuffle { .. } => false,
         })
         .unwrap_or_else(|| {
             panic!(

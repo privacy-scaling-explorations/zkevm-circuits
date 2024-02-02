@@ -112,14 +112,13 @@ impl AddrOrWallet {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 /// Mock structure which represents a Transaction and can be used for tests.
 /// It contains all the builder-pattern methods required to be able to specify
 /// any of it's details.
 pub struct MockTransaction {
     pub hash: Option<Hash>,
-    pub nonce: u64,
+    pub nonce: Option<u64>,
     pub block_hash: Hash,
     pub block_number: U64,
     pub transaction_index: U64,
@@ -137,13 +136,14 @@ pub struct MockTransaction {
     pub max_priority_fee_per_gas: Word,
     pub max_fee_per_gas: Word,
     pub chain_id: Word,
+    pub invalid: bool,
 }
 
 impl Default for MockTransaction {
     fn default() -> Self {
         MockTransaction {
             hash: None,
-            nonce: 0,
+            nonce: None,
             block_hash: Hash::zero(),
             block_number: U64::zero(),
             transaction_index: U64::zero(),
@@ -161,6 +161,7 @@ impl Default for MockTransaction {
             max_priority_fee_per_gas: Word::zero(),
             max_fee_per_gas: Word::zero(),
             chain_id: *MOCK_CHAIN_ID,
+            invalid: false,
         }
     }
 }
@@ -169,7 +170,7 @@ impl From<MockTransaction> for Transaction {
     fn from(mock: MockTransaction) -> Self {
         Transaction {
             hash: mock.hash.unwrap_or_default(),
-            nonce: mock.nonce.into(),
+            nonce: mock.nonce.unwrap_or_default().into(),
             block_hash: Some(mock.block_hash),
             block_number: Some(mock.block_number),
             transaction_index: Some(mock.transaction_index),
@@ -208,7 +209,7 @@ impl MockTransaction {
 
     /// Set nonce field for the MockTransaction. Overridden in TestContext.
     pub(crate) fn nonce(&mut self, nonce: u64) -> &mut Self {
-        self.nonce = nonce;
+        self.nonce = Some(nonce);
         self
     }
 
@@ -310,7 +311,7 @@ impl MockTransaction {
         let tx = TransactionRequest::new()
             .from(self.from.address())
             .to(self.to.clone().unwrap_or_default().address())
-            .nonce(self.nonce)
+            .nonce(self.nonce.unwrap_or_default())
             .value(self.value)
             .data(self.input.clone())
             .gas(self.gas)
@@ -342,5 +343,19 @@ impl MockTransaction {
         }
 
         self.to_owned()
+    }
+
+    /// Mark the transaction as invalid.
+    pub fn invalid(&mut self) -> &mut Self {
+        self.invalid = true;
+        self
+    }
+
+    /// Force the nonce field for the MockTransaction.
+    /// Can only be used for invalid transactions.
+    pub fn set_nonce(&mut self, nonce: u64) -> &mut Self {
+        assert!(self.invalid);
+        self.nonce = Some(nonce);
+        self
     }
 }

@@ -10,5 +10,5 @@ pub use chunk::{chunk_convert, Chunk};
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
 pub mod rw;
-pub use bus_mapping::circuit_input_builder::{Call, ExecStep, Transaction};
+pub use bus_mapping::circuit_input_builder::{Call, ExecStep, Transaction, Withdrawal};
 pub use rw::{Rw, RwMap, RwRow};

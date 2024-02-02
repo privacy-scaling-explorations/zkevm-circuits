@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "zkevm-circuits",
     "bus-mapping",
@@ -10,11 +11,12 @@ members = [
     "external-tracer",
     "mock",
     "testool",
-    "mpt-witness-generator/rustlib"
+    "mpt-witness-generator/rustlib",
+    "light-client-poc"
 ]
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v0.3.0" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

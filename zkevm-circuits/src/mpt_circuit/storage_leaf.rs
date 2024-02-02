@@ -30,6 +30,7 @@ use crate::{
 
 use super::{
     helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
+    mod_extension::ModExtensionGadget,
     rlp_gadgets::{RLPItemWitness, RLPValueGadget},
     witness_row::{Node, StorageRowType},
 };
@@ -49,6 +50,8 @@ pub(crate) struct StorageLeafConfig<F> {
     wrong: WrongGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
+    is_mod_extension: [Cell<F>; 2],
+    mod_extension: ModExtensionGadget<F>,
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -91,104 +94,112 @@ impl<F: Field> StorageLeafConfig<F> {
             );
             let key_item = ctx.rlp_item(meta, cb, StorageRowType::Key as usize, RlpItemType::Hash);
 
+            for is_s in [true, false] {
+                config.is_mod_extension[is_s.idx()] = cb.query_bool();
+            }
+
             config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
             // Storage leaves always need to be below accounts
             require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut value_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut value_word = vec![Word::zero(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
+
+            let parent_data = &mut config.parent_data;
+            parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+
+            let key_data = &mut config.key_data;
+            key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
+            key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
+
             for is_s in [true, false] {
-                // Parent data
-                let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data = ParentData::load(cb, &mut ctx.memory[parent_memory(is_s)], 0.expr());
-                // Key data
-                let key_data = &mut config.key_data[is_s.idx()];
-                *key_data = KeyData::load(cb, &mut ctx.memory[key_memory(is_s)], 0.expr());
+                ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
+                    // Placeholder leaf checks
+                    config.is_placeholder_leaf[is_s.idx()] =
+                        IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
+                    let is_placeholder_leaf = config.is_placeholder_leaf[is_s.idx()].expr();
 
-                // Placeholder leaf checks
-                config.is_placeholder_leaf[is_s.idx()] =
-                    IsPlaceholderLeafGadget::construct(cb, parent_data.hash.expr());
-                let is_placeholder_leaf = config.is_placeholder_leaf[is_s.idx()].expr();
-
-                let rlp_key = &mut config.rlp_key[is_s.idx()];
-                *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
-                config.rlp_value[is_s.idx()] = RLPValueGadget::construct(
-                    cb,
-                    &config.value_rlp_bytes[is_s.idx()]
-                        .iter()
-                        .map(|c| c.expr())
-                        .collect::<Vec<_>>(),
-                );
-
-                // Because the storage value is an rlp encoded string inside another rlp encoded
-                // string (leaves are always encoded as [key, value], with
-                // `value` here containing a single stored value) the stored
-                // value is either stored directly in the RLP encoded string if short, or stored
-                // wrapped inside another RLP encoded string if long.
-                let rlp_value = config.rlp_value[is_s.idx()].rlc_value(&cb.key_r);
-                let rlp_value_rlc_mult =
-                    config.rlp_value[is_s.idx()].rlc_rlp_only_rev(&cb.keccak_r);
-                let value_lo;
-                let value_hi;
-                (
-                    value_lo,
-                    value_hi,
-                    value_rlp_rlc[is_s.idx()],
-                    value_rlp_rlc_mult[is_s.idx()],
-                ) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
-                    (rlp_value, 0.expr(), rlp_value_rlc_mult.0.expr(), rlp_value_rlc_mult.1.expr())
-                } elsex {
-                    let value = value_item[is_s.idx()].word();
-                    let value_rlp_rlc = rlp_value_rlc_mult.0.rlc_chain_rev(value_item[is_s.idx()].rlc_chain_data());
-                    require!(config.rlp_value[is_s.idx()].num_bytes() => value_item[is_s.idx()].num_bytes() + 1.expr());
-                    (value.lo(), value.hi(), value_rlp_rlc, rlp_value_rlc_mult.1 * value_item[is_s.idx()].mult())
-                }};
-                value_word[is_s.idx()] = Word::<Expression<F>>::new([value_lo, value_hi]);
-
-                let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((
-                    value_rlp_rlc[is_s.idx()].expr(),
-                    value_rlp_rlc_mult[is_s.idx()].expr(),
-                ));
-
-                // Key
-                key_rlc[is_s.idx()] = key_data.rlc.expr()
-                    + rlp_key.key.expr(
+                    let rlp_key = &mut config.rlp_key[is_s.idx()];
+                    *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
+                    config.rlp_value[is_s.idx()] = RLPValueGadget::construct(
                         cb,
-                        rlp_key.key_value.clone(),
-                        key_data.mult.expr(),
-                        key_data.is_odd.expr(),
-                        &cb.key_r.expr(),
+                        &config.value_rlp_bytes[is_s.idx()]
+                            .iter()
+                            .map(|c| c.expr())
+                            .collect::<Vec<_>>(),
                     );
-                // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
-                let num_nibbles =
-                    num_nibbles::expr(rlp_key.key_value.len(), key_data.is_odd.expr());
-                require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
-                // Placeholder leaves default to value `0`.
-                ifx! {is_placeholder_leaf => {
-                    require!(value_word[is_s.idx()] => [0.expr(), 0.expr()]);
-                }}
-
-                // Make sure the RLP encoding is correct.
-                // storage = [key, "value"]
-                require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
-
-                // Check if the account is in its parent.
-                // Check is skipped for placeholder leaves which are dummy leaves
-                ifx! {not!(is_placeholder_leaf) => {
-                    config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
-                    ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
-                        // Hashed branch hash in parent branch
-                        let hash = parent_data.hash.expr();
-                        require!((1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                    // Because the storage value is an rlp encoded string inside another rlp encoded
+                    // string (leaves are always encoded as [key, value], with
+                    // `value` here containing a single stored value) the stored
+                    // value is either stored directly in the RLP encoded string if short, or stored
+                    // wrapped inside another RLP encoded string if long.
+                    let rlp_value = config.rlp_value[is_s.idx()].rlc_value(&cb.key_r);
+                    let rlp_value_rlc_mult =
+                        config.rlp_value[is_s.idx()].rlc_rlp_only_rev(&cb.keccak_r);
+                    let value_lo;
+                    let value_hi;
+                    (
+                        value_lo,
+                        value_hi,
+                        value_rlp_rlc[is_s.idx()],
+                        value_rlp_rlc_mult[is_s.idx()],
+                    ) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
+                        (rlp_value, 0.expr(), rlp_value_rlc_mult.0.expr(), rlp_value_rlc_mult.1.expr())
                     } elsex {
-                        // Non-hashed branch hash in parent branch
-                        require!(leaf_rlc => parent_data.rlc.expr());
+                        let value = value_item[is_s.idx()].word();
+                        let value_rlp_rlc = rlp_value_rlc_mult.0.rlc_chain_rev(value_item[is_s.idx()].rlc_chain_data());
+                        require!(config.rlp_value[is_s.idx()].num_bytes() => value_item[is_s.idx()].num_bytes() + 1.expr());
+                        (value.lo(), value.hi(), value_rlp_rlc, rlp_value_rlc_mult.1 * value_item[is_s.idx()].mult())
+                    }};
+                    value_word[is_s.idx()] = Word::<Expression<F>>::new([value_lo, value_hi]);
+
+                    let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((
+                        value_rlp_rlc[is_s.idx()].expr(),
+                        value_rlp_rlc_mult[is_s.idx()].expr(),
+                    ));
+
+                    // Key
+                    key_rlc[is_s.idx()] = key_data[is_s.idx()].rlc.expr()
+                        + rlp_key.key.expr(
+                            cb,
+                            rlp_key.key_value.clone(),
+                            key_data[is_s.idx()].mult.expr(),
+                            key_data[is_s.idx()].is_odd.expr(),
+                            &cb.key_r.expr(),
+                        );
+                    // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
+                    let num_nibbles =
+                        num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
+                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+
+                    // Placeholder leaves default to value `0`.
+                    ifx! {is_placeholder_leaf => {
+                        require!(value_word[is_s.idx()] => Word::zero());
                     }}
-                }}
+
+                    // Make sure the RLP encoding is correct.
+                    // storage = [key, "value"]
+                    require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
+
+                    // Check if the account is in its parent.
+                    // Check is skipped for placeholder leaves which are dummy leaves
+                    ifx! {not!(is_placeholder_leaf) => {
+                        config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
+                        ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
+                            // Hashed branch hash in parent branch
+                            let hash = parent_data[is_s.idx()].hash.expr();
+                            require!((1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                        } elsex {
+                            // Non-hashed branch hash in parent branch
+                            require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
+                        }}
+                    }}
+                }};
 
                 // Key done, set the default values
                 KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
@@ -196,13 +207,23 @@ impl<F: Field> StorageLeafConfig<F> {
                 ParentData::store(
                     cb,
                     &mut ctx.memory[parent_memory(is_s)],
-                    word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    word::Word::zero(),
                     0.expr(),
                     true.expr(),
                     false.expr(),
-                    word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    word::Word::zero(),
                 );
             }
+
+            ifx! {or::expr(&[config.is_mod_extension[0].clone(), config.is_mod_extension[1].clone()]) => {
+                config.mod_extension = ModExtensionGadget::configure(
+                    meta,
+                    cb,
+                    ctx.clone(),
+                    parent_data,
+                    key_data,
+                );
+            }};
 
             // Proof types
             config.is_storage_mod_proof = IsEqualGadget::construct(
@@ -230,6 +251,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &value_rlp_rlc,
                 &value_rlp_rlc_mult,
                 &drifted_item,
+                &config.is_mod_extension,
                 &cb.key_r.expr(),
             );
 
@@ -288,17 +310,32 @@ impl<F: Field> StorageLeafConfig<F> {
                     require!((1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()) =>> @KECCAK);
                 }
             }};
-            ctx.mpt_table.constrain(
-                meta,
-                &mut cb.base,
-                config.main_data.address.expr(),
-                proof_type,
-                address_item.word(),
-                config.main_data.new_root.expr(),
-                config.main_data.old_root.expr(),
-                value_word[false.idx()].clone(),
-                value_word[true.idx()].clone(),
-            );
+
+            ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    config.main_data.address.expr(),
+                    proof_type.clone(),
+                    address_item.word(),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    value_word[false.idx()].clone(),
+                    value_word[true.idx()].clone(),
+                );
+            } elsex {
+                ctx.mpt_table.constrain(
+                    meta,
+                    &mut cb.base,
+                    config.main_data.address.expr(),
+                    proof_type,
+                    address_item.word(),
+                    config.main_data.new_root.expr(),
+                    config.main_data.old_root.expr(),
+                    Word::zero(),
+                    value_word[true.idx()].clone(),
+                );
+            }};
         });
 
         config
@@ -336,8 +373,14 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut value_word = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
+        let mut value_word = vec![Word::zero_f(); 2];
         for is_s in [true, false] {
+            self.is_mod_extension[is_s.idx()].assign(
+                region,
+                offset,
+                storage.is_mod_extension[is_s.idx()].scalar(),
+            )?;
+
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
@@ -477,6 +520,20 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
+
+        if storage.is_mod_extension[0] || storage.is_mod_extension[1] {
+            let mod_list_rlp_bytes: [&[u8]; 2] = [
+                &storage.mod_list_rlp_bytes[0],
+                &storage.mod_list_rlp_bytes[1],
+            ];
+            self.mod_extension
+                .assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
+        }
+
+        let mut new_value = value_word[false.idx()];
+        if parent_data[false.idx()].is_placeholder {
+            new_value = word::Word::zero_f();
+        }
         mpt_config.mpt_table.assign_cached(
             region,
             offset,
@@ -486,7 +543,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
-                new_value: value_word[false.idx()].into_value(),
+                new_value: new_value.into_value(),
                 old_value: value_word[true.idx()].into_value(),
             },
         )?;

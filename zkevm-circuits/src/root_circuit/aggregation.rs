@@ -1,5 +1,5 @@
 use eth_types::Field;
-use halo2::circuit::Region;
+use halo2::{circuit::Region, halo2curves::CurveExt};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::{
@@ -25,7 +25,7 @@ use snark_verifier::{
     },
     system::halo2::transcript,
     util::{
-        arithmetic::{fe_to_limbs, MultiMillerLoop},
+        arithmetic::{fe_to_limbs, FromUniformBytes, MultiMillerLoop, PrimeField},
         transcript::Transcript,
     },
     verifier::{
@@ -236,7 +236,8 @@ impl AggregationConfig {
     ) -> Result<Vec<LoadedScalar<'c, M::G1Affine>>, Error>
     where
         M: MultiMillerLoop,
-        M::Scalar: Field,
+        M::Fr: Field,
+        M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
         for<'b> As: PolynomialCommitmentScheme<
                 M::G1Affine,
                 Rc<Halo2Loader<'b, M::G1Affine>>,
@@ -289,13 +290,13 @@ impl AggregationConfig {
     #[allow(clippy::type_complexity)]
     pub fn aggregate<'a, 'c, M, As>(
         &self,
-        ctx: RegionCtx<'c, M::Scalar>,
+        ctx: RegionCtx<'c, M::Fr>,
         svk: &KzgSvk<M>,
         snarks: &[SnarkWitness<'a, M::G1Affine>],
     ) -> Result<
         (
             Vec<Vec<Scalar<'c, M::G1Affine, EccChip<M::G1Affine>>>>,
-            Vec<AssignedCell<M::Scalar, M::Scalar>>,
+            Vec<AssignedCell<M::Fr, M::Fr>>,
             Rc<Halo2Loader<'c, M::G1Affine>>,
             Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
         ),
@@ -303,7 +304,8 @@ impl AggregationConfig {
     >
     where
         M: MultiMillerLoop,
-        M::Scalar: Field,
+        M::Fr: Field,
+        M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
         for<'b> As: PolynomialCommitmentScheme<
                 M::G1Affine,
                 Rc<Halo2Loader<'b, M::G1Affine>>,
@@ -402,12 +404,13 @@ impl AggregationConfig {
 pub fn aggregate<'a, M, As>(
     params: &ParamsKZG<M>,
     snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
-) -> Result<[M::Scalar; 4 * LIMBS], snark_verifier::Error>
+) -> Result<[M::Fr; 4 * LIMBS], snark_verifier::Error>
 where
     M: MultiMillerLoop,
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
-    M::Scalar: Field,
+    M::Fr: PrimeField + FromUniformBytes<64>,
+    M::G1: CurveExt<AffineExt = M::G1Affine, ScalarExt = M::Fr>,
+    M::G1Affine: SerdeObject + CurveAffine<ScalarExt = M::Fr, CurveExt = M::G1>,
+    M::G2Affine: SerdeObject + CurveAffine,
     for<'b> As: PolynomialCommitmentScheme<
             M::G1Affine,
             NativeLoader,
@@ -702,7 +705,7 @@ pub mod test {
         assert_eq!(
             MockProver::run(21, &aggregation, instances)
                 .unwrap()
-                .verify_par(),
+                .verify(),
             Ok(())
         );
     }
@@ -725,7 +728,7 @@ pub mod test {
         assert_eq!(
             MockProver::run(21, &aggregation, instances)
                 .unwrap()
-                .verify_par(),
+                .verify(),
             Err(vec![
                 VerifyFailure::Permutation {
                     column: (Any::advice(), 0).into(),

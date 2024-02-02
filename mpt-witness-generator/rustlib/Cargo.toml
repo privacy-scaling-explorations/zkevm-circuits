@@ -1,5 +1,5 @@
 [package]
-name = "rustlib"
+name = "mpt-witness-generator"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,3 +9,10 @@ gobuild = "0.1.0-alpha.1"
 log = "0.4.14"
 env_logger = "0.9"
 glob = "0.3.1"
+
+[dependencies]
+ethers = "2.0"
+num_enum = "0.7.0"
+serde = "1.0.188"
+serde_json = "1.0.105"
+zkevm-circuits = { path = "../../zkevm-circuits", features=["test-circuits"]}

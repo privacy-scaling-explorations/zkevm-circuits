@@ -83,7 +83,7 @@ impl TxTable {
         }
     }
 
-    /// Assign the `TxTable` from a list of block `Transaction`s, followig the
+    /// Assign the `TxTable` from a list of block `Transaction`s, following the
     /// same layout that the Tx Circuit uses.
     pub fn load<F: Field>(
         &self,

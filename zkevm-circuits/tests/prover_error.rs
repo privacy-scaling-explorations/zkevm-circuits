@@ -10,7 +10,7 @@ use eth_types::{
     Block, Bytes, Error, Transaction, Word, H160, U256,
 };
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use mock::test_ctx::{gen_geth_traces, LoggerConfig};
+use mock::{test_ctx::LoggerConfig, test_ctx2::gen_geth_traces};
 use serde_json::{from_value, Value};
 use std::{collections::HashMap, fs::File, io::BufReader};
 use zkevm_circuits::{
@@ -79,6 +79,7 @@ fn prover_error() {
         chain_id,
         eth_block.clone(),
         accounts.clone(),
+        vec![],
         Some(history_hashes.clone()),
         LoggerConfig::default(),
     )
@@ -104,7 +105,7 @@ fn prover_error() {
     let circuit = SuperCircuit::new_from_block(&block, &chunk);
     let res = MockProver::run(k, &circuit, circuit.instance())
         .expect("MockProver::run")
-        .verify_par();
+        .verify();
     println!("MockProver: {res:#?}");
-    res.expect("verify_par");
+    res.expect("verify");
 }

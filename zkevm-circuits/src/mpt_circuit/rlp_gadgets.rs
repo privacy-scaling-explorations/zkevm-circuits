@@ -408,7 +408,7 @@ impl<F: Field> RLPValueGadget<F> {
         self.is_long.rot(meta, rot)
     }
 
-    // RLP byte containing the lenght of the length,
+    // RLP byte containing the length of the length,
     // followed by the length, followed by the actual data
     pub(crate) fn is_very_long(&self) -> Expression<F> {
         self.is_very_long.expr()
@@ -507,7 +507,7 @@ impl RLPValueWitness {
         self.is_long
     }
 
-    // RLP byte containing the lenght of the length,
+    // RLP byte containing the length of the length,
     // followed by the length, followed by the actual data
     pub(crate) fn is_very_long(&self) -> bool {
         self.is_very_long
@@ -716,7 +716,7 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
 
-    // RLP byte containing the lenght of the length,
+    // RLP byte containing the length of the length,
     // followed by the length, followed by the actual data
     pub(crate) fn is_very_long(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {

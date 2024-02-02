@@ -17,6 +17,8 @@ mod branch;
 mod extension;
 mod extension_branch;
 mod helpers;
+/// Gadget for modified extension nodes
+pub mod mod_extension;
 mod param;
 mod rlp_gadgets;
 mod start;
@@ -50,6 +52,7 @@ use crate::{
     table::{KeccakTable, MPTProofType, MptTable},
     util::Challenges,
 };
+
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
 
@@ -138,7 +141,7 @@ pub struct MPTContext<F: Field> {
 }
 
 /// RLP item type
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RlpItemType {
     /// Node (string with len == 0 or 32, OR list with len <= 31)
     Node,
@@ -171,10 +174,11 @@ impl<F: Field> MPTContext<F> {
 pub struct MPTConfig<F: Field> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
-    pub(crate) q_last: Column<Fixed>,
     pub(crate) memory: MptMemory<F>,
-    pub(crate) mpt_table: MptTable,
-    keccak_table: KeccakTable,
+    /// MPT table
+    pub mpt_table: MptTable,
+    /// Keccak table
+    pub keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 6],
     mult_table: [Column<Advice>; 2],
     rlp_item: MainRLPGadget<F>,
@@ -214,7 +218,6 @@ impl<F: Field> MPTConfig<F> {
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
-        let q_last = meta.fixed_column();
 
         let mpt_table = MptTable::construct(meta);
 
@@ -303,7 +306,7 @@ impl<F: Field> MPTConfig<F> {
                     // Main MPT circuit
                     // State machine
                     cb.base.set_cell_manager(state_cm.clone());
-                    ifx! {f!(q_first) + f!(q_last) => {
+                    ifx! {f!(q_first) => {
                         require!(a!(state_machine.is_start) => true);
                     }};
                     // Main state machine
@@ -365,7 +368,6 @@ impl<F: Field> MPTConfig<F> {
         MPTConfig {
             q_enable,
             q_first,
-            q_last,
             memory,
             keccak_table,
             fixed_table,
@@ -385,8 +387,7 @@ impl<F: Field> MPTConfig<F> {
         layouter: &mut impl Layouter<F>,
         nodes: &[Node],
         challenges: &Challenges<Value<F>>,
-    ) -> Result<usize, Error> {
-        let mut height = 0;
+    ) -> Result<(), Error> {
         layouter.assign_region(
             || "MPT",
             |mut region| {
@@ -492,27 +493,32 @@ impl<F: Field> MPTConfig<F> {
 
                     cached_region.assign_stored_expressions(&self.cb.base, challenges)?;
                 }
-                height = offset;
 
-                // Make sure the circuit is high enough for the mult table
-                while height < (2 * HASH_WIDTH + 1) {
-                    height += 1;
-                }
+                assert!( self.params.max_nodes >= (2 * HASH_WIDTH + 1),
+                        "The parameter max_nodes is set too low for the mult table: {}, mult table height: {}",
+                        self.params.max_nodes,
+                        2 * HASH_WIDTH + 1,
+                    );
+                assert!( offset <= self.params.max_nodes,
+                        "The parameter max_nodes is set too low, max_nodes: {}, offset: {}",
+                        self.params.max_nodes,
+                        offset,
+                    );
 
-                for offset in 0..height {
+                for offset in 0..self.params.max_nodes {
                     assignf!(region, (self.q_enable, offset) => true.scalar())?;
                     assignf!(region, (self.q_first, offset) => (offset == 0).scalar())?;
-                    assignf!(region, (self.q_last, offset) => (offset == height - 2).scalar())?;
                 }
 
                 Ok(())
             },
         )?;
 
-        Ok(height)
+        Ok(())
     }
 
-    fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    /// Loads MPT fixed table
+    pub fn load_fixed_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
@@ -613,7 +619,8 @@ impl<F: Field> MPTConfig<F> {
         )
     }
 
-    fn load_mult_table(
+    ///
+    pub fn load_mult_table(
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
@@ -646,6 +653,8 @@ pub struct MPTCircuit<F: Field> {
     pub keccak_data: Vec<Vec<u8>>,
     /// log2(height)
     pub degree: usize,
+    /// Maximal number of nodes MPT can prove (for example, one branch has 16 nodes)
+    pub max_nodes: usize,
     /// Can be used to test artificially created tests with keys without known their known
     /// preimage. ONLY ENABLE FOR TESTS!
     pub disable_preimage_check: bool,
@@ -656,8 +665,12 @@ pub struct MPTCircuit<F: Field> {
 /// MPT Circuit configuration parameters
 #[derive(Copy, Clone, Debug, Default)]
 pub struct MPTCircuitParams {
-    degree: usize,
-    disable_preimage_check: bool,
+    ///
+    pub degree: usize,
+    ///
+    pub disable_preimage_check: bool,
+    /// Maximal number of nodes MPT can prove (for example, one branch has 16 nodes)
+    pub max_nodes: usize,
 }
 
 impl MPTCircuitParams {
@@ -685,6 +698,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         MPTCircuitParams {
             degree: self.degree,
             disable_preimage_check: self.disable_preimage_check,
+            max_nodes: self.max_nodes,
         }
     }
 
@@ -708,9 +722,9 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = _challenges.values(&mut layouter);
-        let height = config.assign(&mut layouter, &self.nodes, &challenges)?;
+        config.assign(&mut layouter, &self.nodes, &challenges)?;
         config.load_fixed_table(&mut layouter)?;
-        config.load_mult_table(&mut layouter, &challenges, height)?;
+        config.load_mult_table(&mut layouter, &challenges, self.max_nodes)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &self.keccak_data, &challenges)?;
@@ -727,15 +741,17 @@ pub fn load_proof(path: &str) -> Vec<Node> {
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {
-        if node.account.is_some() {
-            let account = node.account.clone().unwrap();
-            node.values.push([vec![148], account.address].concat());
-            node.values.push([vec![160], account.key].concat());
+        if let Some(account) = node.account.clone() {
+            node.values
+                .push([vec![148], account.address.to_vec()].concat().into());
+            node.values
+                .push([vec![160], account.key.to_vec()].concat().into());
         }
-        if node.storage.is_some() {
-            let storage: witness_row::StorageNode = node.storage.clone().unwrap();
-            node.values.push([vec![160], storage.address].concat());
-            node.values.push([vec![160], storage.key].concat());
+        if let Some(storage) = node.storage.clone() {
+            node.values
+                .push([vec![160], storage.address.to_vec()].concat().into());
+            node.values
+                .push([vec![160], storage.key.to_vec()].concat().into());
         }
     }
     nodes
@@ -745,7 +761,7 @@ pub fn load_proof(path: &str) -> Vec<Node> {
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use std::fs;
+    use std::{fs, ops::Deref};
 
     #[test]
     fn test_mpt() {
@@ -772,16 +788,18 @@ mod tests {
                 let mut keccak_data = vec![];
                 for node in nodes.iter() {
                     for k in node.keccak_data.iter() {
-                        keccak_data.push(k.clone());
+                        keccak_data.push(k.deref().clone());
                     }
                 }
 
                 let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
                 let degree = 15;
+                let max_nodes = 520;
                 let circuit = MPTCircuit::<Fr> {
                     nodes,
                     keccak_data,
                     degree,
+                    max_nodes,
                     disable_preimage_check,
                     _marker: PhantomData,
                 };
@@ -789,7 +807,7 @@ mod tests {
                 println!("{} {:?}", idx, path);
                 let prover = MockProver::<Fr>::run(degree as u32, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                // assert_eq!(prover.verify_par(), Ok(()));
+                // assert_eq!(prover.verify(), Ok(()));
                 // prover.assert_satisfied();
             });
     }

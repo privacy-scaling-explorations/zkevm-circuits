@@ -1,19 +1,19 @@
 //! This module generates traces by connecting to an external tracer
 
 use eth_types::{
-    geth_types::{Account, BlockConstants, Transaction},
+    geth_types::{Account, BlockConstants, Transaction, Withdrawal},
     Address, Error, GethExecTrace, Word,
 };
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// Configuration structure for `geth_utlis::trace`
+/// Configuration structure for `geth_utils::trace`
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct TraceConfig {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// block constants
     pub block_constants: BlockConstants,
@@ -21,6 +21,8 @@ pub struct TraceConfig {
     pub accounts: HashMap<Address, Account>,
     /// transaction
     pub transactions: Vec<Transaction>,
+    /// withdrawal
+    pub withdrawals: Vec<Withdrawal>,
     /// logger
     pub logger_config: LoggerConfig,
 }
@@ -68,6 +70,18 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
         },
     )?;
 
-    let trace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
+    let trace: Vec<GethExecTrace> =
+        serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
+    // Don't throw only for specific invalid transactions we support.
+    for trace in trace.iter() {
+        let error = &trace.return_value;
+        let allowed_cases = error.starts_with("nonce too low")
+            || error.starts_with("nonce too high")
+            || error.starts_with("intrinsic gas too low")
+            || error.starts_with("insufficient funds for gas * price + value");
+        if trace.invalid && !allowed_cases {
+            return Err(Error::TracingError(error.clone()));
+        }
+    }
     Ok(trace)
 }

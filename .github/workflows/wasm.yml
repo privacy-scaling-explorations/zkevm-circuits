@@ -1,0 +1,65 @@
+name: WASM
+
+on:
+  merge_group:
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+## `actions-rs/toolchain@v1` overwrite set to false so that
+## `rust-toolchain` is always used and the only source of truth.
+
+jobs:
+  skip_check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          cancel_others: 'true'
+          concurrent_skipping: 'same_content_newer'
+          paths_ignore: '["**/README.md"]'
+
+  build:
+    needs: [skip_check]
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
+
+    name: Build
+    runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
+
+    steps:
+      - name: Install OpenSSL lib
+        run: sudo apt-get -y install libssl-dev
+
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          override: false
+          components: rust-src
+      - name: Cargo cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build WASM
+        env:
+          RUSTFLAGS: '-C target-feature=+atomics,+bulk-memory'
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --verbose --release --package zkevm-circuits --no-default-features --target wasm32-unknown-unknown -Z build-std=panic_abort,std

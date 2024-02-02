@@ -63,14 +63,14 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, MptTable,
-        RwTable, TxTable, UXTable,
+        RwTable, TxTable, UXTable, WdTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{chunk_ctx::ChunkContextConfig, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
     witness::{block_convert, chunk_convert, Block, Chunk, MptUpdates},
 };
 use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
+    circuit_input_builder::{CircuitInputBuilder, FeatureConfig, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
@@ -124,18 +124,21 @@ impl<F: Field> SuperCircuitConfig<F> {
 }
 
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
-    type ConfigArgs = SuperCircuitConfigArgs<F>;
+    type ConfigArgs = SuperCircuitParams<F>;
 
     /// Configure SuperCircuitConfig
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
             max_txs,
+            max_withdrawals,
             max_calldata,
             mock_randomness,
+            feature_config,
         }: Self::ConfigArgs,
     ) -> Self {
         let tx_table = TxTable::construct(meta);
+        let wd_table = WdTable::construct(meta);
 
         let chronological_rw_table = RwTable::construct(meta);
         let by_address_rw_table = RwTable::construct(meta);
@@ -151,7 +154,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let u10_table = UXTable::construct(meta);
         let u16_table = UXTable::construct(meta);
 
-        // Use a mock randomness instead of the randomness derived from the challange
+        // Use a mock randomness instead of the randomness derived from the challenge
         // (either from mock or real prover) to help debugging assignments.
         let power_of_randomness: [Expression<F>; 31] =
             array::from_fn(|i| Expression::Constant(mock_randomness.pow([1 + i as u64, 0, 0, 0])));
@@ -175,9 +178,11 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             PiCircuitConfigArgs {
                 max_txs,
+                max_withdrawals,
                 max_calldata,
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
+                wd_table,
                 keccak_table: keccak_table.clone(),
                 challenges: challenges.clone(),
             },
@@ -235,6 +240,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 u8_table,
                 u16_table,
                 chunk_ctx_config: chunk_ctx_config.clone(),
+                feature_config,
             },
         );
 
@@ -337,6 +343,8 @@ pub struct SuperCircuit<F: Field> {
     pub keccak_circuit: KeccakCircuit<F>,
     /// Circuits Parameters
     pub circuits_params: FixedCParams,
+    /// Feature Config
+    pub feature_config: FeatureConfig,
     /// Mock randomness
     pub mock_randomness: F,
 }
@@ -392,6 +400,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
             exp_circuit,
             keccak_circuit,
             circuits_params: chunk.fixed_param,
+            feature_config: block.feature_config,
             mock_randomness: block.randomness,
         }
     }
@@ -479,8 +488,10 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
 #[derive(Default)]
 pub struct SuperCircuitParams<F: Field> {
     max_txs: usize,
+    max_withdrawals: usize,
     max_calldata: usize,
     mock_randomness: F,
+    feature_config: FeatureConfig,
 }
 
 impl<F: Field> Circuit<F> for SuperCircuit<F> {
@@ -495,20 +506,15 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
     fn params(&self) -> Self::Params {
         SuperCircuitParams {
             max_txs: self.circuits_params.max_txs,
+            max_withdrawals: self.circuits_params.max_withdrawals,
             max_calldata: self.circuits_params.max_calldata,
             mock_randomness: self.mock_randomness,
+            feature_config: self.feature_config,
         }
     }
 
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
-        Self::Config::new(
-            meta,
-            SuperCircuitConfigArgs {
-                max_txs: params.max_txs,
-                max_calldata: params.max_calldata,
-                mock_randomness: params.mock_randomness,
-            },
-        )
+        Self::Config::new(meta, params)
     }
 
     fn configure(_meta: &mut ConstraintSystem<F>) -> Self::Config {

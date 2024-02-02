@@ -2,7 +2,7 @@ use super::{aggregate, AggregationConfig, Halo2Loader, KzgSvk, Snark, SnarkWitne
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
-    halo2curves::{ff::Field as Halo2Field, serde::SerdeObject},
+    halo2curves::{ff::Field as Halo2Field, serde::SerdeObject, CurveAffine, CurveExt},
     plonk::{Circuit, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -20,18 +20,23 @@ use std::{iter, marker::PhantomData, rc::Rc};
 
 /// Aggregation circuit for testing purpose.
 #[derive(Clone)]
-pub struct TestAggregationCircuit<'a, M: MultiMillerLoop, As> {
+pub struct TestAggregationCircuit<'a, M: MultiMillerLoop, As>
+where
+    M::G1Affine: CurveAffine,
+{
     svk: KzgSvk<M>,
     snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
-    instances: Vec<M::Scalar>,
+    instances: Vec<M::Fr>,
     _marker: PhantomData<As>,
 }
 
-impl<'a, M: MultiMillerLoop, As> TestAggregationCircuit<'a, M, As>
+impl<'a, M, As> TestAggregationCircuit<'a, M, As>
 where
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
-    M::Scalar: Field,
+    M: MultiMillerLoop,
+    M::Fr: Field,
+    M::G1: CurveExt<AffineExt = M::G1Affine, ScalarExt = M::Fr>,
+    M::G1Affine: SerdeObject + CurveAffine<ScalarExt = M::Fr, CurveExt = M::G1>,
+    M::G2Affine: SerdeObject + CurveAffine,
     for<'b> As: PolynomialCommitmentScheme<
             M::G1Affine,
             NativeLoader,
@@ -87,14 +92,15 @@ where
     }
 
     /// Returns instances
-    pub fn instances(&self) -> Vec<Vec<M::Scalar>> {
+    pub fn instances(&self) -> Vec<Vec<M::Fr>> {
         vec![self.instances.clone()]
     }
 }
 
-impl<'a, M: MultiMillerLoop, As> Circuit<M::Scalar> for TestAggregationCircuit<'a, M, As>
+impl<'a, M: MultiMillerLoop, As> Circuit<M::Fr> for TestAggregationCircuit<'a, M, As>
 where
-    M::Scalar: Field,
+    M::Fr: Field,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
     for<'b> As: PolynomialCommitmentScheme<
             M::G1Affine,
             Rc<Halo2Loader<'b, M::G1Affine>>,
@@ -119,19 +125,19 @@ where
                 .iter()
                 .map(SnarkWitness::without_witnesses)
                 .collect(),
-            instances: vec![M::Scalar::ZERO; self.instances.len()],
+            instances: vec![M::Fr::ZERO; self.instances.len()],
             _marker: PhantomData,
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<M::Scalar>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<M::Fr>) -> Self::Config {
         AggregationConfig::configure::<M::G1Affine>(meta)
     }
 
     fn synthesize(
         &self,
         config: Self::Config,
-        mut layouter: impl Layouter<M::Scalar>,
+        mut layouter: impl Layouter<M::Fr>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
 

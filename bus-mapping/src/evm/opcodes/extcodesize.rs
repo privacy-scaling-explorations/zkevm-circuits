@@ -35,7 +35,7 @@ impl Opcode for Extcodesize {
                 state.call()?.is_persistent.to_word(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
         }
 
         // Update transaction access list for account address.
@@ -63,7 +63,7 @@ impl Opcode for Extcodesize {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-        );
+        )?;
         let code_size = if exists {
             state.code(code_hash)?.len()
         } else {

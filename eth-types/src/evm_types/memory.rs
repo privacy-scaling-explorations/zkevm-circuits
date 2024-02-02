@@ -6,7 +6,7 @@ use core::{
 };
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
-use std::fmt;
+use std::{cmp, fmt};
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -293,7 +293,7 @@ impl Memory {
     }
 
     /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
-    /// `addr` and finnishes at `addr + 32`.
+    /// `addr` and finishes at `addr + 32`.
     pub fn read_word(&self, addr: MemoryAddress) -> Word {
         Word::from_big_endian(&self.read_chunk(addr, MemoryAddress::from(32)))
     }
@@ -315,6 +315,23 @@ impl Memory {
         chunk
     }
 
+    /// Write a chunk of memory[offset..offset+length]. If any data is written out-of-bound, it must
+    /// be zeros. This does not resize the memory.
+    pub fn write_chunk(&mut self, offset: MemoryAddress, data: &[u8]) {
+        let len = if self.0.len() > offset.0 {
+            let len = cmp::min(data.len(), self.0.len() - offset.0);
+            // Copy the data to the in-bound memory.
+            self.0[offset.0..offset.0 + len].copy_from_slice(&data[..len]);
+            len
+        } else {
+            0
+        };
+        // Check that the out-of-bound data is all zeros.
+        for _b in &data[len..] {
+            // assert_eq!(*b, 0);
+        }
+    }
+
     /// Returns the size of memory in word.
     pub fn word_size(&self) -> usize {
         self.0.len() / 32
@@ -328,9 +345,21 @@ impl Memory {
         }
     }
 
+    /// Resize the memory for at least `offset+length` and align to 32 bytes, except if `length=0`
+    /// then do nothing.
+    pub fn extend_for_range(&mut self, offset: Word, length: Word) {
+        // `length` should be checked for overflow during gas cost calculation.
+        let length = length.as_usize();
+        if length != 0 {
+            // `dst_offset` should be within range if length is non-zero.
+            let offset = offset.as_usize();
+            self.extend_at_least(offset + length);
+        }
+    }
+
     /// Copy source data to memory. Used in (ext)codecopy/calldatacopy.
     pub fn copy_from(&mut self, dst_offset: Word, src_offset: Word, length: Word, data: &[u8]) {
-        // Reference go-ethereum `opCallDataCopy` function for defails.
+        // Reference go-ethereum `opCallDataCopy` function for details.
         // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/instructions.go#L299
 
         // `length` should be checked for overflow during gas cost calculation.

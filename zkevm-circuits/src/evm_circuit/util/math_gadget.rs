@@ -4,6 +4,7 @@ use halo2_proofs::plonk::Expression;
 
 mod abs_word;
 mod add_words;
+mod binary_number;
 mod byte_size;
 mod cmp_words;
 mod comparison;
@@ -27,6 +28,7 @@ mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
+pub(crate) use binary_number::BinaryNumberGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;
 pub(crate) use comparison::ComparisonGadget;

@@ -140,7 +140,7 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .modifier(Box::new(|block, _chunk| {
+            .block_modifier(Box::new(|block, _chunk| {
                 // The above block has 2 steps (GAS and STOP). We forcefully assign a
                 // wrong `gas_left` value for the second step, to assert that
                 // the circuit verification fails for this scenario.
@@ -148,11 +148,8 @@ mod test {
                 assert_eq!(block.txs[0].steps().len(), 4);
                 block.txs[0].steps_mut()[2].gas_left -= 1;
             }))
-            .evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
-                assert!(prover
-                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
-                    .is_err())
-            }))
-            .run();
+            .run_with_result()
+            .unwrap_err()
+            .assert_evm_failure()
     }
 }

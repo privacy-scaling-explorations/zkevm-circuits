@@ -30,15 +30,14 @@ func NewDatabase(header types.Header) Database {
 // ContractCode retrieves a particular contract's code.
 func (db *Database) ContractCode(addrHash common.Hash, codeHash common.Hash) ([]byte, error) {
 	oracle.PrefetchCode(db.BlockNumber, addrHash)
-	code := oracle.Preimage(codeHash)
-	return code, nil
+	return oracle.Preimage(codeHash)
 }
 
 // ContractCodeSize retrieves a particular contracts code's size.
 func (db *Database) ContractCodeSize(addrHash common.Hash, codeHash common.Hash) (int, error) {
 	oracle.PrefetchCode(db.BlockNumber, addrHash)
-	code := oracle.Preimage(codeHash)
-	return len(code), nil
+	code, err := oracle.Preimage(codeHash)
+	return len(code), err
 }
 
 func (db *Database) CopyTrie(t Trie) Trie {
@@ -96,7 +95,7 @@ type Trie interface {
 	// and external (for account tries) references.
 	Commit(onleaf trie.LeafCallback) (common.Hash, error)
 
-	Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) ([]byte, [][]byte, bool, error)
+	Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) ([]byte, [][]byte, bool, bool, error)
 
 	GetNodeByNibbles(key []byte) ([]byte, error)
 

@@ -5,7 +5,7 @@ use crate::{
     impl_expr,
     util::word::Word,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -47,6 +47,8 @@ pub enum FixedTableTag {
     Pow2,
     /// Lookup constant gas cost for opcodes
     ConstantGasCost,
+    /// Preocmpile information
+    PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
 
@@ -136,6 +138,31 @@ impl FixedTableTag {
                             F::ZERO,
                         ]
                     }),
+            ),
+            Self::PrecompileInfo => Box::new(
+                vec![
+                    PrecompileCalls::ECRecover,
+                    PrecompileCalls::Sha256,
+                    PrecompileCalls::Ripemd160,
+                    PrecompileCalls::Identity,
+                    PrecompileCalls::Modexp,
+                    PrecompileCalls::Bn128Add,
+                    PrecompileCalls::Bn128Mul,
+                    PrecompileCalls::Bn128Pairing,
+                    PrecompileCalls::Blake2F,
+                ]
+                .into_iter()
+                .map(move |precompile| {
+                    [
+                        tag,
+                        F::from({
+                            let state: ExecutionState = precompile.into();
+                            state.as_u64()
+                        }),
+                        F::from(u64::from(precompile)),
+                        F::from(precompile.base_gas_cost()),
+                    ]
+                }),
             ),
         }
     }
@@ -255,7 +282,7 @@ pub(crate) enum Lookup<F> {
         /// A boolean value to specify if the access record is a read or write.
         is_write: Expression<F>,
         /// Tag to specify which read-write data to access, see RwTableTag for
-        /// all tags.
+        /// all tags. RwTableTag is bus_mapping::operation::Target (PR#1406)
         tag: Expression<F>,
         /// Values corresponding to the tag.
         values: RwValues<F>,

@@ -27,6 +27,7 @@ fn test_root_circuit() {
         let circuits_params = FixedCParams {
             total_chunks: 1,
             max_txs: 1,
+            max_withdrawals: 5,
             max_calldata: 32,
             max_rws: 256,
             max_copy_rows: 256,
@@ -89,7 +90,7 @@ fn test_root_circuit() {
     assert_eq!(
         MockProver::run(26, &root_circuit, root_circuit.instance())
             .unwrap()
-            .verify_par(),
+            .verify(),
         Ok(())
     );
 }

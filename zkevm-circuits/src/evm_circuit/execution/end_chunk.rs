@@ -94,7 +94,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .modifier(Box::new(move |_block, chunk| {
+        .block_modifier(Box::new(move |_block, chunk| {
             // TODO FIXME padding start as a workaround. The practical should be last chunk last row
             // rws
             // if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {

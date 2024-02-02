@@ -1,6 +1,9 @@
 //! Mock Block definition and builder related methods.
 
-use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
+use crate::{
+    withdrawal::MockWithdrawal, MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY,
+    MOCK_GASLIMIT,
+};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
 use ethers_core::{
     types::{Bloom, OtherFields},
@@ -37,6 +40,7 @@ pub struct MockBlock {
     seal_fields: Vec<Bytes>,
     uncles: Vec<Hash>,
     pub(crate) transactions: Vec<MockTransaction>,
+    pub(crate) withdrawals: Vec<MockWithdrawal>,
     size: Word,
     // This field is handled here as we assume that all block txs have the same ChainId.
     // Also, the field is stored in the block_table since we don't have a chain_config
@@ -71,6 +75,7 @@ impl Default for MockBlock {
             seal_fields: Vec::new(),
             uncles: Vec::new(),
             transactions: Vec::new(),
+            withdrawals: Vec::new(),
             size: Word::zero(),
             chain_id: *MOCK_CHAIN_ID,
         }
@@ -109,8 +114,13 @@ impl From<MockBlock> for Block<Transaction> {
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             other: OtherFields::default(),
-            withdrawals_root: None,
-            withdrawals: None,
+            withdrawals_root: mock.withdrawal_hash,
+            withdrawals: Some(
+                mock.withdrawals
+                    .iter_mut()
+                    .map(|mock_wd| mock_wd.to_owned().into())
+                    .collect(),
+            ),
         }
     }
 }
@@ -143,8 +153,13 @@ impl From<MockBlock> for Block<()> {
             transactions: vec![],
             size: Some(mock.size),
             other: OtherFields::default(),
-            withdrawals_root: None,
-            withdrawals: None,
+            withdrawals_root: mock.withdrawal_hash,
+            withdrawals: Some(
+                mock.withdrawals
+                    .iter()
+                    .map(|mock_wd| mock_wd.to_owned().into())
+                    .collect(),
+            ),
         }
     }
 }

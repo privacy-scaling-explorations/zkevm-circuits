@@ -66,7 +66,7 @@ impl<F: Field> BytecodeCircuitRow<F> {
         }
     }
 
-    /// Padding must be a header, acording to the q_last constraints
+    /// Padding must be a header, according to the q_last constraints
     fn pad() -> Self {
         Self {
             code_hash: empty_code_hash_word_value(),

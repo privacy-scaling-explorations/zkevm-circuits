@@ -16,7 +16,7 @@ use statetest::{
     StateTest,
 };
 use std::{collections::HashSet, path::PathBuf, time::SystemTime};
-use strum::EnumString;
+use strum_macros::EnumString;
 
 const REPORT_FOLDER: &str = "report";
 const CODEHASH_FILE: &str = "./codehash.txt";

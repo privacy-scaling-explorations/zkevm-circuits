@@ -180,7 +180,7 @@ mod test {
 
         let mut ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         if let Some(r) = r {
-            let mut last = ctx
+            let last = ctx
                 .geth_traces
                 .first_mut()
                 .unwrap()
@@ -190,15 +190,12 @@ mod test {
             last.stack = Stack::from_vec(vec![r]);
         }
 
-        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
-        if !ok {
-            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
-                assert!(prover
-                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
-                    .is_err())
-            }));
-        };
-        ctb.run()
+        let result = CircuitTestBuilder::new_from_test_ctx(ctx).run_with_result();
+        if ok {
+            assert!(result.is_ok())
+        } else {
+            result.unwrap_err().assert_evm_failure()
+        }
     }
 
     fn test_ok_u32(a: u32, b: u32, n: u32, r: Option<u32>) {

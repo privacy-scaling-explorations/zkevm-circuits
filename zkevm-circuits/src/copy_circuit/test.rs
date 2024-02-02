@@ -36,7 +36,7 @@ pub fn test_copy_circuit<F: Field>(
         CopyCircuit::<F>::new_with_external_data(copy_events, max_copy_rows, external_data);
 
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-    prover.verify_par()
+    prover.verify()
 }
 
 /// Test copy circuit with the provided block witness
@@ -342,6 +342,8 @@ fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>
             VerifyFailure::CellNotAssigned { .. } => panic!(),
             VerifyFailure::ConstraintPoisoned { .. } => panic!(),
             VerifyFailure::Permutation { .. } => panic!(),
+            VerifyFailure::InstanceCellNotAssigned { .. } => panic!(),
+            VerifyFailure::Shuffle { .. } => panic!(),
         }
     }
 }

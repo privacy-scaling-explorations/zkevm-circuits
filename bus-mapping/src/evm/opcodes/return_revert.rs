@@ -37,7 +37,7 @@ impl Opcode for ReturnRevert {
             call.call_id,
             CallContextField::IsSuccess,
             call.is_success.to_word(),
-        );
+        )?;
 
         // Get low Uint64 of offset to generate copy steps. Since offset could
         // be Uint64 overflow if length is zero.
@@ -48,7 +48,7 @@ impl Opcode for ReturnRevert {
         if call.is_create() && call.is_success && length > 0 {
             // Read the first byte of init code and check it must not be 0xef (EIP-3541).
             let init_code_first_byte = state.call_ctx()?.memory.0[offset];
-            state.memory_read(&mut exec_step, offset.into(), init_code_first_byte)?;
+            state.memory_read(&mut exec_step, offset.into())?;
             assert_ne!(init_code_first_byte, INVALID_INIT_CODE_FIRST_BYTE);
 
             // Note: handle_return updates state.code_db. All we need to do here is push the
@@ -72,7 +72,7 @@ impl Opcode for ReturnRevert {
                 ),
                 (CallContextField::IsPersistent, call.is_persistent.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value)?;
             }
 
             state.push_op_reversible(
@@ -93,7 +93,7 @@ impl Opcode for ReturnRevert {
                 call.call_id,
                 CallContextField::IsPersistent,
                 call.is_persistent.to_word(),
-            );
+            )?;
         }
 
         // Case C in the specs.
@@ -107,7 +107,7 @@ impl Opcode for ReturnRevert {
                 (CallContextField::ReturnDataOffset, call.return_data_offset),
                 (CallContextField::ReturnDataLength, call.return_data_length),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value.into());
+                state.call_context_read(&mut exec_step, call.call_id, field, value.into())?;
             }
 
             let return_data_length = usize::try_from(call.return_data_length).unwrap();
@@ -138,7 +138,7 @@ impl Opcode for ReturnRevert {
             }
         }
 
-        state.handle_return(&mut exec_step, steps, false)?;
+        state.handle_return(&mut [&mut exec_step], steps, false)?;
         Ok(vec![exec_step])
     }
 }
@@ -173,12 +173,12 @@ fn handle_copy(
             step,
             RW::READ,
             MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+        )?;
         state.push_op(
             step,
             RW::WRITE,
             MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
-        );
+        )?;
     }
 
     state.push_copy(
@@ -216,7 +216,7 @@ fn handle_create(
             step,
             RW::READ,
             MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+        )?;
     }
 
     state.push_copy(

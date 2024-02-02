@@ -146,7 +146,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.key_mult_post_branch.expr(),
                         branch.num_nibbles.expr(),
                         branch.is_key_odd.expr(),
-                        0.expr(),
+                        branch.key_rlc_post_drifted.expr(),
                         0.expr(),
                         0.expr(),
                         false.expr(),
@@ -158,7 +158,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        Word::<Expression<F>>::new([0.expr(), 0.expr()])
+                        Word::zero(),
                     );
                  } elsex {
                     KeyData::store(
@@ -275,7 +275,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_rlc_post_branch,
                     key_mult_post_branch,
                     num_nibbles,
-                    0.scalar(),
+                    key_rlc_post_drifted,
                     0.scalar(),
                     0,
                 )?;
@@ -287,7 +287,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    Word::<F>::new([0.scalar(), 0.scalar()]),
+                    Word::zero_f(),
                 )?;
             } else {
                 KeyData::witness_store(
