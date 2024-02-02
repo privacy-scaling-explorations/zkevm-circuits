@@ -41,21 +41,19 @@ pub struct ChunkContext {
     pub initial_copy: usize,
     ///
     pub end_copy: usize,
-    /// If this block is chunked dynamically, update the param
-    pub dynamic_update: bool,
     /// Druing dry run, chuncking is desabled
     pub enable: bool,
 }
 
 impl Default for ChunkContext {
     fn default() -> Self {
-        Self::new(1, false)
+        Self::new(1)
     }
 }
 
 impl ChunkContext {
     /// Create a new Self
-    pub fn new(total_chunks: usize, dynamic_update: bool) -> Self {
+    pub fn new(total_chunks: usize) -> Self {
         Self {
             rwc: RWCounter::new(),
             idx: 0,
@@ -66,7 +64,6 @@ impl ChunkContext {
             end_tx: 0,
             initial_copy: 0,
             end_copy: 0,
-            dynamic_update,
             enable: true,
         }
     }
@@ -83,7 +80,6 @@ impl ChunkContext {
             end_tx: 0,
             initial_copy: 0,
             end_copy: 0,
-            dynamic_update: false,
             enable: true,
         }
     }

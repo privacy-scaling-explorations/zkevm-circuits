@@ -139,10 +139,6 @@ pub trait CircuitsParams: Debug + Copy {
     fn set_total_chunk(&mut self, total_chunks: usize);
     /// Return the maximun Rw
     fn max_rws(&self) -> Option<usize>;
-    /// Return whether the parameters are dynamic.
-    /// If true, the `total_chunks` and `max_rws` will serve as a target value for chunking
-    /// and [`FixedCParams`] will be recomputed from each generated chunk witness.
-    fn dynamic_update(&self) -> bool;
 }
 
 impl CircuitsParams for FixedCParams {
@@ -155,9 +151,6 @@ impl CircuitsParams for FixedCParams {
     fn max_rws(&self) -> Option<usize> {
         Some(self.max_rws)
     }
-    fn dynamic_update(&self) -> bool {
-        false
-    }
 }
 impl CircuitsParams for DynamicCParams {
     fn total_chunks(&self) -> usize {
@@ -168,9 +161,6 @@ impl CircuitsParams for DynamicCParams {
     }
     fn max_rws(&self) -> Option<usize> {
         None
-    }
-    fn dynamic_update(&self) -> bool {
-        true
     }
 }
 
@@ -257,7 +247,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             block,
             chunks,
             block_ctx: BlockContext::new(),
-            chunk_ctx: ChunkContext::new(total_chunks, params.dynamic_update()),
+            chunk_ctx: ChunkContext::new(total_chunks),
             circuits_params: params,
             feature_config,
         }
@@ -354,12 +344,12 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             return Ok(());
         }
         let is_last_tx = tx_ctx.is_last_tx();
-        let dynamic = self.chunk_ctx.dynamic_update;
+        let is_dynamic_max_row = self.circuits_params.max_rws().is_none();
         let mut gen_chunk =
             // No lookahead, if chunk_rws exceed max just chunk then update param
-            (dynamic && self.chunk_rws() > self.circuits_params.max_rws().unwrap_or_default() - self.rws_reserve())
+            (is_dynamic_max_row && self.chunk_rws() > self.circuits_params.max_rws().unwrap_or_default().saturating_sub(self.rws_reserve()))
             // Lookahead, chunk_rws should never exceed, never update param
-            || (!dynamic && self.chunk_rws() + RW_BUFFER >= self.circuits_params.max_rws().unwrap_or_default() - self.rws_reserve());
+            || (!is_dynamic_max_row && self.chunk_rws() + RW_BUFFER >= self.circuits_params.max_rws().unwrap_or_default().saturating_sub(self.rws_reserve()));
 
         if gen_chunk {
             // Optain the first op of the next GethExecStep, for fixed case also lookahead
@@ -382,10 +372,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             // Check again, 1) if dynamic keep chunking 2) if fixed chunk when lookahead exceed
             // 3) gen chunk steps there're more chunks after
             gen_chunk = !self.chunk_ctx.is_last_chunk()
-                && (dynamic
+                && (is_dynamic_max_row
                     || cib.chunk_rws()
-                        > self.circuits_params.max_rws().unwrap_or_default() - cib.rws_reserve());
-            if dynamic {
+                        > self
+                            .circuits_params
+                            .max_rws()
+                            .unwrap_or_default()
+                            .saturating_sub(cib.rws_reserve()));
+            if is_dynamic_max_row {
                 self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
             }
             if gen_chunk {
@@ -687,8 +681,9 @@ impl CircuitInputBuilder<FixedCParams> {
         println!("--------------{:?}", self.circuits_params);
         // accumulates gas across all txs in the block
         let last_call = self.begin_handle_block(eth_block, geth_traces)?;
+
         // At the last chunk fixed param also need to be updated
-        if self.chunk_ctx.dynamic_update {
+        if self.circuits_params.max_rws().is_none() {
             self.cur_chunk_mut().fixed_param = self.compute_param(&self.block.eth_block);
         } else {
             self.cur_chunk_mut().fixed_param = self.circuits_params;
@@ -918,7 +913,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             chunks: self.chunks,
             block_ctx: self.block_ctx,
-            chunk_ctx: ChunkContext::new(total_chunks, true),
+            chunk_ctx: ChunkContext::new(total_chunks),
             circuits_params: target_params,
             feature_config: self.feature_config,
         };
