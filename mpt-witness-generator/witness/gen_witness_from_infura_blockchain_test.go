@@ -2302,3 +2302,34 @@ func TestWrongAccount(t *testing.T) {
 
 	prepareWitness("WrongAccount", trieModifications, statedb)
 }
+
+func TestStorageDoesNotExistOnlySProof(t *testing.T) {
+	blockNum := 2000003
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0xcaac46d9bd68bffb533320545a90cd92c6e98e58")
+
+	// Implicitly create account:
+	trieMod1 := TrieModification{
+		Type:    BalanceChanged,
+		Balance: big.NewInt(98),
+		Address: addr,
+	}
+
+	key1 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	// leave the same
+	val1 := common.Hash{}
+
+	trieMod2 := TrieModification{
+		Type:    StorageDoesNotExist,
+		Key:     key1,
+		Value:   val1,
+		Address: addr,
+	}
+
+	trieModifications := []TrieModification{trieMod1, trieMod2}
+
+	prepareWitness("StorageDoesNotExistOnlySProof", trieModifications, statedb)
+}

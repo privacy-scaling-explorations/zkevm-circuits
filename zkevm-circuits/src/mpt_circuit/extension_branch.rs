@@ -161,6 +161,10 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         Word::zero(),
                     );
                  } elsex {
+                    // For the placeholder branch / extension node the values did not change, we reuse
+                    // the previous values. These values are used in the leaf after the placeholder branch
+                    // - this way we can use `KeyData` and `ParentData` in the leaf as in the cases of
+                    // the leaf after the non-placeholder branch.
                     KeyData::store(
                         cb,
                         &mut ctx.memory[key_memory(is_s)],

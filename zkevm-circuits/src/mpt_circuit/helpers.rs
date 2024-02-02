@@ -1222,14 +1222,14 @@ impl<F: Field> WrongGadget<F> {
         key_value: &RLPItemView<F>,
         key_rlc: &Expression<F>,
         expected_item: &RLPItemView<F>,
-        is_in_empty_tree: Expression<F>,
+        is_placeholder: Expression<F>,
         key_data: KeyData<F>,
         r: &Expression<F>,
     ) -> Self {
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
             // Get the previous key data
-            ifx! {(is_non_existing, not!(is_in_empty_tree)) => {
+            ifx! {(is_non_existing, not!(is_placeholder)) => {
                 // Calculate the key
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
