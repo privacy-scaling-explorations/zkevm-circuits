@@ -11,6 +11,7 @@ use crate::{
     },
     util::Challenges,
 };
+use bus_mapping::circuit_input_builder::FeatureConfig;
 use eth_types::{Field, Word};
 pub(crate) use halo2_proofs::circuit::Layouter;
 use halo2_proofs::{
@@ -101,6 +102,7 @@ impl<F: Field, G: MemoryGadgetContainer<F>> Circuit<F> for UnitTestMemoryGadgetB
             step_next,
             &challenges_exprs,
             ExecutionState::STOP,
+            FeatureConfig::default(),
         );
         let memory_gadget_container = G::configure_gadget_container(&mut cb);
         let (constraints, stored_expressions, _, _) = cb.build();

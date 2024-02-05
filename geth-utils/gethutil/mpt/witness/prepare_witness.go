@@ -370,16 +370,18 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 	var nodes []Node
 
-	branchC16 := byte(0)
-	branchC1 := byte(1)
 	for i := 0; i < upTo; i++ {
 		if !isBranch(proof1[i]) {
-			isNonExisting := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof)
-			isExt := len(extNibblesS) != 0 || len(extNibblesC) != 0
+			isNonExistingProof := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof)
+			areThereNibbles := len(extNibblesS) != 0 || len(extNibblesC) != 0
 			// If i < upTo-1, it means it's not a leaf, so it's an extension node.
+			// There is no any special relation between isNonExistingProof and isExtension,
+			// except that in the non-existing proof the extension node can appear in `i == upTo-1`.
 			// For non-existing proof, the last node in the proof could be an extension node (we have
-			// nil in the branch; for the wrong leaf case we don't need to worry because it appears in i = upTo-1).
-			if (i != upTo-1) || (isExt && isNonExisting) { // extension node
+			// nil in the underlying branch). For the non-existing proof with the wrong leaf
+			// (non-existing proofs can be with a nil leaf or with a wrong leaf),
+			// we don't need to worry because it appears in i = upTo-1).
+			if (i != upTo-1) || (areThereNibbles && isNonExistingProof) { // extension node
 				var numberOfNibbles byte
 				isExtension = true
 				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[i], proof2[i])
@@ -399,27 +401,6 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 			nodes = append(nodes, node)
 		} else {
-			switchC16 := true // If not extension node, switchC16 = true.
-			if isExtension {
-				keyLen := getExtensionNodeKeyLen(proof1[i-1])
-				if keyLen == 1 {
-					switchC16 = false
-				} else {
-					if proof1[i-1][2] != 0 { // If even, switch16 = true.
-						switchC16 = false
-					}
-				}
-			}
-			if switchC16 {
-				if branchC16 == 1 {
-					branchC16 = 0
-					branchC1 = 1
-				} else {
-					branchC16 = 1
-					branchC1 = 0
-				}
-			}
-
 			var extNode1 []byte = nil
 			var extNode2 []byte = nil
 			if isExtension {
@@ -428,7 +409,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			}
 
 			bNode := prepareBranchNode(proof1[i], proof2[i], extNode1, extNode2, extListRlpBytes, extValues,
-				key[keyIndex], key[keyIndex], branchC16, branchC1, false, false, isExtension)
+				key[keyIndex], key[keyIndex], false, false, isExtension)
 			nodes = append(nodes, bNode)
 
 			keyIndex += 1
@@ -444,10 +425,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				leafRow0 = proof2[len2-1]
 			}
 
-			isModifiedExtNode, _, numberOfNibbles, branchC16, bNode := addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC,
+			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC,
 				leafRow0, key, neighbourNode,
 				keyIndex, extensionNodeInd, additionalBranch,
-				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, branchC16, branchC1, &toBeHashed)
+				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
 
 			nodes = append(nodes, bNode)
 
@@ -488,14 +469,14 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if isModifiedExtNode {
 				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
 					keyIndex, extensionNodeInd, numberOfNibbles, additionalBranch,
-					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, branchC16, branchC1, &toBeHashed)
+					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
 			}
 			nodes = append(nodes, leafNode)
 		} else {
 			node := prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, isAccountProof, false, false)
 			nodes = append(nodes, node)
 		}
-	} else if (len(proof1) == 0 && len(proof2) == 0) || isBranch(proof2[len(proof2)-1]) {
+	} else if (len1 == 0 && len2 == 0) || isBranch(proof2[len(proof2)-1]) {
 		// Account proof has drifted leaf as the last row, storage proof has non-existing-storage row
 		// as the last row.
 		// When non existing proof and only the branches are returned, we add a placeholder leaf.

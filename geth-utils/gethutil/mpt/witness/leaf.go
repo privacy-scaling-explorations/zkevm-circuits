@@ -408,7 +408,10 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 }
 
 func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyIndex int) Node {
-	leaf := make([]byte, valueLen)
+	// valueLen + 1 because the placeholder leaf in the empty trie occupies 35 bytes:
+	// [227 161 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+	// 33 (33 = 161 - 128) bytes for path, as in the example above
+	leaf := make([]byte, valueLen+1)
 	setStorageLeafKeyRLP(&leaf, key, keyIndex)
 	keyLen := getLeafKeyLen(keyIndex)
 	leaf[0] = 192 + 1 + byte(keyLen) + 1

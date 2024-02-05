@@ -6,6 +6,7 @@ use std::{
 };
 
 use eth_types::{Field, ToScalar};
+
 use ethers::{
     abi::Address,
     prelude::*,

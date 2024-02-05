@@ -87,6 +87,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
         MPTCircuitParams {
             degree: self.mpt_circuit.degree,
             disable_preimage_check: self.mpt_circuit.disable_preimage_check,
+            max_nodes: self.mpt_circuit.max_nodes,
         }
     }
 
@@ -298,14 +299,15 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
         // assign MPT witness
 
-        let height =
-            config
-                .mpt_config
-                .assign(&mut layouter, &self.mpt_circuit.nodes, &challenges)?;
-        config.mpt_config.load_fixed_table(&mut layouter)?;
         config
             .mpt_config
-            .load_mult_table(&mut layouter, &challenges, height)?;
+            .assign(&mut layouter, &self.mpt_circuit.nodes, &challenges)?;
+        config.mpt_config.load_fixed_table(&mut layouter)?;
+        config.mpt_config.load_mult_table(
+            &mut layouter,
+            &challenges,
+            self.mpt_circuit.max_nodes,
+        )?;
 
         #[cfg(feature = "disable-keccak")]
         config.mpt_config.keccak_table.dev_load(
@@ -463,6 +465,7 @@ impl StateUpdateCircuit<Fr> {
     pub fn new(
         witness: Witness<Fr>,
         degree: usize,
+        max_nodes: usize,
         max_proof_count: usize,
     ) -> Result<StateUpdateCircuit<Fr>> {
         let Witness {
@@ -486,6 +489,7 @@ impl StateUpdateCircuit<Fr> {
             nodes: mpt_witness,
             keccak_data: keccak_data.clone(),
             degree,
+            max_nodes,
             disable_preimage_check,
             _marker: std::marker::PhantomData,
         };

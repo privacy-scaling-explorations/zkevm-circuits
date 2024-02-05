@@ -10,7 +10,7 @@ gadgets = { path = "../../gadgets" }
 geth-utils = { path = "../../geth-utils" }
 zkevm-circuits = { path = "../../zkevm-circuits", features=["test-circuits"]}
 eyre = "0.6.11"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git",  features=["circuit-params"], tag = "v0.3.0" }
 serde_json = "1.0.111"
 tokio = { version= "1.28.2", features = ["macros", "rt-multi-thread"]  }
 glob = "0.3.1"

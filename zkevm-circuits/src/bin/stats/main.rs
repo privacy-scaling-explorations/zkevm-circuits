@@ -1,3 +1,4 @@
+use bus_mapping::circuit_input_builder::FeatureConfig;
 use cli_table::{print_stdout, Cell, Style, Table};
 use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
 use halo2_proofs::{
@@ -113,7 +114,7 @@ fn copy_states_stats() {
 /// cell consumers of each EVM Cell type.
 fn get_exec_steps_occupancy() {
     let mut meta = ConstraintSystem::<Fr>::default();
-    let circuit = EvmCircuit::configure(&mut meta);
+    let circuit = EvmCircuit::configure_with_params(&mut meta, FeatureConfig::default());
 
     let report = circuit.0.execution.instrument().clone().analyze();
     macro_rules! gen_report {

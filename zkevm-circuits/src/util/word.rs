@@ -18,6 +18,10 @@ use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
 /// evm word 32 bytes, half word 16 bytes
 const N_BYTES_HALF_WORD: usize = 16;
 
+const BASE_128_BYTES: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
 /// The EVM word for witness
 #[derive(Clone, Debug, Copy)]
 pub struct WordLimbs<T, const N: usize> {
@@ -343,25 +347,43 @@ impl Word<Column<Advice>> {
     }
 }
 
-impl<F: Field> WordExpr<F> for Word<Cell<F>> {
+impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for Word<T> {
     fn to_word(&self) -> Word<Expression<F>> {
-        self.word_expr().to_word()
+        self.map(|limb| limb.expr())
+    }
+}
+
+impl<F: Field> Word<F> {
+    /// zero word
+    pub fn zero_f() -> Self {
+        Self::new([F::ZERO, F::ZERO])
+    }
+
+    /// one word
+    pub fn one_f() -> Self {
+        Self::new([F::ONE, F::ZERO])
+    }
+
+    /// Convert address (h160) to single field element.
+    /// This method is Address specific
+    pub fn compress_f(&self) -> F {
+        self.lo() + self.hi() * F::from_repr(BASE_128_BYTES).unwrap()
     }
 }
 
 impl<F: Field> Word<Expression<F>> {
     /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
     pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
-        Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
+        Self::new([lo, 0.expr()])
     }
     /// zero word
     pub fn zero() -> Self {
-        Self(WordLimbs::<Expression<F>, 2>::new([0.expr(), 0.expr()]))
+        Self::new([0.expr(), 0.expr()])
     }
 
     /// one word
     pub fn one() -> Self {
-        Self(WordLimbs::<Expression<F>, 2>::new([1.expr(), 0.expr()]))
+        Self::new([1.expr(), 0.expr()])
     }
 
     /// select based on selector. Here assume selector is 1/0 therefore no overflow check
@@ -398,11 +420,11 @@ impl<F: Field> Word<Expression<F>> {
     pub fn mul_unchecked(self, rhs: Self) -> Self {
         Word::new([self.lo() * rhs.lo(), self.hi() * rhs.hi()])
     }
-}
 
-impl<F: Field> WordExpr<F> for Word<Expression<F>> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        self.clone()
+    /// Convert address (h160) to single expression.
+    /// This method is Address specific
+    pub fn compress(&self) -> Expression<F> {
+        self.lo() + self.hi() * Expression::Constant(F::from_repr(BASE_128_BYTES).unwrap())
     }
 }
 

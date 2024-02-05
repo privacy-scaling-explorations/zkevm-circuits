@@ -14,18 +14,20 @@ async fn mock_prove(block_no: u64, access_list: &str) -> Result<()> {
     let provider_url = "http://localhost:3000";
 
     let access_list: AccessList = serde_json::from_str(access_list)?;
-    let proof_count = access_list.0.len() * 3
+    let proof_count = 2 * access_list.0.len() * 3
         + access_list
             .0
             .iter()
             .map(|k| k.storage_keys.len())
             .sum::<usize>();
 
+    let max_nodes = 40000;
+
     let witness = Witness::<Fr>::build(provider_url, U64::from(block_no), Some(access_list), true)
         .await?
         .unwrap();
 
-    let circuit = StateUpdateCircuit::new(witness, 16, 2 * proof_count)?;
+    let circuit = StateUpdateCircuit::new(witness, 16, max_nodes, proof_count+10)?;
     circuit.assert_satisfied();
     Ok(())
 }

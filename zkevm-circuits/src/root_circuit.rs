@@ -3,7 +3,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::serde::SerdeObject,
+    halo2curves::{serde::SerdeObject, CurveAffine, CurveExt},
     plonk::{Circuit, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -44,19 +44,23 @@ pub use snark_verifier::{
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
 #[derive(Clone)]
-pub struct RootCircuit<'a, M: MultiMillerLoop, As> {
+pub struct RootCircuit<'a, M: MultiMillerLoop, As>
+where
+    M::G1Affine: CurveAffine,
+{
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
-    instance: Vec<M::Scalar>,
+    instance: Vec<M::Fr>,
     _marker: PhantomData<As>,
 }
 
 impl<'a, M, As> RootCircuit<'a, M, As>
 where
     M: MultiMillerLoop,
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
-    M::Scalar: Field,
+    M::Fr: Field,
+    M::G1: CurveExt<AffineExt = M::G1Affine, ScalarExt = M::Fr>,
+    M::G1Affine: SerdeObject + CurveAffine<ScalarExt = M::Fr, CurveExt = M::G1>,
+    M::G2Affine: SerdeObject + CurveAffine,
     As: PolynomialCommitmentScheme<
             M::G1Affine,
             NativeLoader,
@@ -73,12 +77,12 @@ where
     pub fn new(
         params: &ParamsKZG<M>,
         super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
-        super_circuit_instances: Value<&'a Vec<Vec<M::Scalar>>>,
+        super_circuit_instances: Value<&'a Vec<Vec<M::Fr>>>,
         super_circuit_proof: Value<&'a [u8]>,
     ) -> Result<Self, snark_verifier::Error> {
         let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
         let instance = {
-            let mut instance = Ok(vec![M::Scalar::ZERO; num_instances]);
+            let mut instance = Ok(vec![M::Fr::ZERO; num_instances]);
             super_circuit_instances
                 .as_ref()
                 .zip(super_circuit_proof.as_ref())
@@ -126,15 +130,16 @@ where
     }
 
     /// Returns instance
-    pub fn instance(&self) -> Vec<Vec<M::Scalar>> {
+    pub fn instance(&self) -> Vec<Vec<M::Fr>> {
         vec![self.instance.clone()]
     }
 }
 
-impl<'a, M, As> Circuit<M::Scalar> for RootCircuit<'a, M, As>
+impl<'a, M, As> Circuit<M::Fr> for RootCircuit<'a, M, As>
 where
     M: MultiMillerLoop,
-    M::Scalar: Field,
+    M::Fr: Field,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
     for<'b> As: PolynomialCommitmentScheme<
             M::G1Affine,
             Rc<Halo2Loader<'b, M::G1Affine>>,
@@ -155,19 +160,19 @@ where
         Self {
             svk: self.svk,
             snark: self.snark.without_witnesses(),
-            instance: vec![M::Scalar::ZERO; self.instance.len()],
+            instance: vec![M::Fr::ZERO; self.instance.len()],
             _marker: PhantomData,
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<M::Scalar>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<M::Fr>) -> Self::Config {
         AggregationConfig::configure::<M::G1Affine>(meta)
     }
 
     fn synthesize(
         &self,
         config: Self::Config,
-        mut layouter: impl Layouter<M::Scalar>,
+        mut layouter: impl Layouter<M::Fr>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
         let (instance, accumulator_limbs) =

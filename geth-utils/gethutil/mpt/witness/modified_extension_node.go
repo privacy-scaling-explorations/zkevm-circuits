@@ -16,7 +16,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	key, neighbourNode []byte,
 	keyIndex, extensionNodeInd, numberOfNibbles int,
 	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool, branchC16, branchC1 byte, toBeHashed *[][]byte) Node {
+	isShorterProofLastLeaf bool, toBeHashed *[][]byte) Node {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
