@@ -31,7 +31,9 @@ use bus_mapping::{
     evm::OpcodeId,
     precompile::{is_precompiled, PrecompileCalls},
 };
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToScalar, U256};
+use eth_types::{
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, OpsIdentity, ToAddress, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use std::cmp::min;
 

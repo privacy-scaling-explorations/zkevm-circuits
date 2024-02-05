@@ -1,4 +1,4 @@
-use eth_types::{Field, U256};
+use eth_types::{Field, OpsIdentity, U256};
 use gadgets::util::Scalar;
 use halo2_proofs::{
     circuit::Value,
@@ -191,7 +191,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
-                        require!(value_word[is_s.idx()] => Word::zero());
+                        require!(value_word[is_s.idx()] => Word::<Expression<F>>::zero());
                     }}
 
                     // Make sure the RLP encoding is correct.
@@ -436,7 +436,7 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut value_word = vec![Word::zero_f(); 2];
+        let mut value_word = vec![Word::zero(); 2];
         for is_s in [true, false] {
             self.is_mod_extension[is_s.idx()].assign(
                 region,
@@ -596,10 +596,10 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut new_value = value_word[false.idx()];
         let mut old_value = value_word[true.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::zero_f();
+            new_value = word::Word::zero();
         } else if is_non_existing_proof {
-            new_value = word::Word::zero_f();
-            old_value = word::Word::zero_f();
+            new_value = word::Word::zero();
+            old_value = word::Word::zero();
         }
         mpt_config.mpt_table.assign_cached(
             region,

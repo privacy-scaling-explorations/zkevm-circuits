@@ -15,7 +15,7 @@ use crate::{
     },
     util::word::Word,
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, VirtualCells};
 
@@ -96,7 +96,7 @@ impl<F: Field> StartConfig<F> {
         self.proof_type
             .assign(region, offset, start.proof_type.scalar())?;
 
-        let mut root = vec![Word::zero_f(); 2];
+        let mut root = vec![Word::zero(); 2];
         for is_s in [true, false] {
             root[is_s.idx()] = rlp_values[is_s.idx()].word();
         }

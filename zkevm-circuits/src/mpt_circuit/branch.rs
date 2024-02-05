@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
@@ -351,7 +351,7 @@ impl<F: Field> BranchGadget<F> {
         let key_mult_post_branch = *key_mult * mult;
 
         // Set the branch we'll take
-        let mut mod_node_hash_word = [word::Word::zero_f(); 2];
+        let mut mod_node_hash_word = [word::Word::zero(); 2];
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             (

@@ -27,7 +27,7 @@ use crate::{
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::PRECOMPILE_COUNT, keccak256, Field, ToWord, U256};
+use eth_types::{evm_types::PRECOMPILE_COUNT, keccak256, Field, OpsIdentity, ToWord, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
