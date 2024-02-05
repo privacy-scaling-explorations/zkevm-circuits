@@ -101,33 +101,12 @@ where
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
-        #[cfg(feature = "onephase")]
-        let num_advice = [calc_required_advices(MAX_NUM_SIG)];
-        #[cfg(not(feature = "onephase"))]
         // need an additional phase 2 column/basic gate to hold the witnesses during RLC
         // computations
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
-
         let num_lookup_advice = [calc_required_lookup_advices(MAX_NUM_SIG)];
-
-        #[cfg(feature = "onephase")]
-        log::info!("configuring ECDSA chip with single phase");
-        #[cfg(not(feature = "onephase"))]
         log::info!("configuring ECDSA chip with multiple phases");
 
-        // halo2-ecc's ECDSA config
-        //
-        // get the following parameters by running
-        // `cargo test --release --package zkevm-circuits --lib sig_circuit::test::sign_verify --
-        // --nocapture`
-        // - num_advice: 56
-        // - num_lookup_advice: 8
-        // - num_fixed: 1
-        // - lookup_bits: 19
-        // - limb_bits: 88
-        // - num_limbs: 3
-        //
-        // TODO: make those parameters tunable from a config file
         let ecdsa_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
@@ -135,17 +114,14 @@ where
             &num_lookup_advice,
             1,
             LOG_TOTAL_NUM_ROWS - 1,
-            88,
-            3,
+            LIMB_BITS,
+            NUM_LIMBS,
             modulus::<Fp>(),
             0,
             LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         );
 
         // we need one phase 2 column to store RLC results
-        #[cfg(feature = "onephase")]
-        let rlc_column = meta.advice_column_in(halo2_proofs::plonk::FirstPhase);
-        #[cfg(not(feature = "onephase"))]
         let rlc_column = meta.advice_column_in(halo2_proofs::plonk::SecondPhase);
 
         meta.enable_equality(rlc_column);
@@ -862,13 +838,10 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 // IMPORTANT: Move to Phase2 before RLC
                 log::info!("before proceeding to the next phase");
 
-                #[cfg(not(feature = "onephase"))]
-                {
-                    // finalize the current lookup table before moving to next phase
-                    ecdsa_chip.finalize(&mut ctx);
-                    ctx.print_stats(&["ECDSA context"]);
-                    ctx.next_phase();
-                }
+                // finalize the current lookup table before moving to next phase
+                ecdsa_chip.finalize(&mut ctx);
+                ctx.print_stats(&["ECDSA context"]);
+                ctx.next_phase();
 
                 // ================================================
                 // step 3: compute RLC of keys and messages

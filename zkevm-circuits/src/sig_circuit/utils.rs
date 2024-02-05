@@ -10,18 +10,35 @@ use halo2_proofs::halo2curves::secp256k1::{Fp, Fq};
 use crate::util::word::Word;
 
 // Hard coded parameters.
-// FIXME: allow for a configurable param.
+// TODO: allow for a configurable param.
 pub(super) const MAX_NUM_SIG: usize = 128;
-// Each ecdsa signature requires 461540 cells
+/// Each ecdsa signature requires 461540 cells
 pub(super) const CELLS_PER_SIG: usize = 461540;
-// Each ecdsa signature requires 63489 lookup cells
+/// Each ecdsa signature requires 63489 lookup cells
 pub(super) const LOOKUP_CELLS_PER_SIG: usize = 63489;
-// Total number of rows allocated for ecdsa chip
+/// Total number of rows allocated for ecdsa chip
 pub(super) const LOG_TOTAL_NUM_ROWS: usize = 20;
-// Max number of columns allowed
+/// Max number of columns allowed
 pub(super) const COLUMN_NUM_LIMIT: usize = 58;
-// Max number of lookup columns allowed
+/// Max number of lookup columns allowed
 pub(super) const LOOKUP_COLUMN_NUM_LIMIT: usize = 9;
+
+// halo2-ecc's ECDSA config
+//
+// get the following parameters by running
+// `cargo test --release --package zkevm-circuits --lib sig_circuit::test::sign_verify --
+// --nocapture`
+// - num_advice: 56
+// - num_lookup_advice: 8
+// - num_fixed: 1
+// - lookup_bits: 19
+// - limb_bits: 88
+// - num_limbs: 3
+//
+/// Number of bits of a limb
+pub(super) const LIMB_BITS: usize = 88;
+/// Number of limbs
+pub(super) const NUM_LIMBS: usize = 3;
 
 pub(super) fn calc_required_advices(num_verif: usize) -> usize {
     let mut num_adv = 1;

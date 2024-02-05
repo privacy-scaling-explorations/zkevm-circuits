@@ -98,9 +98,6 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
     ) -> Self {
         let num_limbs = 3;
         let limb_bits = 88;
-        #[cfg(feature = "onephase")]
-        let num_advice = [35];
-        #[cfg(not(feature = "onephase"))]
         let num_advice = [35, 1];
 
         let fp_config = FpConfig::configure(
@@ -282,12 +279,9 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     decompose_ec_pairing_op
                 );
 
-                #[cfg(not(feature = "onephase"))]
-                {
-                    // finalize after first phase.
-                    config.fp_config.finalize(&mut ctx);
-                    ctx.next_phase();
-                }
+                // finalize after first phase.
+                config.fp_config.finalize(&mut ctx);
+                ctx.next_phase();
 
                 let ec_adds_assigned = assign_ec_op!(ec_adds_decomposed, assign_ec_add);
                 let ec_muls_assigned = assign_ec_op!(ec_muls_decomposed, assign_ec_mul);
