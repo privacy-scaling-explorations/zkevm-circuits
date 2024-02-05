@@ -390,11 +390,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
-        let _block = self.block.as_ref().unwrap();
         let chunk = self.chunk.as_ref().unwrap();
-
-        let (_rw_table_chunked_index, _rw_table_total_chunks) =
-            (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
 
         vec![vec![
             chunk.permu_alpha,
