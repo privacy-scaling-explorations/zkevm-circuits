@@ -154,21 +154,27 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 	var nibbles []byte
 	if leafKeyRow[0] != 248 {
-		keyLen := int(leafKeyRow[1] - 128)
-		if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
-			if leafKeyRow[2] < 32 { // extension node
-				nibbles = append(nibbles, leafKeyRow[2]-16)
-			} else { // leaf
-				nibbles = append(nibbles, leafKeyRow[2]-48)
+		var keyLen int
+		if leafKeyRow[1] > 128 {
+			keyLen = int(leafKeyRow[1] - 128)
+			if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
+				if leafKeyRow[2] < 32 { // extension node
+					nibbles = append(nibbles, leafKeyRow[2]-16)
+				} else { // leaf
+					nibbles = append(nibbles, leafKeyRow[2]-48)
+				}
 			}
-		}
-		for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
-			b := leafKeyRow[3+i]
-			n1 := b / 16
-			n2 := b - n1*16
-			nibbles = append(nibbles, n1)
-			nibbles = append(nibbles, n2)
-		}
+			for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
+				b := leafKeyRow[3+i]
+				n1 := b / 16
+				n2 := b - n1*16
+				nibbles = append(nibbles, n1)
+				nibbles = append(nibbles, n2)
+			}
+		} else {
+			keyLen = 1
+			nibbles = append(nibbles, leafKeyRow[1]-16)
+		}	
 	} else {
 		keyLen := int(leafKeyRow[2] - 128)
 		if (leafKeyRow[3] != 32) && (leafKeyRow[3] != 0) { // second term is for extension node
