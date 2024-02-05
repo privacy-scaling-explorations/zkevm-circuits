@@ -113,7 +113,7 @@ pub fn chunk_convert<F: Field>(
     );
 
     // Compute fingerprints of all chunks
-    let mut alpha_gamas = Vec::with_capacity(builder.chunks.len());
+    let mut challenges = Vec::with_capacity(builder.chunks.len());
     let mut rw_fingerprints: Vec<RwFingerprints<F>> = Vec::with_capacity(builder.chunks.len());
     let mut chrono_rw_fingerprints: Vec<RwFingerprints<F>> =
         Vec::with_capacity(builder.chunks.len());
@@ -154,7 +154,7 @@ pub fn chunk_convert<F: Field>(
             true,
         );
 
-        alpha_gamas.push(vec![alpha, gamma]);
+        challenges.push(vec![alpha, gamma]);
         rw_fingerprints.push(cur_fingerprints);
         chrono_rw_fingerprints.push(cur_chrono_fingerprints);
         if i == idx {
@@ -164,8 +164,8 @@ pub fn chunk_convert<F: Field>(
 
     // TODO(Cecilia): if we chunk across blocks then need to store the prev_block
     let chunck = Chunk {
-        permu_alpha: alpha_gamas[idx][0],
-        permu_gamma: alpha_gamas[idx][1],
+        permu_alpha: challenges[idx][0],
+        permu_gamma: challenges[idx][1],
         rw_fingerprints: rw_fingerprints[idx].clone(),
         chrono_rw_fingerprints: chrono_rw_fingerprints[idx].clone(),
         begin_chunk: chunk.begin_chunk.clone(),
