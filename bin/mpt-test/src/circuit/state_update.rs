@@ -1,3 +1,5 @@
+//! A circuit to verify chained proofs of state updates in a block.
+
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{
@@ -25,7 +27,7 @@ use zkevm_circuits::{
 
 use crate::circuit::{
     equal_words::EqualWordsConfig,
-    witness::{FieldTrieModification, FieldTrieModifications, Transforms, Witness},
+    witness::{FieldTrieModification, FieldTrieModifications, Witness},
 };
 
 #[cfg(not(feature = "disable-keccak"))]
@@ -39,36 +41,69 @@ pub fn xnif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
     and::expr([a, not::expr(b)])
 }
 
-///
+/// This
 #[derive(Clone)]
 pub struct StateUpdateCircuitConfig<F: Field> {
     #[cfg(not(feature = "disable-keccak"))]
+    /// If enabled by feature, the verification of keccaks
+    /// Please note that the keccak circuit will dramatically increase the time to generate the
+    /// proof this is the reason why it is disabled by default (check the `disable-keccak`
+    /// feature)
     pub keccak_config: KeccakCircuitConfig<F>,
+
+    /// The MPT configuration
     pub mpt_config: MPTConfig<F>,
 
+    /// The MPT table, where the state updates are stored
     pub pi_mpt: MptTable,
-    pub pi_instance: Column<Instance>,
 
+    /// Intance column, used to check public inputs
+    pub instance: Column<Instance>,
+
+    /// ONE if the first row, ZERO otherwise
     pub is_first: Column<Fixed>,
+
+    /// ONE if row is paddding, ZERO otherwise
     pub is_padding: IsZeroConfig<F>,
+
+    /// ONE is the last used row, ZERO otherwise
     pub is_last: IsZeroConfig<F>,
 
+    /// Check if new_root is propagated
     pub new_root_propagation: EqualWordsConfig<F>,
+
+    /// Check if previous old_root, and new_root are equal
     pub root_chained: EqualWordsConfig<F>,
 
+    /// A down counter, that is decreased by one in each row
     pub count: Column<Advice>,
+
+    /// Check if the counter is monotonic decreasing
     pub count_decrement: IsZeroConfig<F>,
 
     pub q_enable: Selector,
 }
 
-/// MPT Circuit for proving the storage modification is valid.
+/// MPT Circuit for proving that a from a given root, a set of state updates are valid.
+/// Public inputs:
+///     old_root_lo
+///     old_root_hi
+///     new_root_lo
+///     new_root_hi
+///     number of MPT changes
+///     for each change
+///     | change_type
+///     | address
+///     | value_lo
+///     | value_hi
+///     | key_lo
+///     | key_hi
 #[derive(Default)]
 pub struct StateUpdateCircuit<F: Field> {
-    pub transforms: Transforms,
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
     pub mpt_circuit: MPTCircuit<F>,
+
     pub lc_witness: FieldTrieModifications<F>,
     pub degree: usize,
     pub max_proof_count: usize,
@@ -110,7 +145,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
         let is_first = meta.fixed_column();
         let count = meta.advice_column();
         let q_enable = meta.complex_selector();
-        let pi_instance = meta.instance_column();
+        let instance = meta.instance_column();
         let pi_mpt = MptTable {
             address: meta.advice_column(),
             storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
@@ -140,7 +175,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             meta.enable_equality(*col);
         }
 
-        meta.enable_equality(pi_instance);
+        meta.enable_equality(instance);
         meta.enable_equality(count);
 
         let is_padding_inv = meta.advice_column();
@@ -279,7 +314,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             new_root_propagation,
             root_chained,
             q_enable,
-            pi_instance,
+            instance,
             pi_mpt,
         };
 
@@ -297,7 +332,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = _challenges.values(&mut layouter);
 
-        // assign MPT witness
+        // MPT witness
 
         config
             .mpt_config
@@ -308,6 +343,8 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
             &challenges,
             self.mpt_circuit.max_nodes,
         )?;
+
+        // Keccak witness ( if apply )
 
         #[cfg(feature = "disable-keccak")]
         config.mpt_config.keccak_table.dev_load(
@@ -320,7 +357,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
         self.keccak_circuit
             .synthesize_sub(&config.keccak_config, &challenges, &mut layouter)?;
 
-        // assign LC witness
+        // Circuit witness, returns the public inputs for the state update
 
         let pi = layouter.assign_region(
             || "lc witness",
@@ -342,7 +379,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                     || "LC_count_monodec_inv",
                     config.count_decrement.value_inv,
                 );
-                region.name_column(|| "LC_pi_instance", config.pi_instance);
+                region.name_column(|| "LC_instance", config.instance);
 
                 region.assign_fixed(|| "", config.is_first, 0, || Value::known(F::ONE))?;
 
@@ -454,7 +491,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
 
         // check that state updates to lookup are the same that the specified in the public inputs
         for (n, value) in pi.into_iter().enumerate() {
-            layouter.constrain_instance(value.unwrap().cell(), config.pi_instance, n)?;
+            layouter.constrain_instance(value.unwrap().cell(), config.instance, n)?;
         }
 
         Ok(())
@@ -470,7 +507,6 @@ impl StateUpdateCircuit<Fr> {
     ) -> Result<StateUpdateCircuit<Fr>> {
         let Witness {
             mpt_witness,
-            transforms,
             lc_witness,
         } = witness;
 
@@ -498,7 +534,6 @@ impl StateUpdateCircuit<Fr> {
         let keccak_circuit = KeccakCircuit::<Fr>::new(2usize.pow(degree as u32), keccak_data);
 
         let lc_circuit = StateUpdateCircuit::<Fr> {
-            transforms,
             #[cfg(not(feature = "disable-keccak"))]
             keccak_circuit,
             mpt_circuit,

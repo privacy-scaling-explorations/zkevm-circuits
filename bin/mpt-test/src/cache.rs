@@ -1,5 +1,7 @@
+//! A simple cache for web3 rpc requests
+
 use eth_types::keccak256;
-use eyre::{ensure, Result};
+use eyre::{ensure, eyre, Result};
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use hyper::{
     body::{self},
@@ -7,6 +9,7 @@ use hyper::{
     Body, Client, Request, Response, Server,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -20,6 +23,10 @@ lazy_static! {
     static ref CACHE: tokio::sync::Mutex<CacheFile> = tokio::sync::Mutex::new(CacheFile::new());
 }
 
+/// Cache file format is a consecutive list of entries, each entry is:
+/// - 32 bytes: key (keccak256 of the request)
+/// - 4 bytes: length of the compressed response
+/// - N bytes: compressed response
 struct CacheFile {
     offsets: HashMap<[u8; 32], u64>,
 }
@@ -29,6 +36,7 @@ impl CacheFile {
             offsets: HashMap::new(),
         }
     }
+    /// Load all existing entries from the cache file
     pub async fn load(&mut self) -> Result<()> {
         if let Ok(mut f) = File::open(CACHE_PATH) {
             let mut hash = [0u8; 32];
@@ -44,7 +52,7 @@ impl CacheFile {
         }
         Ok(())
     }
-
+    /// Write a new entry
     async fn write(&mut self, key: [u8; 32], value: &[u8]) -> Result<()> {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
         encoder.write_all(value)?;
@@ -60,11 +68,12 @@ impl CacheFile {
 
         Ok(())
     }
-
+    /// Read an entry, returns Ok(None) if not found
     async fn read(&self, key: [u8; 32]) -> Result<Option<Vec<u8>>> {
         let offset = self.offsets.get(&key).cloned();
         if let Some(offset) = offset {
-            let mut f = File::open(CACHE_PATH).unwrap();
+            let mut f =
+                File::open(CACHE_PATH).expect("since offset exists, file should exist. qed.");
             f.seek(std::io::SeekFrom::Start(offset))?;
 
             let mut len_buf = [0u8; 4];
@@ -84,10 +93,8 @@ impl CacheFile {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct RequestBody {
-    jsonrpc: String,
     method: String,
     params: Option<Vec<Param>>,
     id: u32,
@@ -100,25 +107,27 @@ enum Param {
     Bool(bool),
     StringVec(Vec<String>),
 }
+
 impl RequestBody {
-    fn name(&self) -> String {
+    fn hash(&self) -> [u8; 32] {
         let params = if let Some(params) = &self.params {
             params
                 .iter()
                 .map(|s| match s {
                     Param::String(s) => s.to_owned(),
                     Param::Bool(b) => format!("{}", b),
-                    Param::StringVec(v) => v.join(""),
+                    Param::StringVec(v) => v.join("-"),
                 })
                 .collect::<Vec<_>>()
                 .join("-")
         } else {
             "".to_owned()
         };
-        format!("{}_{}", self.method, params)
+        keccak256(format!("{}-{}", self.method, params).as_bytes())
     }
 }
 
+/// Handle a web3 rpc request with error handling
 async fn infallible_web3_proxy(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     match web3_proxy(req).await {
         Ok(res) => Ok(res),
@@ -132,24 +141,32 @@ async fn infallible_web3_proxy(req: Request<Body>) -> Result<Response<Body>, Inf
     }
 }
 
+/// Handle a web3 rpc request, return cached result or call the env!("WEB3_PROVIDER_URL") RPC server
 async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
     let method = req.method().clone();
     let headers = req.headers().clone();
+
+    // try to read the result from the cache
     let request_body_bytes = hyper::body::to_bytes(req.into_body()).await?.to_vec();
     let request_body_json: RequestBody = serde_json::from_slice(&request_body_bytes)?;
+    let key = request_body_json.hash();
+    let response_result = CACHE.lock().await.read(key).await?;
 
-    let key = keccak256(request_body_json.name().as_bytes());
-
-    let response_body = CACHE.lock().await.read(key).await?;
-
-    let response_body = if let Some(response_body) = response_body {
-        response_body
+    let response_body = if let Some(response_result) = response_result {
+        // return cached result
+        format!(
+            "{{\"id\":{}, \"jsonrpc\":\"2.0\", \"result\":{}}}",
+            request_body_json.id,
+            String::from_utf8(response_result).unwrap()
+        )
+        .into_bytes()
     } else {
         println!(
             "=>{}",
             String::from_utf8(request_body_bytes.clone()).unwrap()
         );
 
+        // call RPC server, copying headers and method from the original request
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()
             .https_or_http()
@@ -157,7 +174,7 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
             .build();
 
         let client = Client::builder().build(connector);
-        let provider_url = std::env::var("PROVIDER_URL")?;
+        let provider_url = std::env::var("WEB3_PROVIDER_URL")?;
 
         let mut req = Request::builder()
             .method(method)
@@ -176,12 +193,20 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
         let (head, response_body) = resp.into_parts();
         ensure!(head.status.is_success(), "Provider does not return 200");
 
+        // parse response and cache it
         let response_bytes = body::to_bytes(response_body).await?.to_vec();
-        CACHE.lock().await.write(key, &response_bytes).await?;
+
+        let root: Value = serde_json::from_slice(&response_bytes)?;
+        let Some(result) = root.get("result") else {
+            return Err(eyre!("Provider does not return result"));
+        };
+        let result_bytes = serde_json::to_vec(result)?;
+        CACHE.lock().await.write(key, &result_bytes).await?;
 
         response_bytes
     };
 
+    // return HTTP 200 response
     let response = Response::builder()
         .status(200)
         .body(Body::from(response_body))?;
@@ -189,10 +214,12 @@ async fn web3_proxy(req: Request<Body>) -> Result<Response<Body>> {
     Ok(response)
 }
 
+/// Load the cache file
 pub async fn load() -> Result<()> {
     CACHE.lock().await.load().await
 }
 
+/// Start the cache server at localhost:3000
 pub async fn start() -> Result<()> {
     let make_svc =
         make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(infallible_web3_proxy)) });

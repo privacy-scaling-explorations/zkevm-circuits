@@ -359,10 +359,10 @@ impl<F: Field> MPTConfig<F> {
         }
         let cell_columns = [rlp_cm.columns(), state_cm.columns()].concat();
 
-        println!("max expression degree: {}", meta.degree());
-        println!("num lookups: {}", meta.lookups().len());
-        println!("num advices: {}", meta.num_advice_columns());
-        println!("num fixed: {}", meta.num_fixed_columns());
+        // println!("max expression degree: {}", meta.degree());
+        // println!("num lookups: {}", meta.lookups().len());
+        // println!("num advices: {}", meta.num_advice_columns());
+        // println!("num fixed: {}", meta.num_fixed_columns());
         // cb.base.print_stats();
 
         MPTConfig {

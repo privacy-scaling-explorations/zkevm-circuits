@@ -1,3 +1,5 @@
+//! Some utilities.
+
 use crate::circuit::witness::FieldTrieModifications;
 use eth_types::Field;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};

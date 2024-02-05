@@ -1,3 +1,5 @@
+//! A simple chip to compare two words for equality.
+
 use eth_types::Field;
 use eyre::Result;
 use gadgets::{

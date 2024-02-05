@@ -10,6 +10,7 @@ use halo2_proofs::halo2curves::bn256::Fr;
 
 use circuit::{state_update::StateUpdateCircuit, witness::Witness};
 
+// test the StateUpdate circuit with a mock prover
 async fn mock_prove(block_no: u64, access_list: &str) -> Result<()> {
     let provider_url = "http://localhost:3000";
 
@@ -27,16 +28,20 @@ async fn mock_prove(block_no: u64, access_list: &str) -> Result<()> {
         .await?
         .unwrap();
 
-    let circuit = StateUpdateCircuit::new(witness, 16, max_nodes, proof_count+10)?;
+    let circuit = StateUpdateCircuit::new(witness, 16, max_nodes, proof_count + 10)?;
     circuit.assert_satisfied();
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // load the cache file, if exists
     cache::load().await?;
+
+    // start the cache server
     let _handle = tokio::task::spawn(cache::start());
 
+    // read all the access list files, sorting them by block number
     let mut files: Vec<_> = glob::glob("access-lists/*.json")
         .unwrap()
         .filter_map(|v| v.ok())
@@ -55,6 +60,7 @@ async fn main() -> Result<()> {
 
     files.sort_by(|(a, _), (b, _)| a.cmp(b));
 
+    // prove each block
     for (block_no, file) in files {
         let json = std::fs::read_to_string(&file)?;
         mock_prove(block_no, &json).await?;

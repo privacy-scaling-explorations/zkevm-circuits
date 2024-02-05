@@ -1,3 +1,5 @@
+//! Generate witness for the StateUpdate circuit.
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     ops::Deref,
@@ -51,7 +53,7 @@ impl<F: Field> Deref for FieldTrieModifications<F> {
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct Transforms {
+struct Transforms {
     pub block_no: U64,
     pub prev_state_root: H256,
     pub curr_state_root: H256,
@@ -113,7 +115,6 @@ impl TrieModificationBuilder for TrieModification {
 
 #[derive(Default)]
 pub struct Witness<F: Field> {
-    pub transforms: Transforms,
     pub lc_witness: FieldTrieModifications<F>,
     pub mpt_witness: Vec<Node>,
 }
@@ -136,7 +137,6 @@ impl<F: Field> Witness<F> {
         } else {
             let (mpt_witness, lc_witness) = Self::mpt_witness(&transforms, provider_url)?;
             Ok(Some(Self {
-                transforms,
                 mpt_witness,
                 lc_witness,
             }))
@@ -288,9 +288,6 @@ impl<F: Field> Witness<F> {
             }
         }
 
-        println!("initial_values.len(): {}", initial_values.len());
-        println!("changed_values.len(): {}", changed_values.len());
-
         let mut trie_modifications = initial_values;
         trie_modifications.append(&mut changed_values);
 
@@ -373,31 +370,27 @@ impl<F: Field> Witness<F> {
             let m = &trns.trie_modifications[lc_proofs.len()];
 
             let changes = match m.typ {
-                ProofType::BalanceChanged => vec![(
+                ProofType::BalanceChanged => (
                     ProofType::BalanceChanged,
                     m.address,
                     m.balance,
                     H256::zero(),
-                )],
-                ProofType::NonceChanged => vec![(
+                ),
+                ProofType::NonceChanged => (
                     ProofType::NonceChanged,
                     m.address,
                     U256::from(m.nonce.0[0]),
                     H256::zero(),
-                )],
-                ProofType::StorageChanged => {
-                    vec![(ProofType::StorageChanged, m.address, m.value, m.key)]
-                }
-                ProofType::CodeHashChanged => {
-                    vec![(
-                        ProofType::CodeHashChanged,
-                        m.address,
-                        U256::from_big_endian(&m.code_hash.0),
-                        H256::zero(),
-                    )]
-                }
+                ),
+                ProofType::StorageChanged => (ProofType::StorageChanged, m.address, m.value, m.key),
+                ProofType::CodeHashChanged => (
+                    ProofType::CodeHashChanged,
+                    m.address,
+                    U256::from_big_endian(&m.code_hash.0),
+                    H256::zero(),
+                ),
                 ProofType::StorageDoesNotExist => {
-                    vec![(ProofType::StorageDoesNotExist, m.address, m.value, m.key)]
+                    (ProofType::StorageDoesNotExist, m.address, m.value, m.key)
                 }
                 _ => {
                     println!("type unimplemented: {:?}", m.typ);
@@ -405,17 +398,17 @@ impl<F: Field> Witness<F> {
                 }
             };
 
-            for (proof_type, address, value, key) in changes {
-                let lc_proof = FieldTrieModification::<F> {
-                    typ: F::from(proof_type as u64),
-                    address: address.to_scalar().unwrap(),
-                    value: Word::<F>::from(value),
-                    key: Word::<F>::from(key),
-                    old_root: Word::<F>::from(from_root),
-                    new_root: Word::<F>::from(to_root),
-                };
-                lc_proofs.push(lc_proof);
-            }
+            let (proof_type, address, value, key) = changes;
+
+            let lc_proof = FieldTrieModification::<F> {
+                typ: F::from(proof_type as u64),
+                address: address.to_scalar().unwrap(),
+                value: Word::<F>::from(value),
+                key: Word::<F>::from(key),
+                old_root: Word::<F>::from(from_root),
+                new_root: Word::<F>::from(to_root),
+            };
+            lc_proofs.push(lc_proof);
         }
 
         Ok((nodes, FieldTrieModifications(lc_proofs)))
