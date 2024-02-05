@@ -1,4 +1,4 @@
-name: MPT Witness Generator Checks
+name: Geth-utils Checks
 
 on:
   merge_group:
@@ -19,7 +19,7 @@ jobs:
         with:
           cancel_others: 'true'
           concurrent_skipping: 'same_content_newer'
-          paths: '["mpt-witness-generator/**"]'
+          paths: '["geth-utils/**"]'
 
 
   build:
@@ -35,15 +35,15 @@ jobs:
     - name: Format
       uses: Jerome1337/gofmt-action@v1.0.5
       with:
-        gofmt-path: './mpt-witness-generator'
+        gofmt-path: './geth-utils'
         gofmt-flags: '-l -d'
 
     - name: Build
-      working-directory: ./mpt-witness-generator
+      working-directory: ./geth-utils
       run: go build -v ./...
 
     - name: Test
-      working-directory: ./mpt-witness-generator
+      working-directory: ./geth-utils
       env:
         NO_GETH: true
       run: go test -v ./...
