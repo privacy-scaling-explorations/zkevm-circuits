@@ -133,7 +133,7 @@ impl RwMap {
     pub fn table_assignments_padding(
         rows: &[Rw],
         target_len: usize,
-        prev_chunk_last_rw: Option<Rw>,
+        padding_start_rw: Option<Rw>,
     ) -> (Vec<Rw>, usize) {
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed: Vec<Rw> = rows
@@ -162,7 +162,7 @@ impl RwMap {
             .map(|rw_counter| Rw::Padding { rw_counter });
         (
             iter::empty()
-                .chain([prev_chunk_last_rw.unwrap_or(Rw::Start { rw_counter: 1 })])
+                .chain([padding_start_rw.unwrap_or(Rw::Start { rw_counter: 1 })])
                 .chain(rows_trimmed.into_iter())
                 .chain(padding.into_iter())
                 .collect(),

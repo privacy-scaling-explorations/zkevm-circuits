@@ -556,16 +556,17 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     pub fn commit_chunk(
         &mut self,
         to_next: bool,
-        end_tx: usize,
-        end_copy: usize,
+        next_tx_index: usize,
+        next_copy_index: usize,
         last_call: Option<Call>,
     ) {
         self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
-        self.chunk_ctx.end_tx = end_tx;
-        self.chunk_ctx.end_copy = end_copy;
+        self.chunk_ctx.end_tx_index = next_tx_index;
+        self.chunk_ctx.end_copy_index = next_copy_index;
         self.chunks[self.chunk_ctx.idx].ctx = self.chunk_ctx.clone();
         if to_next {
-            self.chunk_ctx.bump(self.block_ctx.rwc.0, end_tx, end_copy);
+            self.chunk_ctx
+                .bump(self.block_ctx.rwc.0, next_tx_index, next_copy_index);
             self.cur_chunk_mut().prev_last_call = last_call;
         }
     }

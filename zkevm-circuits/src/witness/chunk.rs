@@ -68,16 +68,21 @@ impl<F: Field> Default for Chunk<F> {
 
 impl<F: Field> Chunk<F> {
     #[allow(dead_code)]
-    pub(crate) fn new_from_rw_map(rws: &RwMap) -> Self {
+    pub(crate) fn new_from_rw_map(
+        rws: &RwMap,
+        padding_start_rw: Option<Rw>,
+        chrono_padding_start_rw: Option<Rw>,
+    ) -> Self {
         let (alpha, gamma) = get_permutation_randomness();
         let mut chunk = Chunk::default();
         let rw_fingerprints = get_permutation_fingerprint_of_rwmap(
             rws,
             chunk.fixed_param.max_rws,
-            alpha, // TODO
+            alpha,
             gamma,
             F::from(1),
             false,
+            padding_start_rw,
         );
         let chrono_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
             rws,
@@ -86,6 +91,7 @@ impl<F: Field> Chunk<F> {
             gamma,
             F::from(1),
             true,
+            chrono_padding_start_rw,
         );
         chunk.rws = rws.clone();
         chunk.rw_fingerprints = rw_fingerprints;
@@ -121,6 +127,9 @@ pub fn chunk_convert<F: Field>(
 
     for (i, chunk) in builder.chunks.iter().enumerate() {
         // Get the Rws in the i-th chunk
+
+        // TODO this is just chronological rws, not by address sorted rws
+        // need another sorted method
         let cur_rws =
             RwMap::from_chunked(&block.container, chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
         cur_rws.check_value();
@@ -164,7 +173,7 @@ pub fn chunk_convert<F: Field>(
     }
 
     // TODO(Cecilia): if we chunk across blocks then need to store the prev_block
-    let chunck = Chunk {
+    let chunk = Chunk {
         permu_alpha: challenges[idx][0],
         permu_gamma: challenges[idx][1],
         rw_fingerprints: rw_fingerprints[idx].clone(),
@@ -179,7 +188,7 @@ pub fn chunk_convert<F: Field>(
         prev_chunk_last_rw,
     };
 
-    Ok(chunck)
+    Ok(chunk)
 }
 
 ///
@@ -219,6 +228,7 @@ pub fn get_permutation_fingerprint_of_rwmap<F: Field>(
     gamma: F,
     prev_continuous_fingerprint: F,
     is_chrono: bool,
+    padding_start_rw: Option<Rw>,
 ) -> RwFingerprints<F> {
     get_permutation_fingerprint_of_rwvec(
         &rwmap.table_assignments(is_chrono),
@@ -226,6 +236,7 @@ pub fn get_permutation_fingerprint_of_rwmap<F: Field>(
         alpha,
         gamma,
         prev_continuous_fingerprint,
+        padding_start_rw,
     )
 }
 
@@ -236,6 +247,7 @@ pub fn get_permutation_fingerprint_of_rwvec<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
+    padding_start_rw: Option<Rw>,
 ) -> RwFingerprints<F> {
     get_permutation_fingerprint_of_rwrowvec(
         &rwvec
@@ -246,6 +258,7 @@ pub fn get_permutation_fingerprint_of_rwvec<F: Field>(
         alpha,
         gamma,
         prev_continuous_fingerprint,
+        padding_start_rw.map(|r| r.table_assignment()),
     )
 }
 
@@ -256,8 +269,9 @@ pub fn get_permutation_fingerprint_of_rwrowvec<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
+    padding_start_rwrow: Option<RwRow<Value<F>>>,
 ) -> RwFingerprints<F> {
-    let (rows, _) = RwRow::padding(rwrowvec, max_row, true);
+    let (rows, _) = RwRow::padding(rwrowvec, max_row, padding_start_rwrow);
     let x = rows.to2dvec();
     let fingerprints = get_permutation_fingerprints(
         &x,

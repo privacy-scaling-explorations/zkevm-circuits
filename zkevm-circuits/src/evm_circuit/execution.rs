@@ -1127,7 +1127,7 @@ impl<F: Field> ExecutionConfig<F> {
                 let dummy_tx = Transaction::default();
                 let chunk_txs = block
                     .txs
-                    .get(chunk.chunk_context.initial_tx - 1..chunk.chunk_context.end_tx)
+                    .get(chunk.chunk_context.initial_tx_index..chunk.chunk_context.end_tx_index)
                     .unwrap_or_default();
 
                 let last_call = chunk_txs

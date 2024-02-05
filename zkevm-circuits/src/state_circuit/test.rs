@@ -45,7 +45,7 @@ fn test_state_circuit_ok(
         storage: storage_ops,
         ..Default::default()
     });
-    let chunk = Chunk::new_from_rw_map(&rw_map);
+    let chunk = Chunk::new_from_rw_map(&rw_map, None, None);
 
     let circuit = StateCircuit::<Fr>::new(&chunk);
     let instance = circuit.instance();
@@ -69,15 +69,19 @@ fn verifying_key_independent_of_rw_length() {
 
     let no_rows = StateCircuit::<Fr>::new(&chunk);
 
-    chunk = Chunk::new_from_rw_map(&RwMap::from(&OperationContainer {
-        memory: vec![Operation::new(
-            RWCounter::from(1),
-            RWCounter::from(1),
-            RW::WRITE,
-            MemoryOp::new(1, MemoryAddress::from(0), 32),
-        )],
-        ..Default::default()
-    }));
+    chunk = Chunk::new_from_rw_map(
+        &RwMap::from(&OperationContainer {
+            memory: vec![Operation::new(
+                RWCounter::from(1),
+                RWCounter::from(1),
+                RW::WRITE,
+                MemoryOp::new(1, MemoryAddress::from(0), 32),
+            )],
+            ..Default::default()
+        }),
+        None,
+        None,
+    );
     let one_row = StateCircuit::<Fr>::new(&chunk);
 
     let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
@@ -944,7 +948,11 @@ fn variadic_size_check() {
         },
     ];
     // let rw_map: RwMap = rows.clone().into();
-    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&RwMap::from(rows.clone())));
+    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(
+        &RwMap::from(rows.clone()),
+        None,
+        None,
+    ));
     let power_of_randomness = circuit.instance();
     let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 
@@ -965,7 +973,7 @@ fn variadic_size_check() {
         },
     ]);
 
-    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&rows.into()));
+    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&rows.into(), None, None));
     let power_of_randomness = circuit.instance();
     let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 

@@ -47,7 +47,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
 ) -> Result<(), Vec<VerifyFailure>> {
     let chunked_copy_events = block
         .copy_events
-        .get(chunk.chunk_context.initial_copy..chunk.chunk_context.end_copy)
+        .get(chunk.chunk_context.initial_copy_index..chunk.chunk_context.end_copy_index)
         .unwrap_or_default();
     test_copy_circuit::<F>(
         k,
