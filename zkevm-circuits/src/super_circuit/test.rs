@@ -207,6 +207,7 @@ where
 {
     let circuits_params = FixedCParams {
         max_txs: 1,
+        max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
         max_copy_rows: 256,
@@ -214,6 +215,7 @@ where
         max_bytecode: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
+        total_chunks: 1,
     };
     let rw_map = RwMap::from(&OperationContainer {
         ..Default::default()
@@ -224,22 +226,19 @@ where
 
     // synthesize to get degree
     let mut cs = ConstraintSystem::<<Scheme as CommitmentScheme>::Scalar>::default();
-    let config = SuperCircuit::configure_with_params(
+    let _config = SuperCircuit::configure_with_params(
         &mut cs,
         SuperCircuitParams {
             max_txs: circuits_params.max_txs,
+            max_withdrawals: circuits_params.max_withdrawals,
             max_calldata: circuits_params.max_calldata,
             mock_randomness: TEST_MOCK_RANDOMNESS.into(),
+            feature_config: FeatureConfig::default(),
         },
     );
     let degree = cs.degree();
 
-    let advice_commitments = get_rwtable_cols_commitment::<Scheme>(
-        degree,
-        &rows,
-        circuits_params.max_rws,
-        params,
-        false,
-    );
-    println!("advice_commitments {:?}", advice_commitments[0]);
+    let advice_commitments =
+        get_rwtable_cols_commitment::<Scheme>(degree, &rows, circuits_params.max_rws, params);
+    println!("advice_commitments len() {:?}", advice_commitments.len());
 }

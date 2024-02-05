@@ -1,4 +1,3 @@
-use bus_mapping::operation::OperationContainer;
 use halo2_proofs::{
     self,
     circuit::{AssignedCell, SimpleFloorPlanner},
@@ -192,13 +191,11 @@ pub fn get_rwtable_cols_commitment<'params, Scheme: CommitmentScheme>(
     rws: &[Rw],
     n_rows: usize,
     params_prover: &'params Scheme::ParamsProver,
-    is_first_row_padding: bool,
 ) -> Vec<<Scheme as CommitmentScheme>::Curve>
 where
     <Scheme as CommitmentScheme>::Scalar: WithSmallOrderMulGroup<3> + Field,
 {
     struct WitnessCollection<F: Field> {
-        k: u32,
         advice: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,
         _marker: std::marker::PhantomData<F>,
     }
@@ -234,7 +231,11 @@ where
             // Do nothing
         }
 
-        fn query_instance(&self, column: Column<Instance>, row: usize) -> Result<Value<F>, Error> {
+        fn query_instance(
+            &self,
+            _column: Column<Instance>,
+            _row: usize,
+        ) -> Result<Value<F>, Error> {
             Err(Error::BoundsFailure)
         }
 
@@ -301,7 +302,7 @@ where
             Ok(())
         }
 
-        fn get_challenge(&self, challenge: Challenge) -> Value<F> {
+        fn get_challenge(&self, _challenge: Challenge) -> Value<F> {
             Value::unknown()
         }
 
@@ -318,25 +319,22 @@ where
         }
     }
 
-    let rw_map = RwMap::from(&OperationContainer {
-        ..Default::default()
-    });
-    let rows = rw_map.table_assignments(false);
-    let rwtable_circuit = RwTableCircuit::new(&rows, 1, false);
+    let rwtable_circuit = RwTableCircuit::new(&rws, n_rows, None);
 
     let domain = EvaluationDomain::<<Scheme as CommitmentScheme>::Scalar>::new(
         degree as u32,
         params_prover.k(),
     );
 
-    let mut cs = ConstraintSystem::default();
+    let mut cs = ConstraintSystem::<<Scheme as CommitmentScheme>::Scalar>::default();
     let rwtable_circuit_config = RwTableCircuit::configure(&mut cs);
-    // TODO adjust domain.empty_lagrange_assigned() visibility in halo2 library to public
     let mut witness = WitnessCollection {
-        k: params_prover.k(),
         advice: vec![
             domain.empty_lagrange_assigned();
-            rwtable_circuit_config.rw_table.advice_columns().len()
+            <RwTable as LookupTable<<Scheme as CommitmentScheme>::Scalar>>::advice_columns(
+                &rwtable_circuit_config.rw_table
+            )
+            .len()
         ],
         _marker: std::marker::PhantomData,
     };
@@ -350,11 +348,12 @@ where
     )
     .unwrap();
 
-    let mut advice_values =
+    let len = witness.advice.len();
+    let advice_values =
         batch_invert_assigned::<Scheme::Scalar>(domain, witness.advice.into_iter().collect());
 
     // Compute commitments to advice column polynomials
-    let blinds = vec![Blind::default(); witness.advice.len()];
+    let blinds = vec![Blind::default(); len];
     let advice_commitments_projective: Vec<_> = advice_values
         .iter()
         .zip(blinds.iter())
@@ -374,16 +373,16 @@ where
 struct RwTableCircuit<'a> {
     rws: &'a [Rw],
     n_rows: usize,
-    is_first_row_padding: bool,
+    prev_chunk_last_rw: Option<Rw>,
 }
 
 impl<'a> RwTableCircuit<'a> {
     #[allow(dead_code)]
-    pub(crate) fn new(rws: &'a [Rw], n_rows: usize, is_first_row_padding: bool) -> Self {
+    pub(crate) fn new(rws: &'a [Rw], n_rows: usize, prev_chunk_last_rw: Option<Rw>) -> Self {
         Self {
             rws,
             n_rows,
-            is_first_row_padding,
+            prev_chunk_last_rw,
         }
     }
 }
@@ -424,7 +423,7 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
                     &mut region,
                     self.rws,
                     self.n_rows,
-                    self.is_first_row_padding,
+                    self.prev_chunk_last_rw,
                 )
             },
         )?;

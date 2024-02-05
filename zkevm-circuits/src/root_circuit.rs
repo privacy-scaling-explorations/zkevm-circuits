@@ -334,11 +334,11 @@ where
                             (
                                 loader
                                     .scalar_chip()
-                                    .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(101))
+                                    .assign_constant(&mut loader.ctx_mut(), M::Fr::from(101))
                                     .unwrap(),
                                 loader
                                     .scalar_chip()
-                                    .assign_constant(&mut loader.ctx_mut(), M::Scalar::from(103))
+                                    .assign_constant(&mut loader.ctx_mut(), M::Fr::from(103))
                                     .unwrap(),
                             )
                         };

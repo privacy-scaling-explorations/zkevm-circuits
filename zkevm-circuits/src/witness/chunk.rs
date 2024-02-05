@@ -103,7 +103,8 @@ pub fn chunk_convert<F: Field>(
     let chunk = builder.get_chunk(idx);
     let mut rws = RwMap::default();
     let prev_chunk_last_rw = builder.prev_chunk().map(|chunk| {
-        RwMap::get_rw(&block.container, chunk.ctx.end_rwc).expect("Rw does not exist")
+        // rws range [chunk.ctx.initial_rwc, chunk.ctx.end_rwc)
+        RwMap::get_rw(&block.container, chunk.ctx.end_rwc - 1).expect("Rw does not exist")
     });
 
     // FIXME(Cecilia): debug

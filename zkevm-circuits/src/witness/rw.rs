@@ -143,11 +143,7 @@ impl RwMap {
             .collect();
         let padding_length = {
             let length = Self::padding_len(rows_trimmed.len(), target_len);
-            if prev_chunk_last_rw.is_none() {
-                length.saturating_sub(1)
-            } else {
-                length
-            }
+            length.saturating_sub(1)
         };
 
         // option 1: need to provide padding starting rw_counter at function parameters
@@ -436,7 +432,7 @@ impl<F: Field> RwRow<Value<F>> {
     pub fn padding(
         rows: &[RwRow<Value<F>>],
         target_len: usize,
-        is_first_row_padding: bool,
+        padding_start_rwrow: Option<RwRow<Value<F>>>,
     ) -> (Vec<RwRow<Value<F>>>, usize) {
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed = rows
@@ -450,11 +446,7 @@ impl<F: Field> RwRow<Value<F>> {
             .collect::<Vec<RwRow<Value<F>>>>();
         let padding_length = {
             let length = RwMap::padding_len(rows_trimmed.len(), target_len);
-            if is_first_row_padding {
-                length.saturating_sub(1)
-            } else {
-                length
-            }
+            length.saturating_sub(1) // first row always got padding
         };
         let start_padding_rw_counter = {
             let start_padding_rw_counter = rows_trimmed
@@ -487,12 +479,11 @@ impl<F: Field> RwRow<Value<F>> {
             },
         );
         (
-            iter::once(RwRow {
+            iter::once(padding_start_rwrow.unwrap_or(RwRow {
                 rw_counter: Value::known(F::ONE),
                 tag: Value::known(F::from(Target::Start as u64)),
                 ..Default::default()
-            })
-            .take(if is_first_row_padding { 1 } else { 0 })
+            }))
             .chain(rows_trimmed.into_iter())
             .chain(padding.into_iter())
             .collect(),
