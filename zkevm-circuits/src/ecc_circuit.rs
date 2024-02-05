@@ -481,7 +481,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_256: &[QuantumCell<F>],
         op: &EcAddOp,
     ) -> EcAddDecomposed<F> {
-        log::trace!("[ECC] ==> EcAdd Assignmnet START:");
+        log::trace!("[ECC] ==> EcAdd Assignment START:");
         log_context_cursor!(ctx);
 
         let (px, px_cells, px_valid, px_is_zero) =
