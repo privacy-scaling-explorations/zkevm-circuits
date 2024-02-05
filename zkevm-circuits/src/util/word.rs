@@ -4,7 +4,7 @@
 //   limb is 256/4 = 64 bits
 
 use bus_mapping::state_db::CodeDB;
-use eth_types::{Field, ToLittleEndian, H160, H256};
+use eth_types::{Field, OpsIdentity, ToLittleEndian, H160, H256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
@@ -240,6 +240,16 @@ impl<T: Clone> Word<T> {
     pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
         Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
     }
+
+    /// zero word
+    pub fn zero<T1: OpsIdentity<Output = T>>() -> Self {
+        Self::new([T1::zero::<T>(), T1::zero::<T>()])
+    }
+
+    /// one word
+    pub fn one<T1: OpsIdentity<Output = T>>() -> Self {
+        Self::new([T1::one::<T>(), T1::zero::<T>()])
+    }
 }
 
 impl<T> std::ops::Deref for Word<T> {
@@ -354,16 +364,6 @@ impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for Word<T> {
 }
 
 impl<F: Field> Word<F> {
-    /// zero word
-    pub fn zero_f() -> Self {
-        Self::new([F::ZERO, F::ZERO])
-    }
-
-    /// one word
-    pub fn one_f() -> Self {
-        Self::new([F::ONE, F::ZERO])
-    }
-
     /// Convert address (h160) to single field element.
     /// This method is Address specific
     pub fn compress_f(&self) -> F {
@@ -375,15 +375,6 @@ impl<F: Field> Word<Expression<F>> {
     /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
     pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self::new([lo, 0.expr()])
-    }
-    /// zero word
-    pub fn zero() -> Self {
-        Self::new([0.expr(), 0.expr()])
-    }
-
-    /// one word
-    pub fn one() -> Self {
-        Self::new([1.expr(), 0.expr()])
     }
 
     /// select based on selector. Here assume selector is 1/0 therefore no overflow check

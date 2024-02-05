@@ -264,7 +264,6 @@ impl<F: Field> Expr<F> for &Expression<F> {
         (*self).clone()
     }
 }
-
 /// Given a bytes-representation of an expression, it computes and returns the
 /// single expression.
 pub fn expr_from_bytes<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {

@@ -22,7 +22,10 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
@@ -63,7 +66,11 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         );
 
         // Call ends with STOP must be successful
-        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::one());
+        cb.call_context_lookup_read(
+            None,
+            CallContextFieldTag::IsSuccess,
+            Word::one::<Expression<F>>(),
+        );
 
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(

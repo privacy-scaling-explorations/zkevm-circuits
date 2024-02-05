@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
@@ -30,7 +30,7 @@ pub(crate) struct ExtensionBranchConfig<F> {
     branch: BranchGadget<F>,
 }
 
-impl<F: Field> ExtensionBranchConfig<F> {
+impl<F: Field + OpsIdentity<Output = F>> ExtensionBranchConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -158,7 +158,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        Word::zero(),
+                        Word::zero::<Expression<F>>(),
                     );
                  } elsex {
                     // For the placeholder branch / extension node the values did not change, we reuse
@@ -291,7 +291,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    Word::zero_f(),
+                    Word::zero::<F>(),
                 )?;
             } else {
                 KeyData::witness_store(

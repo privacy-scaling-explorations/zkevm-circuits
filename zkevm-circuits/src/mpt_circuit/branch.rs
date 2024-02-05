@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
@@ -50,7 +50,7 @@ pub(crate) struct BranchGadget<F> {
     post_state: Option<BranchState<F>>,
 }
 
-impl<F: Field> BranchGadget<F> {
+impl<F: Field + OpsIdentity<Output = F>> BranchGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
@@ -299,7 +299,10 @@ impl<F: Field> BranchGadget<F> {
         is_key_odd: &mut bool,
         node: &Node,
         rlp_values: &[RLPItemWitness],
-    ) -> Result<(F, F, F, [word::Word<F>; 2], [F; 2]), Error> {
+    ) -> Result<(F, F, F, [word::Word<F>; 2], [F; 2]), Error>
+    where
+        <F as OpsIdentity>::Output: Field,
+    {
         let branch = &node.extension_branch.clone().unwrap().branch;
 
         for is_s in [true, false] {
@@ -351,7 +354,7 @@ impl<F: Field> BranchGadget<F> {
         let key_mult_post_branch = *key_mult * mult;
 
         // Set the branch we'll take
-        let mut mod_node_hash_word = [word::Word::zero_f(); 2];
+        let mut mod_node_hash_word = [word::Word::zero::<F>(); 2];
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             (

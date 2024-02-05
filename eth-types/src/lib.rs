@@ -24,9 +24,12 @@ pub use keccak::{keccak256, Keccak};
 
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::halo2curves::{
-    bn256::{Fq, Fr},
-    ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
+use halo2_proofs::{
+    halo2curves::{
+        bn256::{Fq, Fr},
+        ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
+    },
+    plonk::Expression,
 };
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
@@ -42,9 +45,32 @@ pub use ethers_core::{
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
 
+/// trait to retrieve general operation itentity element
+pub trait OpsIdentity {
+    /// output type
+    type Output;
+    /// additive identity
+    fn zero<T>() -> Self::Output;
+    /// multiplicative identity
+    fn one<T>() -> Self::Output;
+}
+
+impl<F: Field> OpsIdentity for Expression<F> {
+    type Output = Expression<F>;
+    fn zero<T>() -> Self::Output {
+        Expression::Constant(F::ZERO)
+    }
+
+    fn one<T>() -> Self::Output {
+        Expression::Constant(F::ONE)
+    }
+}
+
 /// Trait used to reduce verbosity with the declaration of the [`PrimeField`]
 /// trait and its repr.
-pub trait Field: Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + Ord {
+pub trait Field:
+    Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + Ord + OpsIdentity
+{
     /// Gets the lower 128 bits of this field element when expressed
     /// canonically.
     fn get_lower_128(&self) -> u128 {
@@ -65,10 +91,34 @@ pub trait Field: Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64>
     }
 }
 
+// Impl OpsIdentity for Fr
+impl OpsIdentity for Fr {
+    type Output = Fr;
+
+    fn zero<T>() -> Self::Output {
+        Fr::zero()
+    }
+
+    fn one<T>() -> Self::Output {
+        Fr::one()
+    }
+}
 // Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
 
+// Impl OpsIdentity for Fq
+impl OpsIdentity for Fq {
+    type Output = Fq;
+
+    fn zero<T>() -> Self::Output {
+        Fq::zero()
+    }
+
+    fn one<T>() -> Self::Output {
+        Fq::one()
+    }
+}
 // Impl custom `Field` trait for BN256 Frq to be used and consistent with the
 // rest of the workspace.
 impl Field for Fq {}

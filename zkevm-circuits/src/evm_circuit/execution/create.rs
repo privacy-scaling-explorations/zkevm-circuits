@@ -296,7 +296,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
-                cb.call_context_lookup_write(None, field_tag, Word::zero());
+                cb.call_context_lookup_write(None, field_tag, Word::zero::<Expression<F>>());
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -342,8 +342,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.account_write(
                     contract_addr.to_word(),
                     AccountFieldTag::Nonce,
-                    Word::one(),
-                    Word::zero(),
+                    Word::one::<Expression<F>>(),
+                    Word::zero::<Expression<F>>(),
                     Some(&mut callee_reversion_info),
                 );
 
@@ -420,7 +420,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                         CallContextFieldTag::LastCalleeReturnDataOffset,
                         CallContextFieldTag::LastCalleeReturnDataLength,
                     ] {
-                        cb.call_context_lookup_write(None, field_tag, Word::zero());
+                        cb.call_context_lookup_write(
+                            None,
+                            field_tag,
+                            Word::zero::<Expression<F>>(),
+                        );
                     }
                     cb.require_step_state_transition(StepStateTransition {
                         rw_counter: Delta(cb.rw_counter_offset()),
@@ -463,7 +467,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, Word::zero::<Expression<F>>());
                 }
 
                 cb.require_step_state_transition(StepStateTransition {

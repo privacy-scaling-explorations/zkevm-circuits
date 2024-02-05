@@ -17,7 +17,10 @@ use crate::{
     },
 };
 use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorWriteProtectionGadget<F> {
@@ -73,7 +76,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         });
 
         // current call context is readonly
-        cb.call_context_lookup_read(None, CallContextFieldTag::IsStatic, Word::one());
+        cb.call_context_lookup_read(
+            None,
+            CallContextFieldTag::IsStatic,
+            Word::one::<Expression<F>>(),
+        );
 
         // constrain not root call as at least one previous staticcall preset.
         cb.require_zero(

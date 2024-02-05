@@ -1,5 +1,5 @@
 //! The MPT circuit implementation.
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::{impl_expr, util::Scalar};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -208,7 +208,7 @@ pub enum FixedTableTag {
 }
 impl_expr!(FixedTableTag);
 
-impl<F: Field> MPTConfig<F> {
+impl<F: Field + OpsIdentity<Output = F>> MPTConfig<F> {
     /// Configure MPT Circuit
     pub fn new(
         meta: &mut ConstraintSystem<F>,
@@ -646,7 +646,7 @@ impl<F: Field> MPTConfig<F> {
 
 /// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
-pub struct MPTCircuit<F: Field> {
+pub struct MPTCircuit<F: Field + OpsIdentity<Output = F>> {
     /// MPT nodes
     pub nodes: Vec<Node>,
     /// MPT keccak_data
@@ -685,7 +685,7 @@ impl MPTCircuitParams {
     }
 }
 
-impl<F: Field> Circuit<F> for MPTCircuit<F> {
+impl<F: Field + OpsIdentity<Output = F>> Circuit<F> for MPTCircuit<F> {
     type Config = (MPTConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     type Params = MPTCircuitParams;

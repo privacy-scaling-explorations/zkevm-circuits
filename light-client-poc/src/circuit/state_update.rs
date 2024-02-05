@@ -1,5 +1,5 @@
 use super::equal_words::EqualWordsConfig;
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use eyre::Result;
 use gadgets::{
     is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -68,7 +68,7 @@ pub struct StateUpdateCircuitConfig<F: Field> {
 
 /// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
-pub struct StateUpdateCircuit<F: Field> {
+pub struct StateUpdateCircuit<F: Field + OpsIdentity<Output = F>> {
     pub transforms: Transforms,
     #[cfg(not(feature = "disable-keccak"))]
     pub keccak_circuit: KeccakCircuit<F>,
@@ -78,7 +78,7 @@ pub struct StateUpdateCircuit<F: Field> {
     pub max_proof_count: usize,
 }
 
-impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
+impl<F: Field + OpsIdentity<Output = F>> Circuit<F> for StateUpdateCircuit<F> {
     type Config = (StateUpdateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
     type Params = MPTCircuitParams;

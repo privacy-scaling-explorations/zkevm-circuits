@@ -18,7 +18,10 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, U256};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorPrecompileFailedGadget<F> {
@@ -87,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         cb.stack_pop(cd_length.to_word());
         cb.stack_pop(rd_offset.to_word());
         cb.stack_pop(rd_length.to_word());
-        cb.stack_push(Word::zero());
+        cb.stack_push(Word::zero::<Expression<F>>());
 
         for (field_tag, value) in [
             (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),

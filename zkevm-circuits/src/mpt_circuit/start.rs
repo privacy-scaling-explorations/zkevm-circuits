@@ -15,16 +15,19 @@ use crate::{
     },
     util::word::Word,
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
-use halo2_proofs::plonk::{Error, VirtualCells};
+use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StartConfig<F> {
     proof_type: Cell<F>,
 }
 
-impl<F: Field> StartConfig<F> {
+impl<F: Field + OpsIdentity<Output = F>> StartConfig<F>
+where
+    <F as OpsIdentity>::Output: eth_types::Field,
+{
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -40,7 +43,7 @@ impl<F: Field> StartConfig<F> {
 
             config.proof_type = cb.query_cell();
 
-            let mut root = vec![Word::zero(); 2];
+            let mut root = vec![Word::zero::<Expression<F>>(); 2];
             for is_s in [true, false] {
                 root[is_s.idx()] = root_items[is_s.idx()].word();
             }
@@ -96,7 +99,7 @@ impl<F: Field> StartConfig<F> {
         self.proof_type
             .assign(region, offset, start.proof_type.scalar())?;
 
-        let mut root = vec![Word::zero_f(); 2];
+        let mut root = vec![Word::zero::<F>(); 2];
         for is_s in [true, false] {
             root[is_s.idx()] = rlp_values[is_s.idx()].word();
         }

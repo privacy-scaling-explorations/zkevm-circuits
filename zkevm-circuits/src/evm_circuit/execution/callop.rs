@@ -32,7 +32,10 @@ use bus_mapping::{
     precompile::{is_precompiled, PrecompileCalls},
 };
 use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToScalar, U256};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 use std::cmp::min;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -540,7 +543,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, Word::zero::<Expression<F>>());
                 }
 
                 // For CALL opcode, it has an extra stack pop `value` (+1) and if the value is
@@ -588,7 +591,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
-                cb.call_context_lookup_write(None, field_tag, Word::zero());
+                cb.call_context_lookup_write(None, field_tag, Word::zero::<Expression<F>>());
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -689,17 +692,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         CallContextFieldTag::IsStatic,
                         Word::from_lo_unchecked(or::expr([is_static.expr(), is_staticcall.expr()])),
                     ),
-                    (CallContextFieldTag::LastCalleeId, Word::zero()),
+                    (
+                        CallContextFieldTag::LastCalleeId,
+                        Word::zero::<Expression<F>>(),
+                    ),
                     (
                         CallContextFieldTag::LastCalleeReturnDataOffset,
-                        Word::zero(),
+                        Word::zero::<Expression<F>>(),
                     ),
                     (
                         CallContextFieldTag::LastCalleeReturnDataLength,
-                        Word::zero(),
+                        Word::zero::<Expression<F>>(),
                     ),
-                    (CallContextFieldTag::IsRoot, Word::zero()),
-                    (CallContextFieldTag::IsCreate, Word::zero()),
+                    (CallContextFieldTag::IsRoot, Word::zero::<Expression<F>>()),
+                    (CallContextFieldTag::IsCreate, Word::zero::<Expression<F>>()),
                     (
                         CallContextFieldTag::CodeHash,
                         call_gadget.callee_code_hash.to_word(),

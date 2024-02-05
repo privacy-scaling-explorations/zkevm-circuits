@@ -1,4 +1,4 @@
-use eth_types::{Field, U256};
+use eth_types::{Field, OpsIdentity, U256};
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
@@ -55,7 +55,7 @@ pub(crate) struct AccountLeafConfig<F> {
     mod_extension: ModExtensionGadget<F>,
 }
 
-impl<F: Field> AccountLeafConfig<F> {
+impl<F: Field + OpsIdentity<Output = F>> AccountLeafConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -149,10 +149,10 @@ impl<F: Field> AccountLeafConfig<F> {
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut nonce = vec![Word::zero(); 2];
-            let mut balance = vec![Word::zero(); 2];
-            let mut storage = vec![Word::zero(); 2];
-            let mut codehash = vec![Word::zero(); 2];
+            let mut nonce = vec![Word::zero::<Expression<F>>(); 2];
+            let mut balance = vec![Word::zero::<Expression<F>>(); 2];
+            let mut storage = vec![Word::zero::<Expression<F>>(); 2];
+            let mut codehash = vec![Word::zero::<Expression<F>>(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
@@ -467,7 +467,7 @@ impl<F: Field> AccountLeafConfig<F> {
                         &mut cb.base,
                         address.clone(),
                         proof_type.clone(),
-                        Word::zero(),
+                        Word::zero::<Expression<F>>(),
                         config.main_data.new_root.expr(),
                         config.main_data.old_root.expr(),
                         Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
@@ -481,11 +481,11 @@ impl<F: Field> AccountLeafConfig<F> {
                         &mut cb.base,
                         address.clone(),
                         proof_type.clone(),
-                        Word::zero(),
+                        Word::zero::<Expression<F>>(),
                         config.main_data.new_root.expr(),
                         config.main_data.old_root.expr(),
-                        Word::zero(),
-                        Word::zero(),
+                        Word::zero::<Expression<F>>(),
+                        Word::zero::<Expression<F>>(),
                     );
                 }};
             } elsex {
@@ -499,10 +499,10 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut cb.base,
                     address,
                     proof_type,
-                    Word::zero(),
+                    Word::zero::<Expression<F>>(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::zero(),
+                    Word::zero::<Expression<F>>(),
                     Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
                 );
             }};
@@ -554,10 +554,10 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut nonce = vec![Word::zero_f(); 2];
-        let mut balance = vec![Word::zero_f(); 2];
-        let mut storage = vec![Word::zero_f(); 2];
-        let mut codehash = vec![Word::zero_f(); 2];
+        let mut nonce = vec![Word::zero::<F>(); 2];
+        let mut balance = vec![Word::zero::<F>(); 2];
+        let mut storage = vec![Word::zero::<F>(); 2];
+        let mut codehash = vec![Word::zero::<F>(); 2];
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
@@ -727,11 +727,14 @@ impl<F: Field> AccountLeafConfig<F> {
         } else if is_codehash_mod {
             (MPTProofType::CodeHashChanged, codehash)
         } else if is_account_delete_mod {
-            (MPTProofType::AccountDestructed, vec![Word::zero_f(); 2])
+            (MPTProofType::AccountDestructed, vec![Word::zero::<F>(); 2])
         } else if is_non_existing_proof {
-            (MPTProofType::AccountDoesNotExist, vec![Word::zero_f(); 2])
+            (
+                MPTProofType::AccountDoesNotExist,
+                vec![Word::zero::<F>(); 2],
+            )
         } else {
-            (MPTProofType::Disabled, vec![Word::zero_f(); 2])
+            (MPTProofType::Disabled, vec![Word::zero::<F>(); 2])
         };
 
         if account.is_mod_extension[0] || account.is_mod_extension[1] {
@@ -746,10 +749,10 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut new_value = value[false.idx()];
         let mut old_value = value[true.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::zero_f();
+            new_value = word::Word::zero::<F>();
         } else if is_non_existing_proof {
-            new_value = word::Word::zero_f();
-            old_value = word::Word::zero_f();
+            new_value = word::Word::zero::<F>();
+            old_value = word::Word::zero::<F>();
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -758,7 +761,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 address: Value::known(from_bytes::value(
                     &account.address.iter().cloned().rev().collect::<Vec<_>>(),
                 )),
-                storage_key: word::Word::zero_f().into_value(),
+                storage_key: word::Word::zero::<F>().into_value(),
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),

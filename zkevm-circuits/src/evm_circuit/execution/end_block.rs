@@ -16,7 +16,10 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::select;
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {
@@ -74,7 +77,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                Word::zero(),
+                Word::zero::<Expression<F>>(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at

@@ -1081,8 +1081,11 @@ impl<F: Field> IsPlaceholderLeafGadget<F> {
                     Expression::Constant(empty_hash.hi()),
                 ]),
             );
-            let is_nil_in_branch_at_mod_index =
-                IsEqualWordGadget::construct(&mut cb.base, &parent_word, &Word::zero());
+            let is_nil_in_branch_at_mod_index = IsEqualWordGadget::construct(
+                &mut cb.base,
+                &parent_word,
+                &Word::zero::<Expression<F>>(),
+            );
 
             Self {
                 is_empty_trie,
