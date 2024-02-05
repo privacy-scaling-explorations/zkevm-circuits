@@ -9,7 +9,7 @@ use std::{collections::HashMap, str::FromStr, time::SystemTime};
 
 use crate::circuit::{
     PublicInputs, StateUpdateCircuit, StateUpdateCircuitKeys, StateUpdateWitness,
-    DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT,
+    DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_NODES, DEFAULT_MAX_PROOF_COUNT,
 };
 
 pub async fn serve() -> Result<()> {
@@ -62,8 +62,12 @@ pub async fn serve() -> Result<()> {
         };
 
         let public_inputs: PublicInputs<Fr> = (&witness.lc_witness).into();
-        let circuit =
-            StateUpdateCircuit::new(witness, DEFAULT_CIRCUIT_DEGREE, DEFAULT_MAX_PROOF_COUNT)?;
+        let circuit = StateUpdateCircuit::new(
+            witness,
+            DEFAULT_CIRCUIT_DEGREE,
+            DEFAULT_MAX_NODES,
+            DEFAULT_MAX_PROOF_COUNT,
+        )?;
 
         println!("trns: {:#?}", circuit.transforms);
 

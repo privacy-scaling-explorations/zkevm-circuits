@@ -183,14 +183,13 @@ dependencies = [
 
 [[package]]
 name = "auto_impl"
-version = "1.1.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fee3da8ef1276b0bee5dd1c7258010d8fffd31801447323115a25560e1327b89"
+checksum = "823b8bb275161044e2ac7a25879cb3e2480cb403e3943022c7c769c599b756aa"
 dependencies = [
- "proc-macro-error",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -964,7 +963,7 @@ checksum = "56ce8c6da7551ec6c462cbaf3bfbc75131ebbfa1c944aeaa9dab51ca1c5f0c3b"
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2024_01_31#1fe10a798edde7a0686248c29cae96ca79b710ae"
 dependencies = [
  "integer",
  "num-bigint",
@@ -977,7 +976,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2024_01_31#1fe10a798edde7a0686248c29cae96ca79b710ae"
 dependencies = [
  "ecc",
  "num-bigint",
@@ -1468,9 +1467,9 @@ dependencies = [
 
 [[package]]
 name = "eyre"
-version = "0.6.11"
+version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6267a1fa6f59179ea4afc8e50fd8612a3cc60bc858f786ff877a4a8cb042799"
+checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
 dependencies = [
  "indenter",
  "once_cell",
@@ -1796,7 +1795,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.1.0",
+ "indexmap 2.2.2",
  "slab",
  "tokio",
  "tokio-util",
@@ -1839,8 +1838,8 @@ dependencies = [
 
 [[package]]
 name = "halo2_proofs"
-version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20#be955686f86eb618f55d2320c0e042485b313d22"
+version = "0.3.0"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v0.3.0#73408a140737d8336490452193b21f5a7a94e7de"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -1855,9 +1854,9 @@ dependencies = [
 
 [[package]]
 name = "halo2curves"
-version = "0.1.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6b1142bd1059aacde1b477e0c80c142910f1ceae67fc619311d6a17428007ab"
+checksum = "d3675880dc0cc7cd468943266297198a28f88210ba60ca5e0e04d121edf86b46"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -1865,10 +1864,12 @@ dependencies = [
  "lazy_static",
  "num-bigint",
  "num-traits",
+ "pairing",
  "pasta_curves",
  "paste",
  "rand",
  "rand_core",
+ "rayon",
  "static_assertions",
  "subtle",
 ]
@@ -1876,7 +1877,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2024_01_31#1fe10a798edde7a0686248c29cae96ca79b710ae"
 dependencies = [
  "halo2_proofs",
  "num-bigint",
@@ -1903,15 +1904,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-
-[[package]]
-name = "hashbrown"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
-dependencies = [
- "ahash",
-]
 
 [[package]]
 name = "hashbrown"
@@ -2170,9 +2162,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.1.0"
+version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d530e1a18b1cb4c484e6e34556a0d948706958449fca0cab753d649f2bce3d1f"
+checksum = "824b2ae422412366ba479e8111fd301f7b5faece8149317bb81925979a53f520"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -2199,7 +2191,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2024_01_31#1fe10a798edde7a0686248c29cae96ca79b710ae"
 dependencies = [
  "maingate",
  "num-bigint",
@@ -2372,9 +2364,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.152"
+version = "0.2.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13e3bf6590cbc649f4d1a3eefc9d5d6eb746f5200ffb04e5e142700b8faa56e7"
+checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
 name = "libm"
@@ -2496,7 +2488,7 @@ checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2024_01_31#1fe10a798edde7a0686248c29cae96ca79b710ae"
 dependencies = [
  "halo2wrong",
  "num-bigint",
@@ -2530,9 +2522,9 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7810e0be55b428ada41041c41f32c9f1a42817901b4ccf45fa3d4b6561e74c7"
+checksum = "9d811f3e15f28568be3407c8e7fdb6514c1cda3cb30683f15b6a1a1dc4ea14a7"
 dependencies = [
  "adler",
 ]
@@ -2635,6 +2627,12 @@ checksum = "1ba157ca0885411de85d6ca030ba7e2a83a28636056c7c699b07c8b6f7383214"
 dependencies = [
  "num-traits",
 ]
+
+[[package]]
+name = "num-conv"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
 name = "num-integer"
@@ -2855,6 +2853,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2355d85b9a3786f481747ced0e0ff2ba35213a1f9bd406ed906554d7af805a1"
 
 [[package]]
+name = "pairing"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81fec4625e73cf41ef4bb6846cafa6d44736525f442ba45e407c4a000a13996f"
+dependencies = [
+ "group",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "3.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3030,7 +3037,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d3afd2628e69da2be385eb6f2fd57c8ac7977ceeff6dc166ff1657b0e386a9"
 dependencies = [
  "fixedbitset",
- "indexmap 2.1.0",
+ "indexmap 2.2.2",
 ]
 
 [[package]]
@@ -3145,7 +3152,7 @@ checksum = "2900ede94e305130c13ddd391e0ab7cbaeb783945ae07a279c268cb05109c6cb"
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2023_04_20#807f8f555313f726ca03bdf941f798098f488ba4"
+source = "git+https://github.com/privacy-scaling-explorations/poseidon?tag=v2024_01_31#d29f35d9744e0c58b63679a15730ff2fab470ef2"
 dependencies = [
  "halo2curves",
  "subtle",
@@ -3242,7 +3249,7 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
 dependencies = [
- "toml_edit 0.21.0",
+ "toml_edit 0.21.1",
 ]
 
 [[package]]
@@ -3425,9 +3432,9 @@ checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 
 [[package]]
 name = "reqwest"
-version = "0.11.23"
+version = "0.11.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37b1ae8d9ac08420c66222fb9096fc5de435c3c48542bc5336c51892cffafb41"
+checksum = "c6920094eb85afde5e4a138be3f2de8bbdf28000f0029e72c45025a56b042251"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -3453,6 +3460,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "sync_wrapper",
  "system-configuration",
  "tokio",
  "tokio-native-tls",
@@ -3468,19 +3476,22 @@ dependencies = [
 
 [[package]]
 name = "revm"
-version = "2.3.1"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73d84c8f9836efb0f5f5f8de4700a953c4e1f3119e5cfcb0aad8e5be73daf991"
+checksum = "68f4ca8ae0345104523b4af1a8a7ea97cfa1865cdb7a7c25d23c1a18d9b48598"
 dependencies = [
- "arrayref",
  "auto_impl",
- "bytes",
- "hashbrown 0.13.2",
- "num_enum 0.5.11",
- "primitive-types",
- "revm_precompiles",
- "rlp",
- "sha3 0.10.8",
+ "revm-interpreter",
+ "revm-precompile",
+]
+
+[[package]]
+name = "revm-interpreter"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f959cafdf64a7f89b014fa73dc2325001cf654b3d9400260b212d19a2ebe3da0"
+dependencies = [
+ "revm-primitives",
 ]
 
 [[package]]
@@ -3512,24 +3523,6 @@ dependencies = [
  "enumn",
  "hashbrown 0.14.3",
  "hex",
-]
-
-[[package]]
-name = "revm_precompiles"
-version = "1.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0353d456ef3e989dc9190f42c6020f09bc2025930c37895826029304413204b5"
-dependencies = [
- "bytes",
- "hashbrown 0.13.2",
- "num",
- "once_cell",
- "primitive-types",
- "ripemd",
- "secp256k1",
- "sha2 0.10.8",
- "sha3 0.10.8",
- "substrate-bn",
 ]
 
 [[package]]
@@ -3652,9 +3645,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.30"
+version = "0.38.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "322394588aaf33c24007e8bb3238ee3e4c5c09c084ab32bc73890b99ff326bca"
+checksum = "6ea3e1a662af26cd7a3ba09c0297a31af215563ecf42817c98df621387f4e949"
 dependencies = [
  "bitflags 2.4.2",
  "errno",
@@ -3800,24 +3793,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "secp256k1"
-version = "0.24.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
-dependencies = [
- "secp256k1-sys",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "security-framework"
 version = "2.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3863,18 +3838,18 @@ checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 
 [[package]]
 name = "serde"
-version = "1.0.195"
+version = "1.0.196"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63261df402c67811e9ac6def069e4786148c4563f4b50fd4bf30aa370d626b02"
+checksum = "870026e60fa08c69f064aa766c10f10b1d62db9ccd4d0abb206472bee0ce3b32"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.195"
+version = "1.0.196"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46fe8f8603d81ba86327b23a2e9cdf49e1255fb94a4c5f297f6ee0547178ea2c"
+checksum = "33c85360c95e7d137454dc81d9a4ed2b8efd8fbe19cee57357b32b9771fccb67"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3883,9 +3858,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.111"
+version = "1.0.113"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "176e46fa42316f18edd598015a5166857fc835ec732f5215eac6b7bdbf0a84f4"
+checksum = "69801b70b1c3dac963ecb03a364ba0ceda9cf60c71cfe475e99864759c8b8a79"
 dependencies = [
  "itoa",
  "ryu",
@@ -4049,10 +4024,9 @@ checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
 
 [[package]]
 name = "snark-verifier"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2023_04_20#e5d5e4a6ccff2bba71baf77ab7a12b124d6364a1"
+version = "0.1.1"
+source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2024_01_31#946536fc01901db93a3e7cdb8a7359a7ef675b55"
 dependencies = [
- "bytes",
  "ecc",
  "halo2_proofs",
  "halo2curves",
@@ -4063,10 +4037,8 @@ dependencies = [
  "num-integer",
  "num-traits",
  "poseidon",
- "primitive-types",
  "rand",
  "revm",
- "rlp",
  "sha3 0.10.8",
 ]
 
@@ -4203,9 +4175,9 @@ checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "svm-rs"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ce290b5536ab2a42a61c9c6f22d6bfa8f26339c602aa62db4c978c95d1afc47"
+checksum = "11297baafe5fa0c99d5722458eac6a5e25c01eb1b8e5cd137f54079093daa7a4"
 dependencies = [
  "dirs",
  "fs2",
@@ -4242,6 +4214,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "sync_wrapper"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
 
 [[package]]
 name = "system-configuration"
@@ -4366,12 +4344,13 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.31"
+version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f657ba42c3f86e7680e53c8cd3af8abbe56b5491790b46e22e19c0d57463583e"
+checksum = "c8248b6521bb14bc45b4067159b9b6ad792e2d6d754d6c41fb50e29fefe38749"
 dependencies = [
  "deranged",
  "itoa",
+ "num-conv",
  "powerfmt",
  "serde",
  "time-core",
@@ -4386,10 +4365,11 @@ checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 
 [[package]]
 name = "time-macros"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26197e33420244aeb70c3e8c78376ca46571bc4e701e4791c2cd9f57dcb3a43f"
+checksum = "7ba3a3ef41e6672a2f0f001392bb5dcd3ff0a9992d618ca761a11c3121547774"
 dependencies = [
+ "num-conv",
  "time-core",
 ]
 
@@ -4419,9 +4399,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.35.1"
+version = "1.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89b4efa943be685f629b149f53829423f8f5531ea21249408e8e2f8671ec104"
+checksum = "61285f6515fa018fb2d1e46eb21223fff441ee8db5d0f1435e8ab4f5cdb80931"
 dependencies = [
  "backtrace",
  "bytes",
@@ -4530,7 +4510,7 @@ version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
 dependencies = [
- "indexmap 2.1.0",
+ "indexmap 2.2.2",
  "serde",
  "serde_spanned",
  "toml_datetime",
@@ -4543,18 +4523,18 @@ version = "0.20.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f427fce4d84c72b5b732388bf4a9f4531b53f74e2887e3ecb2481f68f66d81"
 dependencies = [
- "indexmap 2.1.0",
+ "indexmap 2.2.2",
  "toml_datetime",
  "winnow",
 ]
 
 [[package]]
 name = "toml_edit"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d34d383cd00a163b4a5b85053df514d45bc330f6de7737edfe0a93311d1eaa03"
+checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
- "indexmap 2.1.0",
+ "indexmap 2.2.2",
  "toml_datetime",
  "winnow",
 ]
@@ -4861,9 +4841,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "0.25.3"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1778a42e8b3b90bff8d0f5032bf22250792889a5cdc752aa0020c84abe3aaf10"
+checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
 
 [[package]]
 name = "winapi"
@@ -5030,9 +5010,9 @@ checksum = "dff9641d1cd4be8d1a070daf9e3773c5f67e78b4d9d42263020c057706765c04"
 
 [[package]]
 name = "winnow"
-version = "0.5.34"
+version = "0.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7cf47b659b318dccbd69cc4797a39ae128f533dce7902a1096044d1967b9c16"
+checksum = "a7cad8365489051ae9f054164e459304af2e7e9bb407c958076c8bf4aef52da5"
 dependencies = [
  "memchr",
 ]
@@ -5207,3 +5187,8 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "halo2curves"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"

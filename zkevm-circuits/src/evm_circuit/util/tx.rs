@@ -120,25 +120,28 @@ impl<F: Field> EndTxHelperGadget<F> {
 
         // Transition
         let rw_counter_offset = num_rw.expr() - is_first_tx.expr();
-        cb.condition(
-            cb.next
-                .execution_state_selector([ExecutionState::BeginTx, ExecutionState::InvalidTx]),
-            |cb| {
-                let next_step_rwc = cb.next.state.rw_counter.expr();
-                // lookup use next step initial rwc, thus lead to same record on rw table
-                cb.call_context_lookup_write_with_counter(
-                    next_step_rwc.clone(),
-                    Some(next_step_rwc),
-                    CallContextFieldTag::TxId,
-                    // tx_id has been lookup and range_check above
-                    Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
-                );
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(rw_counter_offset.clone()),
-                    ..StepStateTransition::any()
-                });
-            },
-        );
+        let next_begin = if cb.feature_config.invalid_tx {
+            vec![ExecutionState::BeginTx, ExecutionState::InvalidTx]
+        } else {
+            vec![ExecutionState::BeginTx]
+        };
+        cb.condition(cb.next.execution_state_selector(next_begin), |cb| {
+            let next_step_rwc = cb.next.state.rw_counter.expr();
+            // lookup use next step initial rwc, thus lead to same record on rw table
+            cb.call_context_lookup_write_with_counter(
+                next_step_rwc.clone(),
+                Some(next_step_rwc),
+                CallContextFieldTag::TxId,
+                // tx_id has been lookup and range_check above
+                Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
+            );
+            // minus 1.expr() because `call_context_lookup_write_with_counter` do not bump
+            // rwc
+            cb.require_step_state_transition(StepStateTransition {
+                rw_counter: Delta(rw_counter_offset.clone()),
+                ..StepStateTransition::any()
+            });
+        });
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {

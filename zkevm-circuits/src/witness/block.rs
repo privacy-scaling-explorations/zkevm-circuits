@@ -8,7 +8,7 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{
-        self, CopyEvent, ExpEvent, FixedCParams, PrecompileEvents, Withdrawal,
+        self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, PrecompileEvents, Withdrawal,
     },
     state_db::CodeDB,
     Error,
@@ -45,6 +45,8 @@ pub struct Block<F> {
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: FixedCParams,
+    /// Feature Config
+    pub feature_config: FeatureConfig,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
@@ -312,6 +314,7 @@ pub fn block_convert<F: Field>(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: builder.circuits_params,
+        feature_config: builder.feature_config,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

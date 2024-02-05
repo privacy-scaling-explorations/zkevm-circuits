@@ -1,4 +1,5 @@
 use eth_types::Field;
+use halo2::halo2curves::CurveExt;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::{
@@ -23,7 +24,7 @@ use snark_verifier::{
         PolynomialCommitmentScheme,
     },
     system::halo2::transcript,
-    util::arithmetic::{fe_to_limbs, MultiMillerLoop},
+    util::arithmetic::{fe_to_limbs, FromUniformBytes, MultiMillerLoop, PrimeField},
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
 use std::{io, iter, rc::Rc};
@@ -208,19 +209,20 @@ impl AggregationConfig {
     #[allow(clippy::type_complexity)]
     pub fn aggregate<'a, M, As>(
         &self,
-        layouter: &mut impl Layouter<M::Scalar>,
+        layouter: &mut impl Layouter<M::Fr>,
         svk: &KzgSvk<M>,
         snarks: impl IntoIterator<Item = SnarkWitness<'a, M::G1Affine>>,
     ) -> Result<
         (
-            Vec<Vec<Vec<AssignedCell<M::Scalar, M::Scalar>>>>,
-            Vec<AssignedCell<M::Scalar, M::Scalar>>,
+            Vec<Vec<Vec<AssignedCell<M::Fr, M::Fr>>>>,
+            Vec<AssignedCell<M::Fr, M::Fr>>,
         ),
         Error,
     >
     where
         M: MultiMillerLoop,
-        M::Scalar: Field,
+        M::Fr: Field,
+        M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
         for<'b> As: PolynomialCommitmentScheme<
                 M::G1Affine,
                 Rc<Halo2Loader<'b, M::G1Affine>>,
@@ -328,12 +330,13 @@ impl AggregationConfig {
 pub fn aggregate<'a, M, As>(
     params: &ParamsKZG<M>,
     snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
-) -> Result<[M::Scalar; 4 * LIMBS], snark_verifier::Error>
+) -> Result<[M::Fr; 4 * LIMBS], snark_verifier::Error>
 where
     M: MultiMillerLoop,
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
-    M::Scalar: Field,
+    M::Fr: PrimeField + FromUniformBytes<64>,
+    M::G1: CurveExt<AffineExt = M::G1Affine, ScalarExt = M::Fr>,
+    M::G1Affine: SerdeObject + CurveAffine<ScalarExt = M::Fr, CurveExt = M::G1>,
+    M::G2Affine: SerdeObject + CurveAffine,
     for<'b> As: PolynomialCommitmentScheme<
             M::G1Affine,
             NativeLoader,
@@ -628,7 +631,7 @@ pub mod test {
         assert_eq!(
             MockProver::run(21, &aggregation, instances)
                 .unwrap()
-                .verify_par(),
+                .verify(),
             Ok(())
         );
     }
@@ -651,7 +654,7 @@ pub mod test {
         assert_eq!(
             MockProver::run(21, &aggregation, instances)
                 .unwrap()
-                .verify_par(),
+                .verify(),
             Err(vec![
                 VerifyFailure::Permutation {
                     column: (Any::advice(), 0).into(),

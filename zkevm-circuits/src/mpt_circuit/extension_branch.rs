@@ -158,9 +158,13 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        Word::<Expression<F>>::new([0.expr(), 0.expr()])
+                        Word::zero(),
                     );
                  } elsex {
+                    // For the placeholder branch / extension node the values did not change, we reuse
+                    // the previous values. These values are used in the leaf after the placeholder branch
+                    // - this way we can use `KeyData` and `ParentData` in the leaf as in the cases of
+                    // the leaf after the non-placeholder branch.
                     KeyData::store(
                         cb,
                         &mut ctx.memory[key_memory(is_s)],
@@ -287,7 +291,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    Word::<F>::new([0.scalar(), 0.scalar()]),
+                    Word::zero_f(),
                 )?;
             } else {
                 KeyData::witness_store(

@@ -343,7 +343,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         self.test_variadic(&mock_prover);
 
         mock_prover
-            .verify_par()
+            .verify()
             .expect("mock prover verification failed");
     }
 
@@ -468,7 +468,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                         .unwrap();
                 self.test_root_variadic(&mock_prover);
                 mock_prover
-                    .verify_par()
+                    .verify()
                     .expect("mock prover verification failed");
             }
         } else {

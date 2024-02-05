@@ -43,6 +43,43 @@ use std::{
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
 
+/// Runtime Config
+///
+/// Default to mainnet block
+#[derive(Debug, Clone, Copy)]
+pub struct FeatureConfig {
+    /// Zero difficulty
+    pub zero_difficulty: bool,
+    /// Free first transaction
+    pub free_first_tx: bool,
+    /// Enable EIP1559
+    pub enable_eip1559: bool,
+    /// Allow invalid transactions to be included in a block
+    ///
+    /// Transactions with mismatched nonce, insufficient gas limit, or insufficient balance
+    /// shouldn't be included in a mainnet block. However, rollup developers might want to
+    /// include invalid tx in the L2 block to support forced exit feature.
+    pub invalid_tx: bool,
+}
+
+impl Default for FeatureConfig {
+    fn default() -> Self {
+        Self {
+            zero_difficulty: true,
+            free_first_tx: false,
+            enable_eip1559: true,
+            invalid_tx: false,
+        }
+    }
+}
+
+impl FeatureConfig {
+    /// Check if we are mainnet config
+    pub fn is_mainnet(&self) -> bool {
+        self.zero_difficulty && !self.free_first_tx && self.enable_eip1559 && !self.invalid_tx
+    }
+}
+
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
@@ -157,18 +194,27 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
+    /// Feature config
+    pub feature_config: FeatureConfig,
 }
 
 impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block, params: C) -> Self {
+    pub fn new(
+        sdb: StateDB,
+        code_db: CodeDB,
+        block: Block,
+        params: C,
+        feature_config: FeatureConfig,
+    ) -> Self {
         Self {
             sdb,
             code_db,
             block,
             circuits_params: params,
             block_ctx: BlockContext::new(),
+            feature_config,
         }
     }
 
@@ -280,13 +326,15 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             let end_tx_step =
                 gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
             tx.steps_mut().push(end_tx_step);
-        } else {
+        } else if self.feature_config.invalid_tx {
             // Generate InvalidTx step
             let invalid_tx_step = gen_associated_steps(
                 &mut self.state_ref(&mut tx, &mut tx_ctx),
                 ExecState::InvalidTx,
             )?;
             tx.steps_mut().push(invalid_tx_step);
+        } else {
+            panic!("invalid tx support not enabled")
         }
 
         self.sdb.commit_tx();
@@ -465,6 +513,7 @@ impl CircuitInputBuilder<DynamicCParams> {
             block: self.block,
             circuits_params: c_params,
             block_ctx: self.block_ctx,
+            feature_config: self.feature_config,
         };
 
         cib.set_end_block(c_params.max_rws)?;
@@ -575,6 +624,7 @@ pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
     chain_id: Word,
     circuits_params: FixedCParams,
+    feature_config: FeatureConfig,
 }
 
 /// Get State Accesses from TxExecTraces
@@ -632,12 +682,22 @@ pub fn build_state_code_db(
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
     pub async fn new(client: GethClient<P>, circuits_params: FixedCParams) -> Result<Self, Error> {
+        Self::new_with_features(client, circuits_params, FeatureConfig::default()).await
+    }
+
+    /// Create a new BuilderClient
+    pub async fn new_with_features(
+        client: GethClient<P>,
+        circuits_params: FixedCParams,
+        feature_config: FeatureConfig,
+    ) -> Result<Self, Error> {
         let chain_id = client.get_chain_id().await?;
 
         Ok(Self {
             cli: client,
             chain_id: chain_id.into(),
             circuits_params,
+            feature_config,
         })
     }
 
@@ -749,7 +809,13 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
         let block = Block::new(self.chain_id, history_hashes, prev_state_root, eth_block)?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block, self.circuits_params);
+        let mut builder = CircuitInputBuilder::new(
+            sdb,
+            code_db,
+            block,
+            self.circuits_params,
+            self.feature_config,
+        );
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }

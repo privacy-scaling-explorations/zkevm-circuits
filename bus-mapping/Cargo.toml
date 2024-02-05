@@ -12,7 +12,7 @@ mock = { path = "../mock", optional = true }
 
 ethers-core = "=2.0.10"
 ethers-providers = "=2.0.10"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v0.3.0" }
 itertools = "0.10"
 lazy_static = "1.4"
 log = "0.4.14"
@@ -23,7 +23,7 @@ serde_json = "1.0.66"
 strum = "0.24"
 strum_macros = "0.24"
 revm-precompile = { version = "=2.2.0", default-features = false, optional = true }
- 
+
 [dev-dependencies]
 hex = "0.4.3"
 pretty_assertions = "1.0.0"

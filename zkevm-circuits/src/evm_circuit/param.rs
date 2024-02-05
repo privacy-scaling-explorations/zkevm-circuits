@@ -1,6 +1,7 @@
 //! Constants and parameters for the EVM circuit
 use super::table::Table;
 use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
+use bus_mapping::circuit_input_builder::FeatureConfig;
 use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
@@ -173,12 +174,35 @@ pub(crate) const N_BYTES_WITHDRAWAL: usize = N_BYTES_U64 //id
     + N_BYTES_U64; // amount
 
 lazy_static::lazy_static! {
+    static ref INVALID_TX_CONFIG: FeatureConfig = FeatureConfig {
+        invalid_tx: true,
+        ..Default::default()
+    };
     // Step slot height in evm circuit
-    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
+    // We enable the invalid_tx feature to get invalid tx's ExecutionState height
+    // We garentee the heights of other ExecutionStates remains unchanged in the following test
+    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map(*INVALID_TX_CONFIG);
 }
-fn get_step_height_map() -> HashMap<ExecutionState, usize> {
+fn get_step_height_map(feature_config: FeatureConfig) -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
-    let circuit = EvmCircuit::configure(&mut meta);
-
+    let circuit = EvmCircuit::configure_with_params(&mut meta, feature_config);
     circuit.0.execution.height_map
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_step_height_map() {
+        let mainnet_config = FeatureConfig::default();
+        let map_mainnet = get_step_height_map(mainnet_config);
+
+        let map_invalid_tx = {
+            let mut map = EXECUTION_STATE_HEIGHT_MAP.clone();
+            map.remove(&ExecutionState::InvalidTx);
+            map
+        };
+        // We show that the invalid tx feature affects none of the other execution state heights
+        assert_eq!(map_invalid_tx, map_mainnet);
+    }
 }

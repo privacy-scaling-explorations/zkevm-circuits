@@ -14,7 +14,7 @@ func prepareEmptyNonExistingStorageRow() []byte {
 	return nonExistingStorageRow
 }
 
-func prepareNonExistingStorageRow(leafC, keyNibbles []byte, noLeaf bool) ([]byte, []byte) {
+func prepareNonExistingStorageRow(leafC, keyNibbles []byte) ([]byte, []byte) {
 	// nonExistingStorageRow is used only for proof that nothing is stored at a particular storage key
 	nonExistingStorageRow := prepareEmptyNonExistingStorageRow()
 
@@ -307,7 +307,7 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 
 // prepareLeafAndPlaceholderNode prepares a leaf node and its placeholder counterpart
 // (used when one of the proofs does not have a leaf).
-func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, proof2 [][]byte, storage_key common.Hash, key []byte, nonExistingAccountProof, isAccountProof, isSModExtension, isCModExtension bool) Node {
+func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, proof2 [][]byte, storage_key common.Hash, key []byte, isAccountProof, isSModExtension, isCModExtension bool) Node {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
@@ -407,7 +407,10 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 }
 
 func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyIndex int) Node {
-	leaf := make([]byte, valueLen)
+	// valueLen + 1 because the placeholder leaf in the empty trie occupies 35 bytes:
+	// [227 161 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
+	// 33 (33 = 161 - 128) bytes for path, as in the example above
+	leaf := make([]byte, valueLen+1)
 	setStorageLeafKeyRLP(&leaf, key, keyIndex)
 	keyLen := getLeafKeyLen(keyIndex)
 	leaf[0] = 192 + 1 + byte(keyLen) + 1
@@ -529,8 +532,7 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	var nonExistingStorageRow []byte
 	var wrongRlpBytes []byte
 	if nonExistingStorageProof {
-		noLeaf := false
-		wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key, noLeaf)
+		wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key)
 	} else {
 		nonExistingStorageRow = prepareEmptyNonExistingStorageRow()
 	}

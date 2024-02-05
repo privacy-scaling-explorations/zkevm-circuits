@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, U256};
 use gadgets::util::Scalar;
 use halo2_proofs::{
     circuit::Value,
@@ -20,7 +20,7 @@ use crate::{
             IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData,
             ParentDataWitness, KECCAK,
         },
-        param::KEY_LEN_IN_NIBBLES,
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
@@ -104,7 +104,7 @@ impl<F: Field> StorageLeafConfig<F> {
             require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut value_word = vec![Word::<Expression<F>>::new([0.expr(), 0.expr()]); 2];
+            let mut value_word = vec![Word::zero(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
 
@@ -115,6 +115,18 @@ impl<F: Field> StorageLeafConfig<F> {
             let key_data = &mut config.key_data;
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
             key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
+
+            // Proof types
+            config.is_storage_mod_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::StorageChanged.expr(),
+            );
+            config.is_non_existing_storage_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::StorageDoesNotExist.expr(),
+            );
 
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
@@ -179,24 +191,51 @@ impl<F: Field> StorageLeafConfig<F> {
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
-                        require!(value_word[is_s.idx()] => [0.expr(), 0.expr()]);
+                        require!(value_word[is_s.idx()] => Word::zero());
                     }}
 
                     // Make sure the RLP encoding is correct.
                     // storage = [key, "value"]
                     require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
 
-                    // Check if the account is in its parent.
-                    // Check is skipped for placeholder leaves which are dummy leaves
+                    // Check if the leaf is in its parent.
+                    // Check is skipped for placeholder leaves which are dummy leaves.
+                    // Note that the constraint works for the case when there is the placeholder branch above
+                    // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
+                    // branch.
                     ifx! {not!(is_placeholder_leaf) => {
                         config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                         ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
-                            // Hashed branch hash in parent branch
+                            // Hashed leaf in parent branch
                             let hash = parent_data[is_s.idx()].hash.expr();
                             require!((1.expr(), leaf_rlc.expr(), rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                         } elsex {
-                            // Non-hashed branch hash in parent branch
+                            // Non-hashed leaf in parent branch
                             require!(leaf_rlc => parent_data[is_s.idx()].rlc.expr());
+                        }}
+                    } elsex {
+                        // For NonExistingStorageProof prove there is no leaf.
+
+                        // When there is only one leaf in the trie, `getProof` will always return this leaf - so we will have
+                        // either the required leaf or the wrong leaf, so for NonExistingStorageProof we don't handle this
+                        // case here (handled by WrongLeaf gadget).
+                        ifx! {config.is_non_existing_storage_proof.expr() => {
+                            ifx! {parent_data[is_s.idx()].is_root.expr() => {
+                                // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
+                                // the trie needs to be empty.
+                                let empty_hash = Word::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
+                                let hash = parent_data[is_s.idx()].hash.expr();
+                                require!(hash.lo() => Expression::Constant(empty_hash.lo()));
+                                require!(hash.hi() => Expression::Constant(empty_hash.hi()));
+                            } elsex {
+                                // For NonExistingStorageProof we need to prove that there is nil in the parent branch
+                                // at the `modified_pos` position.
+                                // Note that this does not hold when there is NonExistingStorageProof wrong leaf scenario,
+                                // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
+                                // so the check below is not triggered.
+                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                            }}
+
                         }}
                     }}
                 }};
@@ -207,11 +246,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 ParentData::store(
                     cb,
                     &mut ctx.memory[parent_memory(is_s)],
-                    word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    word::Word::zero(),
                     0.expr(),
                     true.expr(),
                     false.expr(),
-                    word::Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    word::Word::zero(),
                 );
             }
 
@@ -224,18 +263,6 @@ impl<F: Field> StorageLeafConfig<F> {
                     key_data,
                 );
             }};
-
-            // Proof types
-            config.is_storage_mod_proof = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::StorageChanged.expr(),
-            );
-            config.is_non_existing_storage_proof = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::StorageDoesNotExist.expr(),
-            );
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
@@ -311,19 +338,55 @@ impl<F: Field> StorageLeafConfig<F> {
                 }
             }};
 
+            ifx! {not!(config.is_non_existing_storage_proof) => {
+                let key_rlc = ifx!{not!(config.parent_data[true.idx()].is_placeholder) => {
+                    key_rlc[true.idx()].expr()
+                } elsex {
+                    key_rlc[false.idx()].expr()
+                }};
+                // Check that the key item contains the correct key for the path that was taken
+                require!(key_item.hash_rlc() => key_rlc);
+                // Check if the key is correct for the given address
+                if ctx.params.is_preimage_check_enabled() {
+                    let key = key_item.word();
+                    require!((1.expr(), address_item.bytes_le()[1..33].rlc(&cb.keccak_r), 32.expr(), key.lo(), key.hi()) =>> @KECCAK);
+                }
+            }};
+
             ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
-                ctx.mpt_table.constrain(
-                    meta,
-                    &mut cb.base,
-                    config.main_data.address.expr(),
-                    proof_type.clone(),
-                    address_item.word(),
-                    config.main_data.new_root.expr(),
-                    config.main_data.old_root.expr(),
-                    value_word[false.idx()].clone(),
-                    value_word[true.idx()].clone(),
-                );
+                ifx! {not!(config.is_non_existing_storage_proof) => {
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        config.main_data.address.expr(),
+                        proof_type.clone(),
+                        address_item.word(),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        value_word[false.idx()].clone(),
+                        value_word[true.idx()].clone(),
+                    );
+                } elsex {
+                    // Non-existing proof doesn't have the value set to 0 in the case of a wrong leaf - we set it to 0
+                    // below to enable lookups with the value set to 0 (as in the case of a non-wrong non-existing proof).
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        config.main_data.address.expr(),
+                        proof_type.clone(),
+                        address_item.word(),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    );
+                }};
             } elsex {
+                // When the value is set to 0, the leaf is deleted, and if there were only two leaves in the branch,
+                // the neighbour leaf moves one level up and replaces the branch. When the lookup is executed with
+                // the new value set to 0, the lookup fails (without the code below), because the leaf that is returned
+                // is the neighbour node that moved up (because the branch and the old leaf doesn’t exist anymore),
+                // but this leaf doesn’t have the zero value.
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,
@@ -332,7 +395,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     address_item.word(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                    Word::zero(),
                     value_word[true.idx()].clone(),
                 );
             }};
@@ -373,7 +436,7 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut value_word = vec![Word::<F>::new([0.scalar(), 0.scalar()]); 2];
+        let mut value_word = vec![Word::zero_f(); 2];
         for is_s in [true, false] {
             self.is_mod_extension[is_s.idx()].assign(
                 region,
@@ -531,8 +594,12 @@ impl<F: Field> StorageLeafConfig<F> {
         }
 
         let mut new_value = value_word[false.idx()];
+        let mut old_value = value_word[true.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::<F>::new([0.scalar(), 0.scalar()]);
+            new_value = word::Word::zero_f();
+        } else if is_non_existing_proof {
+            new_value = word::Word::zero_f();
+            old_value = word::Word::zero_f();
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -544,7 +611,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
                 new_value: new_value.into_value(),
-                old_value: value_word[true.idx()].into_value(),
+                old_value: old_value.into_value(),
             },
         )?;
 
