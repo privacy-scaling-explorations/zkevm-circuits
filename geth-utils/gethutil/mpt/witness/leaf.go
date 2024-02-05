@@ -493,16 +493,7 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 		} else {
 			// [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
 			keyLen = row[1] - 128
-			if keyLen+2 > valueLen {
-				// This happens for StorageDoesNotExist when the trie is empty. In this case, the key
-				// occupies 33 (33 = 161 - 128) bytes, as in the example below:
-				// [227 161 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-				// Currently, the length for the RLP items is set valueLen = 34, changing this to 35 would
-				// require significant changes in the circuit.
-				copy(key, row[keyRlpLen:valueLen])
-			} else {
-				copy(key, row[keyRlpLen:keyLen+2])
-			}
+			copy(key, row[keyRlpLen:keyLen+2])
 			offset = byte(2)
 		}
 	}

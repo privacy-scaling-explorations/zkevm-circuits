@@ -95,52 +95,9 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
 
     unsafe { go::FreeString(c_str.as_ptr()) };
 
+    // Note: previously this function returned a Vec of Nodes, but now returning a JSON string
+    // to avoid imporing zkEVM circuit here (that will create a circular dependency).
+    // TODO: consider defining Node types in another crate.
+
     json
-
-    // let mut nodes: Vec<Node> = serde_json::from_str(json).unwrap();
-    //
-    // Add the address and the key to the list of values in the Account and Storage nodes
-    // for node in nodes.iter_mut() {
-    // if node.account.is_some() {
-    // let account = node.account.clone().unwrap();
-    // node.values
-    // .push([vec![148], account.address.to_vec()].concat().into());
-    // node.values
-    // .push([vec![160], account.key.to_vec()].concat().into());
-    // }
-    // if node.storage.is_some() {
-    // let storage = node.storage.clone().unwrap();
-    // node.values
-    // .push([vec![160], storage.address.to_vec()].concat().into());
-    // node.values
-    // .push([vec![160], storage.key.to_vec()].concat().into());
-    // }
-    // }
-    // nodes
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let nodes = get_witness(
-            14359865,
-            &[TrieModification {
-                typ: ProofType::StorageChanged,
-                key: H256::from_low_u64_le(0x12),
-                value: 0x1123e2.into(),
-                address: Address::from_str("0x4E5B2e1dc63F6b91cb6Cd759936495434C7e972F").unwrap(),
-                nonce: 0.into(),
-                balance: 0.into(),
-                code_hash: H256::zero(),
-            }],
-            "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
-        );
-        println!("{:?}", nodes);
-        assert_eq!(nodes.len(), 12);
-    }
 }

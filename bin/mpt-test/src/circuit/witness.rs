@@ -308,26 +308,7 @@ impl<F: Field> Witness<F> {
             &trns.trie_modifications,
             provider,
         );
-
-        let mut nodes: Vec<Node> = serde_json::from_str(&json).unwrap();
-
-        // Add the address and the key to the list of values in the Account and Storage nodes
-        for node in nodes.iter_mut() {
-            if node.account.is_some() {
-                let account = node.account.clone().unwrap();
-                node.values
-                    .push([vec![148], account.address.to_vec()].concat().into());
-                node.values
-                    .push([vec![160], account.key.to_vec()].concat().into());
-            }
-            if node.storage.is_some() {
-                let storage = node.storage.clone().unwrap();
-                node.values
-                    .push([vec![160], storage.address.to_vec()].concat().into());
-                node.values
-                    .push([vec![160], storage.key.to_vec()].concat().into());
-            }
-        }
+        let nodes = zkevm_circuits::mpt_circuit::load_proof(json.as_bytes())?;
 
         let witness_previous_state_root = H256::from_slice(&nodes[0].values[0][1..33]);
         let non_disabled_node = |n: &&Node| {
