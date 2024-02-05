@@ -50,8 +50,8 @@ type GetWitnessRequest struct {
 	Mods     []witness.TrieModification
 }
 
-//export GetWitness
-func GetWitness(proofConf *C.char) *C.char {
+//export GetMptWitness
+func GetMptWitness(proofConf *C.char) *C.char {
 	var config GetWitnessRequest
 
 	err := json.Unmarshal([]byte(C.GoString(proofConf)), &config)

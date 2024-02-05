@@ -86,7 +86,7 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
 
     let json = serde_json::to_string(&req).expect("Invalid request");
     let c_config = CString::new(json).expect("invalid config");
-    let result = unsafe { go::GetWitness(c_config.as_ptr() as *const i8) };
+    let result = unsafe { go::GetMptWitness(c_config.as_ptr() as *const i8) };
     let c_str = unsafe { CStr::from_ptr(result) };
     let json = c_str
         .to_str()
