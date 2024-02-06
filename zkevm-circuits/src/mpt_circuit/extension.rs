@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 

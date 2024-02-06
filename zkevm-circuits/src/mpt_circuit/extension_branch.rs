@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
@@ -291,7 +291,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    Word::zero_f(),
+                    Word::zero(),
                 )?;
             } else {
                 KeyData::witness_store(

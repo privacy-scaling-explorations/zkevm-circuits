@@ -18,7 +18,7 @@ use crate::{
 use bus_mapping::{
     circuit_input_builder::FeatureConfig, operation::Target, state_db::EMPTY_CODE_HASH_LE,
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::{not, sum};
 use halo2_proofs::{
     circuit::Value,

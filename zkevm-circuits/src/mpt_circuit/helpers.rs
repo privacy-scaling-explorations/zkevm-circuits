@@ -27,7 +27,7 @@ use crate::{
         Challenges, Expr,
     },
 };
-use eth_types::{Field, Word as U256};
+use eth_types::{Field, OpsIdentity, Word as U256};
 use gadgets::util::{not, or, pow, xor, Scalar};
 use halo2_proofs::{
     circuit::Value,

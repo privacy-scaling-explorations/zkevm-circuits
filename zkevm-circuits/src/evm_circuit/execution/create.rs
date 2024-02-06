@@ -34,7 +34,7 @@ use bus_mapping::{
 };
 use eth_types::{
     evm_types::{GasCost, INIT_CODE_WORD_GAS},
-    Field, ToBigEndian, ToScalar, ToWord, U256,
+    Field, OpsIdentity, ToBigEndian, ToScalar, ToWord, U256,
 };
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, select};

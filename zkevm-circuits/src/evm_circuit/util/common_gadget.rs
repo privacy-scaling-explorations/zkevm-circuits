@@ -28,7 +28,9 @@ use crate::{
     witness::{Block, Call, ExecStep},
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar, ToWord, U256};
+use eth_types::{
+    evm_types::GasCost, Field, OpsIdentity, ToAddress, ToLittleEndian, ToScalar, ToWord, U256,
+};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,

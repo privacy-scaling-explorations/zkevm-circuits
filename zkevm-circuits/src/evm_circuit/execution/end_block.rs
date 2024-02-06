@@ -14,7 +14,7 @@ use crate::{
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{word::Word, Expr},
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
