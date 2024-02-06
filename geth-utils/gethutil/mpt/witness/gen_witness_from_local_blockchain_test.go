@@ -933,7 +933,7 @@ func TestExtensionIntoBranch(t *testing.T) {
 	database := state.NewDatabase(blockHeaderParent)
 	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
 	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
-	
+
 	statedb.DisableLoadingRemoteAccounts()
 
 	statedb.CreateAccount(addr)

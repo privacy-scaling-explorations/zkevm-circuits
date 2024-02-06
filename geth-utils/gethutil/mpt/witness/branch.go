@@ -174,7 +174,7 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 		} else {
 			keyLen = 1
 			nibbles = append(nibbles, leafKeyRow[1]-16)
-		}	
+		}
 	} else {
 		keyLen := int(leafKeyRow[2] - 128)
 		if (leafKeyRow[3] != 32) && (leafKeyRow[3] != 0) { // second term is for extension node
