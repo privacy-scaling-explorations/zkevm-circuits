@@ -69,7 +69,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 ///         txs[0]
 ///             .from(MOCK_ACCOUNTS[0])
 ///             .gas_price(gwei(2))
-///             .gas(WordLoHi::from(0x10000))
+///             .gas(Word::from(0x10000))
 ///             .value(eth(2))
 ///             .input(code.into());
 ///     },
