@@ -6,6 +6,8 @@ This tool aims to verify mainnet blocks for the MPT circuit.
 
 Just run `./test_mainnet_blocks.sh`
 
+NOTE: this run the tests with keccak testing disabled, because it takes SO MUCH to test with keccaks enables. If you want to run them with keccak, just run `cargo run --release --no-default-features`.
+
 ## Adding new blocks to prove
 
 In order to add more blocks to prove you have to:
