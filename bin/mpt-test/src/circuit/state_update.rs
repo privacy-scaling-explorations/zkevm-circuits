@@ -41,7 +41,7 @@ pub fn xnif<F: Field>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
     and::expr([a, not::expr(b)])
 }
 
-/// This
+/// The circuit to verify chained proofs of state updates in a block.
 #[derive(Clone)]
 pub struct StateUpdateCircuitConfig<F: Field> {
     #[cfg(not(feature = "disable-keccak"))]
