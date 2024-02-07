@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{build_tx_log_address, word},
+    util::{build_tx_log_address, word::WordLoHi},
 };
 
 use super::MptUpdates;
@@ -267,10 +267,10 @@ pub struct RwRow<F> {
     pub(crate) id: F,
     pub(crate) address: F,
     pub(crate) field_tag: F,
-    pub(crate) storage_key: word::Word<F>,
-    pub(crate) value: word::Word<F>,
-    pub(crate) value_prev: word::Word<F>,
-    pub(crate) init_val: word::Word<F>,
+    pub(crate) storage_key: WordLoHi<F>,
+    pub(crate) value: WordLoHi<F>,
+    pub(crate) value_prev: WordLoHi<F>,
+    pub(crate) init_val: WordLoHi<F>,
 }
 
 impl<F: Field> RwRow<F> {
@@ -311,9 +311,9 @@ impl<F: Field> RwRow<Value<F>> {
             });
             inner.unwrap()
         };
-        let unwrap_w = |f: word::Word<Value<F>>| {
+        let unwrap_w = |f: WordLoHi<Value<F>>| {
             let (lo, hi) = f.into_lo_hi();
-            word::Word::new([unwrap_f(lo), unwrap_f(hi)])
+            WordLoHi::new([unwrap_f(lo), unwrap_f(hi)])
         };
 
         RwRow {
@@ -462,11 +462,11 @@ impl Rw {
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
-            storage_key: word::Word::from(self.storage_key().unwrap_or_default()).into_value(),
-            value: word::Word::from(self.value_assignment()).into_value(),
-            value_prev: word::Word::from(self.value_prev_assignment().unwrap_or_default())
+            storage_key: WordLoHi::from(self.storage_key().unwrap_or_default()).into_value(),
+            value: WordLoHi::from(self.value_assignment()).into_value(),
+            value_prev: WordLoHi::from(self.value_prev_assignment().unwrap_or_default())
                 .into_value(),
-            init_val: word::Word::from(self.committed_value_assignment().unwrap_or_default())
+            init_val: WordLoHi::from(self.committed_value_assignment().unwrap_or_default())
                 .into_value(),
         }
     }

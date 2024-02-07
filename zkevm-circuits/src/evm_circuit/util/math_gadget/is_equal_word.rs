@@ -11,7 +11,7 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, transpose_val_ret, CachedRegion,
     },
-    util::word::{Word, WordExpr},
+    util::word::{WordExpr, WordLoHi},
 };
 
 use super::IsZeroGadget;
@@ -46,8 +46,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        lhs: WordLoHi<F>,
+        rhs: WordLoHi<F>,
     ) -> Result<F, Error> {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
@@ -60,8 +60,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Value<Word<F>>,
-        rhs: Value<Word<F>>,
+        lhs: Value<WordLoHi<F>>,
+        rhs: Value<WordLoHi<F>>,
     ) -> Result<Value<F>, Error> {
         transpose_val_ret(
             lhs.zip(rhs)
@@ -76,7 +76,7 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         lhs: eth_types::Word,
         rhs: eth_types::Word,
     ) -> Result<F, Error> {
-        self.assign(region, offset, Word::from(lhs), Word::from(rhs))
+        self.assign(region, offset, WordLoHi::from(lhs), WordLoHi::from(rhs))
     }
 }
 

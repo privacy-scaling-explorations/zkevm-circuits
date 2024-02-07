@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     evm_circuit::util::rlc,
-    util::{unusable_rows, word::Word},
+    util::{unusable_rows, word::WordLoHi},
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::{Field, H256, U256};
@@ -86,7 +86,7 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
     for (input, digest, hash) in izip!(&inputs, &digests, &hash_lookup_table) {
         let len = F::from(input.len() as u64);
         let digest_slice: [u8; 32] = hex::decode(digest).unwrap().try_into().unwrap();
-        let (lo, hi): (F, F) = Word::from(H256::from(digest_slice)).to_lo_hi();
+        let (lo, hi): (F, F) = WordLoHi::from(H256::from(digest_slice)).to_lo_hi();
 
         let expected = (rlc_input(input), len, lo, hi);
 
@@ -95,7 +95,8 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
         assert_eq!(hash.2, expected.2);
         assert_eq!(hash.3, expected.3);
     }
-    let (lo, hi) = Word::from(U256::from_little_endian(EMPTY_CODE_HASH_LE.as_slice())).to_lo_hi();
+    let (lo, hi) =
+        WordLoHi::from(U256::from_little_endian(EMPTY_CODE_HASH_LE.as_slice())).to_lo_hi();
 
     // Check that other digests are the digest of the empty message.
     let empty_hash = (F::ZERO, F::ZERO, lo, hi);

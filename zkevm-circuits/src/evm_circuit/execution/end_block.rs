@@ -12,9 +12,9 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::{word::Word, Expr},
+    util::{word::WordLoHi, Expr},
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::TxId,
-                Word::from_lo_unchecked(total_txs.expr()),
+                WordLoHi::from_lo_unchecked(total_txs.expr()),
             );
         });
 
@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                Word::zero(),
+                WordLoHi::zero(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at

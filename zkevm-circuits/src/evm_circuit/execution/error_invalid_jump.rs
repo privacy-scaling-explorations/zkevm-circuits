@@ -12,7 +12,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -29,8 +29,8 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     is_code: Cell<F>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
-    condition: WordCell<F>,
-    is_condition_zero: IsZeroWordGadget<F, WordCell<F>>,
+    condition: WordLoHiCell<F>,
+    is_condition_zero: IsZeroWordGadget<F, WordLoHiCell<F>>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -160,8 +160,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         )?;
 
         self.condition.assign_u256(region, offset, condition)?;
-        self.is_condition_zero
-            .assign_value(region, offset, Value::known(Word::from(condition)))?;
+        self.is_condition_zero.assign_value(
+            region,
+            offset,
+            Value::known(WordLoHi::from(condition)),
+        )?;
 
         self.common_error_gadget.assign(
             region,

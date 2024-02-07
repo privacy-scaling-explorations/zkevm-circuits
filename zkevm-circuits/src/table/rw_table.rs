@@ -17,13 +17,13 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key: word::Word<Column<Advice>>,
+    pub storage_key: WordLoHi<Column<Advice>>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: WordLoHi<Column<Advice>>,
     /// Value Previous
-    pub value_prev: word::Word<Column<Advice>>,
+    pub value_prev: WordLoHi<Column<Advice>>,
     /// InitVal (Committed Value)
-    pub init_val: word::Word<Column<Advice>>,
+    pub init_val: WordLoHi<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -75,10 +75,10 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            init_val: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            storage_key: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            value_prev: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            init_val: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(

@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::word::{Word, WordCell, WordExpr},
+    util::word::{WordExpr, WordLoHi, WordLoHiCell},
 };
 
 use super::ExecutionGadget;
@@ -29,7 +29,7 @@ use super::ExecutionGadget;
 pub(crate) struct Sha3Gadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
-    sha3_digest: WordCell<F>,
+    sha3_digest: WordLoHiCell<F>,
     copy_rwc_inc: Cell<F>,
     rlc_acc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -59,9 +59,9 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::RlcAcc.expr(),
                 memory_address.offset(),
                 memory_address.address(),

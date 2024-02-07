@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Error, Expression, VirtualCells};
 
@@ -17,7 +17,7 @@ use crate::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         MPTConfig, MptMemory,
     },
-    util::word::Word,
+    util::word::WordLoHi,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -114,8 +114,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 )
             }};
             let parent_word = [
-                Word::<Expression<F>>::new([parent_word_s_lo, parent_word_s_hi]),
-                Word::<Expression<F>>::new([parent_word_c_lo, parent_word_c_hi]),
+                WordLoHi::<Expression<F>>::new([parent_word_s_lo, parent_word_s_hi]),
+                WordLoHi::<Expression<F>>::new([parent_word_c_lo, parent_word_c_hi]),
             ];
             let parent_rlc = [parent_rlc_s, parent_rlc_c];
             let is_root = [is_root_s, is_root_c];
@@ -158,7 +158,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
-                        Word::zero(),
+                        WordLoHi::zero(),
                     );
                  } elsex {
                     // For the placeholder branch / extension node the values did not change, we reuse
@@ -291,7 +291,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
-                    Word::zero_f(),
+                    WordLoHi::zero(),
                 )?;
             } else {
                 KeyData::witness_store(

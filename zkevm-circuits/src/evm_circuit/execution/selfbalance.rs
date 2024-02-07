@@ -11,7 +11,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -22,8 +22,8 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct SelfbalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    callee_address: WordCell<F>,
-    self_balance: WordCell<F>,
+    callee_address: WordLoHiCell<F>,
+    self_balance: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {

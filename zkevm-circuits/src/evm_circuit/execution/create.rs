@@ -19,13 +19,13 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, AccountAddress, CachedRegion, Cell, StepRws, Word, WordExpr,
+            not, AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word32Cell, WordCell},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -34,7 +34,7 @@ use bus_mapping::{
 };
 use eth_types::{
     evm_types::{GasCost, INIT_CODE_WORD_GAS},
-    Field, ToBigEndian, ToScalar, ToWord, U256,
+    Field, OpsIdentity, ToBigEndian, ToScalar, ToWord, U256,
 };
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, select};
@@ -58,11 +58,11 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     was_warm: Cell<F>,
     value: Word32Cell<F>,
 
-    caller_balance: WordCell<F>,
+    caller_balance: WordLoHiCell<F>,
     callee_reversion_info: ReversionInfo<F>,
     callee_nonce: Cell<F>,
-    prev_code_hash: WordCell<F>,
-    prev_code_hash_is_zero: IsZeroWordGadget<F, Word<Expression<F>>>,
+    prev_code_hash: WordLoHiCell<F>,
+    prev_code_hash_is_zero: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
     transfer: TransferGadget<F>,
     create: ContractCreateGadget<F, IS_CREATE2>,
 
@@ -74,7 +74,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     is_depth_in_range: LtGadget<F, N_BYTES_U64>,
     is_insufficient_balance: LtWordGadget<F>,
     is_nonce_in_range: LtGadget<F, N_BYTES_U64>,
-    not_address_collision: IsZeroWordGadget<F, Word<Expression<F>>>,
+    not_address_collision: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
@@ -139,7 +139,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.account_read(
             create.caller_address(),
             AccountFieldTag::Nonce,
-            Word::from_lo_unchecked(caller_nonce.expr()),
+            WordLoHi::from_lo_unchecked(caller_nonce.expr()),
         );
 
         // Pre-check: call depth, user's nonce and user's balance
@@ -182,8 +182,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.account_write(
                     create.caller_address(),
                     AccountFieldTag::Nonce,
-                    Word::from_lo_unchecked(caller_nonce.expr() + 1.expr()),
-                    Word::from_lo_unchecked(caller_nonce.expr()),
+                    WordLoHi::from_lo_unchecked(caller_nonce.expr() + 1.expr()),
+                    WordLoHi::from_lo_unchecked(caller_nonce.expr()),
                     Some(&mut reversion_info),
                 );
 
@@ -214,14 +214,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb.account_read(
                         contract_addr.to_word(),
                         AccountFieldTag::Nonce,
-                        Word::from_lo_unchecked(callee_nonce.expr()),
+                        WordLoHi::from_lo_unchecked(callee_nonce.expr()),
                     );
                 });
                 (
                     prev_code_hash_is_zero,
                     IsZeroWordGadget::construct(
                         cb,
-                        &Word::from_lo_unchecked(callee_nonce.expr()).add_unchecked(
+                        &WordLoHi::from_lo_unchecked(callee_nonce.expr()).add_unchecked(
                             prev_code_hash_word.clone().mul_unchecked(
                                 prev_code_hash_word.sub_unchecked(cb.empty_code_hash()),
                             ),
@@ -233,25 +233,27 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         for (field_tag, value) in [
             (
                 CallContextFieldTag::ProgramCounter,
-                Word::from_lo_unchecked(cb.curr.state.program_counter.expr() + 1.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.program_counter.expr() + 1.expr()),
             ),
             (
                 CallContextFieldTag::StackPointer,
-                Word::from_lo_unchecked(
+                WordLoHi::from_lo_unchecked(
                     cb.curr.state.stack_pointer.expr() + 2.expr() + is_create2.expr(),
                 ),
             ),
             (
                 CallContextFieldTag::GasLeft,
-                Word::from_lo_unchecked(gas_left.quotient()),
+                WordLoHi::from_lo_unchecked(gas_left.quotient()),
             ),
             (
                 CallContextFieldTag::MemorySize,
-                Word::from_lo_unchecked(memory_expansion.next_memory_word_size()),
+                WordLoHi::from_lo_unchecked(memory_expansion.next_memory_word_size()),
             ),
             (
                 CallContextFieldTag::ReversibleWriteCounter,
-                Word::from_lo_unchecked(cb.curr.state.reversible_write_counter.expr() + 2.expr()),
+                WordLoHi::from_lo_unchecked(
+                    cb.curr.state.reversible_write_counter.expr() + 2.expr(),
+                ),
             ),
         ] {
             cb.call_context_lookup_write(None, field_tag, value);
@@ -266,7 +268,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 // the init code is being copied from memory to bytecode, so a copy table lookup
                 // to verify that the associated fields for the copy event.
                 cb.copy_table_lookup(
-                    Word::from_lo_unchecked(current_call_id.expr()),
+                    WordLoHi::from_lo_unchecked(current_call_id.expr()),
                     CopyDataType::Memory.expr(),
                     create.code_hash(),
                     CopyDataType::Bytecode.expr(),
@@ -290,13 +292,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.call_context_lookup_write(
                 None,
                 CallContextFieldTag::LastCalleeId,
-                Word::from_lo_unchecked(callee_call_id.expr()),
+                WordLoHi::from_lo_unchecked(callee_call_id.expr()),
             );
             for field_tag in [
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
-                cb.call_context_lookup_write(None, field_tag, Word::zero());
+                cb.call_context_lookup_write(None, field_tag, WordLoHi::zero());
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -342,8 +344,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.account_write(
                     contract_addr.to_word(),
                     AccountFieldTag::Nonce,
-                    Word::one(),
-                    Word::zero(),
+                    WordLoHi::one(),
+                    WordLoHi::zero(),
                     Some(&mut callee_reversion_info),
                 );
 
@@ -351,43 +353,43 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     for (field_tag, value) in [
                         (
                             CallContextFieldTag::CallerId,
-                            Word::from_lo_unchecked(current_call_id.expr()),
+                            WordLoHi::from_lo_unchecked(current_call_id.expr()),
                         ),
                         (
                             CallContextFieldTag::IsSuccess,
-                            Word::from_lo_unchecked(is_success.expr()),
+                            WordLoHi::from_lo_unchecked(is_success.expr()),
                         ),
                         (
                             CallContextFieldTag::IsPersistent,
-                            Word::from_lo_unchecked(callee_reversion_info.is_persistent()),
+                            WordLoHi::from_lo_unchecked(callee_reversion_info.is_persistent()),
                         ),
                         (
                             CallContextFieldTag::TxId,
-                            Word::from_lo_unchecked(tx_id.expr()),
+                            WordLoHi::from_lo_unchecked(tx_id.expr()),
                         ),
                         (CallContextFieldTag::CallerAddress, create.caller_address()),
                         (CallContextFieldTag::CalleeAddress, contract_addr.to_word()),
                         (
                             CallContextFieldTag::RwCounterEndOfReversion,
-                            Word::from_lo_unchecked(
+                            WordLoHi::from_lo_unchecked(
                                 callee_reversion_info.rw_counter_end_of_reversion(),
                             ),
                         ),
                         (
                             CallContextFieldTag::Depth,
-                            Word::from_lo_unchecked(depth.expr() + 1.expr()),
+                            WordLoHi::from_lo_unchecked(depth.expr() + 1.expr()),
                         ),
                         (
                             CallContextFieldTag::IsRoot,
-                            Word::from_lo_unchecked(false.expr()),
+                            WordLoHi::from_lo_unchecked(false.expr()),
                         ),
                         (
                             CallContextFieldTag::IsStatic,
-                            Word::from_lo_unchecked(false.expr()),
+                            WordLoHi::from_lo_unchecked(false.expr()),
                         ),
                         (
                             CallContextFieldTag::IsCreate,
-                            Word::from_lo_unchecked(true.expr()),
+                            WordLoHi::from_lo_unchecked(true.expr()),
                         ),
                         (CallContextFieldTag::CodeHash, create.code_hash()),
                         (CallContextFieldTag::Value, value.to_word()),
@@ -414,13 +416,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb.call_context_lookup_write(
                         None,
                         CallContextFieldTag::LastCalleeId,
-                        Word::from_lo_unchecked(callee_call_id.expr()),
+                        WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                     );
                     for field_tag in [
                         CallContextFieldTag::LastCalleeReturnDataOffset,
                         CallContextFieldTag::LastCalleeReturnDataLength,
                     ] {
-                        cb.call_context_lookup_write(None, field_tag, Word::zero());
+                        cb.call_context_lookup_write(None, field_tag, WordLoHi::zero());
                     }
                     cb.require_step_state_transition(StepStateTransition {
                         rw_counter: Delta(cb.rw_counter_offset()),
@@ -457,13 +459,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.call_context_lookup_write(
                     None,
                     CallContextFieldTag::LastCalleeId,
-                    Word::from_lo_unchecked(callee_call_id.expr()),
+                    WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                 );
                 for field_tag in [
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, WordLoHi::zero());
                 }
 
                 cb.require_step_state_transition(StepStateTransition {

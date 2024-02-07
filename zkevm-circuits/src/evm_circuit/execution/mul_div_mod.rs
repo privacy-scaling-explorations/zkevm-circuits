@@ -14,7 +14,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
-        cb.stack_pop(Word::select(is_mul.clone(), a.to_word(), d.to_word()));
+        cb.stack_pop(WordLoHi::select(is_mul.clone(), a.to_word(), d.to_word()));
         cb.stack_pop(b.to_word());
         cb.stack_push(
             d.to_word()
@@ -152,7 +152,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         self.words[3].assign_u256(region, offset, d)?;
         self.mul_add_words.assign(region, offset, [a, b, c, d])?;
         self.lt_word.assign(region, offset, c, b)?;
-        self.divisor_is_zero.assign(region, offset, Word::from(b))?;
+        self.divisor_is_zero
+            .assign(region, offset, WordLoHi::from(b))?;
         Ok(())
     }
 }

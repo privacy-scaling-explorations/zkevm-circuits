@@ -12,21 +12,21 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
-use eth_types::{evm_types::OpcodeId, Field, ToAddress, U256};
+use eth_types::{evm_types::OpcodeId, Field, OpsIdentity, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorWriteProtectionGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
-    gas: WordCell<F>,
+    gas: WordLoHiCell<F>,
     code_address: AccountAddress<F>,
-    value: WordCell<F>,
-    is_value_zero: IsZeroWordGadget<F, WordCell<F>>,
+    value: WordLoHiCell<F>,
+    is_value_zero: IsZeroWordGadget<F, WordLoHiCell<F>>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         });
 
         // current call context is readonly
-        cb.call_context_lookup_read(None, CallContextFieldTag::IsStatic, Word::one());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsStatic, WordLoHi::one());
 
         // constrain not root call as at least one previous staticcall preset.
         cb.require_zero(
@@ -125,7 +125,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_value_zero
-            .assign(region, offset, Word::from(value))?;
+            .assign(region, offset, WordLoHi::from(value))?;
 
         self.common_error_gadget.assign(
             region,

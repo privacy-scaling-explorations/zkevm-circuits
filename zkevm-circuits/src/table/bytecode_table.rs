@@ -1,5 +1,4 @@
 use super::*;
-use crate::util;
 use bus_mapping::state_db::CodeDB;
 
 /// Tag to identify the field in a Bytecode Table row
@@ -16,7 +15,7 @@ impl_expr!(BytecodeFieldTag);
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash: word::Word<Column<Advice>>,
+    pub code_hash: WordLoHi<Column<Advice>>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -31,7 +30,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let code_hash = WordLoHi::new([meta.advice_column(), meta.advice_column()]);
         Self {
             code_hash,
             tag,
@@ -66,7 +65,7 @@ impl BytecodeTable {
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone().into_iter() {
                     let rows = {
-                        let code_hash = util::word::Word::from(bytecode.hash());
+                        let code_hash = WordLoHi::from(bytecode.hash());
                         std::iter::once([
                             code_hash.lo(),
                             code_hash.hi(),

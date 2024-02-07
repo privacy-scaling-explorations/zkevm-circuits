@@ -4,7 +4,7 @@ use crate::{
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::{
-        word::{Word, Word32Cell, Word4, WordExpr},
+        word::{Word32Cell, Word4, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -68,8 +68,8 @@ impl<F: Field> MulAddWordsGadget<F> {
             b_limbs.push(word4_b.limbs[i].expr());
         }
 
-        let word_c: Word<Expression<F>> = c.to_word();
-        let word_d: Word<Expression<F>> = d.to_word();
+        let word_c: WordLoHi<Expression<F>> = c.to_word();
+        let word_d: WordLoHi<Expression<F>> = d.to_word();
 
         let t0 = a_limbs[0].clone() * b_limbs[0].clone();
         let t1 = a_limbs[0].clone() * b_limbs[1].clone() + a_limbs[1].clone() * b_limbs[0].clone();

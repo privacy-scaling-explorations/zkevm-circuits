@@ -22,7 +22,7 @@ use eyre::Result;
 
 use geth_utils::mpt::{ProofType, TrieModification};
 use zkevm_circuits::{
-    mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::Word,
+    mpt_circuit::witness_row::Node, table::mpt_table::MPTProofType, util::word::WordLoHi,
 };
 
 lazy_static! {
@@ -35,10 +35,10 @@ lazy_static! {
 pub struct FieldTrieModification<F: Field> {
     pub typ: F,
     pub address: F,
-    pub value: Word<F>,
-    pub key: Word<F>,
-    pub old_root: Word<F>,
-    pub new_root: Word<F>,
+    pub value: WordLoHi<F>,
+    pub key: WordLoHi<F>,
+    pub old_root: WordLoHi<F>,
+    pub new_root: WordLoHi<F>,
 }
 
 #[derive(Default, Clone)]
@@ -384,10 +384,10 @@ impl<F: Field> Witness<F> {
             let lc_proof = FieldTrieModification::<F> {
                 typ: F::from(proof_type as u64),
                 address: address.to_scalar().unwrap(),
-                value: Word::<F>::from(value),
-                key: Word::<F>::from(key),
-                old_root: Word::<F>::from(from_root),
-                new_root: Word::<F>::from(to_root),
+                value: WordLoHi::<F>::from(value),
+                key: WordLoHi::<F>::from(key),
+                old_root: WordLoHi::<F>::from(from_root),
+                new_root: WordLoHi::<F>::from(to_root),
             };
             lc_proofs.push(lc_proof);
         }

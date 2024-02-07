@@ -9,12 +9,12 @@ use crate::{
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MulWordByU64Gadget,
             },
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
-    util::word::{Word32Cell, WordCell},
+    util::word::{Word32Cell, WordLoHi, WordLoHiCell},
 };
 use bus_mapping::operation::Target;
 use eth_types::{evm_types::GasCost, Field};
@@ -42,7 +42,7 @@ impl<F: Field> BeginTxHelperGadget<F> {
         cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
-            Word::from_lo_unchecked(tx_id.expr()),
+            WordLoHi::from_lo_unchecked(tx_id.expr()),
         ); // rwc_delta += 1
 
         // Add first BeginTx step constraint to have id == 1
@@ -133,7 +133,7 @@ impl<F: Field> EndTxHelperGadget<F> {
                 Some(next_step_rwc),
                 CallContextFieldTag::TxId,
                 // tx_id has been lookup and range_check above
-                Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
+                WordLoHi::from_lo_unchecked(tx_id.expr() + 1.expr()),
             );
             // minus 1.expr() because `call_context_lookup_write_with_counter` do not bump
             // rwc
@@ -196,8 +196,8 @@ impl<F: Field> EndTxHelperGadget<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct TxDataGadget<F> {
     pub(crate) nonce: Cell<F>,
-    pub(crate) caller_address: WordCell<F>,
-    pub(crate) callee_address: WordCell<F>,
+    pub(crate) caller_address: WordLoHiCell<F>,
+    pub(crate) callee_address: WordLoHiCell<F>,
     pub(crate) is_create: Cell<F>,
     pub(crate) gas: Cell<F>,
     pub(crate) call_data_length: Cell<F>,

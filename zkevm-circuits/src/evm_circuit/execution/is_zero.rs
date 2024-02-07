@@ -10,7 +10,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -21,8 +21,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroGadget<F> {
     same_context: SameContextGadget<F>,
-    value: WordCell<F>,
-    is_zero_word: math_gadget::IsZeroWordGadget<F, WordCell<F>>,
+    value: WordLoHiCell<F>,
+    is_zero_word: math_gadget::IsZeroWordGadget<F, WordLoHiCell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
@@ -37,7 +37,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         let is_zero_word = math_gadget::IsZeroWordGadget::construct(cb, &value);
 
         cb.stack_pop(value.to_word());
-        cb.stack_push(Word::from_lo_unchecked(is_zero_word.expr()));
+        cb.stack_push(WordLoHi::from_lo_unchecked(is_zero_word.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         let value = block.get_rws(step, 0).stack_value();
         self.value.assign_u256(region, offset, value)?;
         self.is_zero_word
-            .assign_value(region, offset, Value::known(Word::from(value)))?;
+            .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
 
         Ok(())
     }

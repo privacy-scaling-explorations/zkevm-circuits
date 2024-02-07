@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion,
     },
-    util::word::{self},
+    util::word::WordLoHi,
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -18,8 +18,8 @@ pub struct LtWordGadget<F> {
 impl<F: Field> LtWordGadget<F> {
     pub(crate) fn construct<T: Expr<F> + Clone>(
         cb: &mut EVMConstraintBuilder<F>,
-        lhs: &word::Word<T>,
-        rhs: &word::Word<T>,
+        lhs: &WordLoHi<T>,
+        rhs: &WordLoHi<T>,
     ) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();

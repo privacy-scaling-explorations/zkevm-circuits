@@ -2,7 +2,7 @@ use crate::{
     assign, circuit,
     circuit_tools::{
         cached_region::{CachedRegion, ChallengeSet},
-        cell_manager::{Cell, CellManager, CellType, WordCell},
+        cell_manager::{Cell, CellManager, CellType, WordLoHiCell},
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableRev, RLCChainableValue, RLCable,
         },
@@ -22,12 +22,9 @@ use crate::{
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     table::LookupTable,
-    util::{
-        word::{self, Word},
-        Challenges, Expr,
-    },
+    util::{word::WordLoHi, Challenges, Expr},
 };
-use eth_types::{Field, Word as U256};
+use eth_types::{Field, OpsIdentity, Word as U256};
 use gadgets::util::{not, or, pow, xor, Scalar};
 use halo2_proofs::{
     circuit::Value,
@@ -557,20 +554,20 @@ impl<F: Field> KeyData<F> {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ParentData<F> {
-    pub(crate) hash: WordCell<F>,
+    pub(crate) hash: WordLoHiCell<F>,
     pub(crate) rlc: Cell<F>,
     pub(crate) is_root: Cell<F>,
     pub(crate) is_placeholder: Cell<F>,
-    pub(crate) drifted_parent_hash: WordCell<F>,
+    pub(crate) drifted_parent_hash: WordLoHiCell<F>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ParentDataWitness<F> {
-    pub(crate) hash: word::Word<F>,
+    pub(crate) hash: WordLoHi<F>,
     pub(crate) rlc: F,
     pub(crate) is_root: bool,
     pub(crate) is_placeholder: bool,
-    pub(crate) drifted_parent_hash: word::Word<F>,
+    pub(crate) drifted_parent_hash: WordLoHi<F>,
 }
 
 impl<F: Field> ParentData<F> {
@@ -607,11 +604,11 @@ impl<F: Field> ParentData<F> {
     pub(crate) fn store<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
         memory: &mut MB,
-        hash: word::Word<Expression<F>>,
+        hash: WordLoHi<Expression<F>>,
         rlc: Expression<F>,
         is_root: Expression<F>,
         is_placeholder: Expression<F>,
-        drifted_parent_hash: word::Word<Expression<F>>,
+        drifted_parent_hash: WordLoHi<Expression<F>>,
     ) {
         memory.store(
             &mut cb.base,
@@ -632,11 +629,11 @@ impl<F: Field> ParentData<F> {
         _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MB,
-        hash: word::Word<F>,
+        hash: WordLoHi<F>,
         rlc: F,
         force_hashed: bool,
         is_placeholder: bool,
-        drifted_parent_hash: word::Word<F>,
+        drifted_parent_hash: WordLoHi<F>,
     ) -> Result<(), Error> {
         memory.witness_store(
             offset,
@@ -675,11 +672,11 @@ impl<F: Field> ParentData<F> {
             .assign(region, offset, values[6])?;
 
         Ok(ParentDataWitness {
-            hash: word::Word::new([values[0], values[1]]),
+            hash: WordLoHi::new([values[0], values[1]]),
             rlc: values[2],
             is_root: values[3] == 1.scalar(),
             is_placeholder: values[4] == 1.scalar(),
-            drifted_parent_hash: word::Word::new([values[5], values[6]]),
+            drifted_parent_hash: WordLoHi::new([values[5], values[6]]),
         })
     }
 }
@@ -689,8 +686,8 @@ pub(crate) struct MainData<F> {
     pub(crate) proof_type: Cell<F>,
     pub(crate) is_below_account: Cell<F>,
     pub(crate) address: Cell<F>,
-    pub(crate) new_root: WordCell<F>,
-    pub(crate) old_root: WordCell<F>,
+    pub(crate) new_root: WordLoHiCell<F>,
+    pub(crate) old_root: WordLoHiCell<F>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -698,8 +695,8 @@ pub(crate) struct MainDataWitness<F> {
     pub(crate) proof_type: usize,
     pub(crate) is_below_account: bool,
     pub(crate) address: F,
-    pub(crate) new_root: word::Word<F>,
-    pub(crate) old_root: word::Word<F>,
+    pub(crate) new_root: WordLoHi<F>,
+    pub(crate) old_root: WordLoHi<F>,
 }
 
 impl<F: Field> MainData<F> {
@@ -749,8 +746,8 @@ impl<F: Field> MainData<F> {
         proof_type: usize,
         is_below_account: bool,
         address: F,
-        new_root: word::Word<F>,
-        old_root: word::Word<F>,
+        new_root: WordLoHi<F>,
+        old_root: WordLoHi<F>,
     ) -> Result<(), Error> {
         let values = [
             proof_type.scalar(),
@@ -787,8 +784,8 @@ impl<F: Field> MainData<F> {
             proof_type: values[0].get_lower_32() as usize,
             is_below_account: values[1] == 1.scalar(),
             address: values[2],
-            new_root: word::Word::new([values[3], values[4]]),
-            old_root: word::Word::new([values[5], values[6]]),
+            new_root: WordLoHi::new([values[3], values[4]]),
+            old_root: WordLoHi::new([values[5], values[6]]),
         })
     }
 }
@@ -992,7 +989,7 @@ impl<F: Field> MPTConstraintBuilder<F> {
     }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
-    pub(crate) fn query_word_unchecked(&mut self) -> WordCell<F> {
+    pub(crate) fn query_word_unchecked(&mut self) -> WordLoHiCell<F> {
         self.base.query_word_unchecked()
     }
 
@@ -1069,20 +1066,20 @@ pub struct IsPlaceholderLeafGadget<F> {
 impl<F: Field> IsPlaceholderLeafGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
-        parent_word: Word<Expression<F>>,
+        parent_word: WordLoHi<Expression<F>>,
     ) -> Self {
         circuit!([meta, cb.base], {
-            let empty_hash = Word::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
+            let empty_hash = WordLoHi::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
             let is_empty_trie = IsEqualWordGadget::construct(
                 &mut cb.base,
                 &parent_word,
-                &Word::<Expression<F>>::new([
+                &WordLoHi::<Expression<F>>::new([
                     Expression::Constant(empty_hash.lo()),
                     Expression::Constant(empty_hash.hi()),
                 ]),
             );
             let is_nil_in_branch_at_mod_index =
-                IsEqualWordGadget::construct(&mut cb.base, &parent_word, &Word::zero());
+                IsEqualWordGadget::construct(&mut cb.base, &parent_word, &WordLoHi::zero());
 
             Self {
                 is_empty_trie,
@@ -1102,16 +1099,16 @@ impl<F: Field> IsPlaceholderLeafGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        hash: Word<F>,
+        hash: WordLoHi<F>,
     ) -> Result<(), Error> {
-        let empty_hash = Word::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
+        let empty_hash = WordLoHi::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
         self.is_empty_trie
             .assign(region, offset, hash, empty_hash)?;
         self.is_nil_in_branch_at_mod_index.assign(
             region,
             offset,
             hash,
-            Word::<F>::from(U256::zero()),
+            WordLoHi::<F>::from(U256::zero()),
         )?;
         Ok(())
     }
@@ -1309,7 +1306,7 @@ pub struct MainRLPGadget<F> {
     mult_diff: Cell<F>,
     hash_rlc: Cell<F>,
     rlc_rlp: Cell<F>,
-    word: WordCell<F>,
+    word: WordLoHiCell<F>,
     tag: Cell<F>,
     max_len: Cell<F>,
     is_rlp: Cell<F>,
@@ -1587,7 +1584,7 @@ impl<F: Field> MainRLPGadget<F> {
                 .collect(),
             is_short: Some(self.rlp.value.is_short.rot(meta, rot)),
             is_long: Some(self.rlp.value.is_long.rot(meta, rot)),
-            word: Some(Word::new([
+            word: Some(WordLoHi::new([
                 self.word.lo().rot(meta, rot),
                 self.word.hi().rot(meta, rot),
             ])),
@@ -1635,7 +1632,7 @@ pub struct RLPItemView<F> {
     rlc_rlp: Option<Expression<F>>,
     is_short: Option<Expression<F>>,
     is_long: Option<Expression<F>>,
-    word: Option<Word<Expression<F>>>,
+    word: Option<WordLoHi<Expression<F>>>,
 }
 
 impl<F: Field> RLPItemView<F> {
@@ -1685,7 +1682,7 @@ impl<F: Field> RLPItemView<F> {
         not::expr(self.is_short() + self.is_long())
     }
 
-    pub(crate) fn word(&self) -> Word<Expression<F>> {
+    pub(crate) fn word(&self) -> WordLoHi<Expression<F>> {
         assert!(self.can_use_word);
         self.word.clone().unwrap()
     }

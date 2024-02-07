@@ -23,7 +23,7 @@ use crate::{
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
-        word::{Word, Word32, WordExpr},
+        word::{Word32, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -76,12 +76,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::TxId,
-                    Word::from_lo_unchecked(src_id.expr()),
+                    WordLoHi::from_lo_unchecked(src_id.expr()),
                 );
                 cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataLength,
-                    Word::from_lo_unchecked(call_data_length.expr()),
+                    WordLoHi::from_lo_unchecked(call_data_length.expr()),
                 );
                 cb.require_equal(
                     "if is_root then call_data_offset == 0",
@@ -100,17 +100,17 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallerId,
-                    Word::from_lo_unchecked(src_id.expr()),
+                    WordLoHi::from_lo_unchecked(src_id.expr()),
                 );
                 cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataLength,
-                    Word::from_lo_unchecked(call_data_length.expr()),
+                    WordLoHi::from_lo_unchecked(call_data_length.expr()),
                 );
                 cb.call_context_lookup_read(
                     None,
                     CallContextFieldTag::CallDataOffset,
-                    Word::from_lo_unchecked(call_data_offset.expr()),
+                    WordLoHi::from_lo_unchecked(call_data_offset.expr()),
                 );
             },
         );
@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                             src_id.expr(),
                             TxContextFieldTag::CallData,
                             Some(src_addr.expr() + idx.expr()),
-                            Word::from_lo_unchecked(buffer_reader.byte(idx)),
+                            WordLoHi::from_lo_unchecked(buffer_reader.byte(idx)),
                         );
                     },
                 );

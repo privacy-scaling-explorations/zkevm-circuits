@@ -32,7 +32,7 @@ use crate::{
     table::{KeccakTable, LookupTable},
     util::{
         cell_manager::{CMFixedHeightStrategy, Cell, CellManager, CellType},
-        word::{self, WordExpr},
+        word::{Word32, WordExpr},
         Challenges, SubCircuit, SubCircuitConfig,
     },
     witness,
@@ -580,7 +580,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             cb.condition(start_new_hash, |cb| {
                 cb.require_equal_word(
                     "output check",
-                    word::Word32::new(hash_bytes_le.try_into().expect("32 limbs")).to_word(),
+                    Word32::new(hash_bytes_le.try_into().expect("32 limbs")).to_word(),
                     hash_word.map(|col| meta.query_advice(col, Rotation::cur())),
                 );
             });
