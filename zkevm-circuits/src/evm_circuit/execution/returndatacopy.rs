@@ -24,7 +24,7 @@ use crate::{
         Expr,
     },
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::evm::OpcodeId;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};

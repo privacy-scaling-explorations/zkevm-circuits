@@ -1,4 +1,4 @@
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::evm::OpcodeId;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::{not, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -20,7 +20,7 @@ use crate::{
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    util::word::{WordExpr, WordLoHi, WordLoHiCell},
+    util::word::{WordExpr, WordLoHiCell},
 };
 
 use super::ExecutionGadget;

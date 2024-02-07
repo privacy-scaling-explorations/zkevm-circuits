@@ -23,7 +23,7 @@ use crate::{
         Expr,
     },
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
+use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
 use eth_types::{
     evm_types::{GasCost, INVALID_INIT_CODE_FIRST_BYTE},
     Field, ToScalar, U256,

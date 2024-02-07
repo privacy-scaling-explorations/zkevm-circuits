@@ -1654,9 +1654,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rwc_inc: Expression<F>,
     ) {
         self.copy_table_lookup(
-            Word::from_lo_unchecked(src_id),
+            WordLoHi::from_lo_unchecked(src_id),
             CopyDataType::Memory.expr(),
-            Word::from_lo_unchecked(dst_id),
+            WordLoHi::from_lo_unchecked(dst_id),
             CopyDataType::Memory.expr(),
             src_addr,
             src_addr_end,
@@ -1678,9 +1678,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rwc_inc: Expression<F>,
     ) {
         self.copy_table_lookup(
-            Word::from_lo_unchecked(src_id),
+            WordLoHi::from_lo_unchecked(src_id),
             CopyDataType::Memory.expr(),
-            Word::from_lo_unchecked(dst_id),
+            WordLoHi::from_lo_unchecked(dst_id),
             CopyDataType::RlcAcc.expr(),
             src_addr,
             src_addr_end,
@@ -1693,7 +1693,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn copy_code_to_mem(
         &mut self,
-        src_id: Word<Expression<F>>,
+        src_id: WordLoHi<Expression<F>>,
         dst_id: Expression<F>,
         src_addr: Expression<F>,
         src_addr_end: Expression<F>,
@@ -1704,7 +1704,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.copy_table_lookup(
             src_id,
             CopyDataType::Bytecode.expr(),
-            Word::from_lo_unchecked(dst_id),
+            WordLoHi::from_lo_unchecked(dst_id),
             CopyDataType::Memory.expr(),
             src_addr,
             src_addr_end,
@@ -1718,7 +1718,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn copy_mem_to_code(
         &mut self,
         src_id: Expression<F>,
-        dst_id: Word<Expression<F>>,
+        dst_id: WordLoHi<Expression<F>>,
         src_addr: Expression<F>,
         src_addr_end: Expression<F>,
         length: Expression<F>,
@@ -1726,7 +1726,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rwc_inc: Expression<F>,
     ) {
         self.copy_table_lookup(
-            Word::from_lo_unchecked(src_id),
+            WordLoHi::from_lo_unchecked(src_id),
             CopyDataType::Memory.expr(),
             dst_id,
             CopyDataType::Bytecode.expr(),

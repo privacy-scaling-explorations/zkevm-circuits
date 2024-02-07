@@ -20,7 +20,6 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::word::{Word32Cell, WordExpr, WordLoHi},
 };
-use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{
