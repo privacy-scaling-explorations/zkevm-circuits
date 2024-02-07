@@ -189,7 +189,8 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             logger_config: LoggerConfig {
                 enable_memory: cfg!(feature = "enable-memory")
                     && bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
-                disable_stack: !cfg!(feature = "enable-stack"),
+                disable_stack: !cfg!(feature = "enable-stack")
+                    && bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
                 disable_storage: !cfg!(feature = "enable-storage"),
                 ..Default::default()
             },
@@ -548,7 +549,7 @@ pub fn run_test(
     log::info!("{test_id}: run-test BEGIN - {circuits_config:?}");
 
     // get the geth traces
-    #[allow(unused_mut)]
+    #[cfg_attr(not(feature = "scroll"), allow(unused_mut))]
     let (_, mut trace_config, post) = into_traceconfig(st.clone());
 
     let balance_overflow = trace_config

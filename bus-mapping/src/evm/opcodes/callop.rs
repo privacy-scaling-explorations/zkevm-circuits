@@ -38,10 +38,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
-        let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
-        let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
+        let [args_offset, args_length, ret_offset, ret_length] = {
+            let stack = &state.call_ctx()?.stack;
+            let args_offset = stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
+            let args_length = stack.nth_last(N_ARGS - 3)?.as_usize();
+            let ret_offset = stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
+            let ret_length = stack.nth_last(N_ARGS - 1)?.as_usize();
+            [args_offset, args_length, ret_offset, ret_length]
+        };
 
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
@@ -61,7 +65,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
         let caller_balance = sender_account.balance;
         let call_value = match callee_kind {
-            CallKind::Call | CallKind::CallCode => geth_step.stack.nth_last(2)?,
+            CallKind::Call | CallKind::CallCode => state.call_ctx()?.stack.nth_last(2)?,
             CallKind::DelegateCall => caller_call.value,
             CallKind::StaticCall => Word::zero(),
             CallKind::Create | CallKind::Create2 => {
@@ -125,19 +129,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_read(&mut exec_step, caller_call.call_id, field, value)?;
         }
 
-        for i in 0..N_ARGS {
-            state.stack_read(
-                &mut exec_step,
-                geth_step.stack.nth_last_filled(i),
-                geth_step.stack.nth_last(i)?,
-            )?;
+        let stack_inputs: Vec<Word> = state.stack_pops(&mut exec_step, N_ARGS)?;
+        #[cfg(feature = "enable-stack")]
+        for (i, input) in stack_inputs.iter().enumerate() {
+            assert_eq!(*input, geth_step.stack.nth_last(i)?);
         }
-
-        state.stack_write(
-            &mut exec_step,
-            geth_step.stack.nth_last_filled(N_ARGS - 1),
-            (callee_call.is_success as u64).into(),
-        )?;
+        state.stack_push(&mut exec_step, (callee_call.is_success as u64).into())?;
 
         let callee_code_hash = callee_call.code_hash;
         let callee_acc = state.sdb.get_account(&callee_address).1;
@@ -180,6 +177,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         ] {
             state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
         }
+
+        let is_precheck_ok =
+            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= callee_call.value);
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -239,7 +239,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         } else {
             0
         } + memory_expansion_gas_cost;
-        let gas_specified = geth_step.stack.last()?;
+        let gas_specified = stack_inputs[0];
         debug_assert!(
             geth_step.gas.0 >= gas_cost,
             "gas {:?} gas_cost {:?} memory_expansion_gas_cost {:?}",
@@ -264,13 +264,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // panic with full info
             let info1 = format!("callee_gas_left {callee_gas_left} gas_specified {gas_specified} gas_cost {gas_cost} is_warm {is_warm} has_value {has_value} current_memory_word_size {curr_memory_word_size} next_memory_word_size {next_memory_word_size}, memory_expansion_gas_cost {memory_expansion_gas_cost}");
             let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
-                        geth_step.stack.last(),
-                        geth_step.stack.nth_last(1),
-                        geth_step.stack.nth_last(2),
-                        geth_step.stack.nth_last(3),
-                        geth_step.stack.nth_last(4),
-                        geth_step.stack.nth_last(5),
-                        geth_step.stack.nth_last(6)
+                                stack_inputs[0],
+                                stack_inputs[1],
+                                stack_inputs[2],
+                                stack_inputs[3],
+                                stack_inputs[4],
+                                stack_inputs[5],
+                                stack_inputs[6]
                     );
             let full_ctx = format!(
                 "step0 {:?} step1 {:?} call {:?}, {} {}",
@@ -346,6 +346,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, callee_call.call_id, field, value)?;
                 }
 
+                #[cfg(feature = "enable-stack")]
+                assert_eq!(
+                    state.caller_ctx()?.stack.stack_pointer().0,
+                    geth_step.stack.stack_pointer().0 + N_ARGS - 1
+                );
                 // return while restoring some of caller's context.
                 for (field, value) in [
                     (
@@ -354,7 +359,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                        state.caller_ctx()?.stack.stack_pointer().0.into(),
                     ),
                     (
                         CallContextField::GasLeft,
@@ -500,7 +505,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     oog_step.gas_cost = GasCost(precompile_call_gas_cost);
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
-                    state.handle_return(&mut [&mut exec_step, &mut oog_step], geth_steps, true)?;
+                    state.handle_return(
+                        (None, None),
+                        &mut [&mut exec_step, &mut oog_step],
+                        geth_steps,
+                        true,
+                    )?;
 
                     Ok(vec![exec_step, oog_step])
                 } else {
@@ -520,6 +530,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     // Make the Precompile execution step to handle return logic and restore to
                     // caller context (similar as STOP and RETURN).
                     state.handle_return(
+                        (Some(ret_offset.into()), Some(ret_length.into())),
                         &mut [&mut exec_step, &mut precompile_step],
                         geth_steps,
                         true,
@@ -545,12 +556,17 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
                 state.caller_ctx_mut()?.return_data.clear();
-                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+                state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
 
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
             (false, _, false) => {
+                #[cfg(feature = "enable-stack")]
+                assert_eq!(
+                    state.caller_ctx()?.stack.stack_pointer().0,
+                    geth_step.stack.stack_pointer().0 + N_ARGS - 1
+                );
                 for (field, value) in [
                     (
                         CallContextField::ProgramCounter,
@@ -558,7 +574,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                        state.caller_ctx()?.stack.stack_pointer().0.into(),
                     ),
                     (
                         CallContextField::GasLeft,
@@ -640,7 +656,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, caller_call.call_id, field, value)?;
                 }
                 state.caller_ctx_mut()?.return_data.clear();
-                state.handle_return(&mut [&mut exec_step], geth_steps, false)?;
+                state.handle_return((None, None), &mut [&mut exec_step], geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }
@@ -649,6 +665,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests {
+
     use eth_types::{evm_types::OpcodeId, Bytecode, Word};
 
     /// Precompile call args
@@ -1040,18 +1057,21 @@ pub mod tests {
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
 
-            let step = block.geth_traces[0]
-                .struct_logs
-                .last()
-                .expect("at least one step");
-            log::debug!("{:?}", step.stack);
-            for (offset, (_, stack_value)) in test_call.stack_value.iter().enumerate() {
-                assert_eq!(
-                    *stack_value,
-                    step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch {}",
-                    test_call.name
-                );
+            #[cfg(feature = "enable-stack")]
+            {
+                let step = block.geth_traces[0]
+                    .struct_logs
+                    .last()
+                    .expect("at least one step");
+                log::debug!("{:?}", step.stack);
+                for (offset, (_, stack_value)) in test_call.stack_value.iter().enumerate() {
+                    assert_eq!(
+                        *stack_value,
+                        step.stack.nth_last(offset).expect("stack value not found"),
+                        "stack output mismatch {}",
+                        test_call.name
+                    );
+                }
             }
         }
     }

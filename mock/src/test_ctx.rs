@@ -94,7 +94,6 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
     pub geth_traces: Vec<eth_types::GethExecTrace>,
-
     #[cfg(feature = "scroll")]
     block_trace: BlockTrace,
 }
@@ -107,6 +106,8 @@ impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethD
             eth_block: ctx.eth_block,
             geth_traces: ctx.geth_traces.to_vec(),
             accounts: ctx.accounts.into(),
+            #[cfg(feature = "scroll")]
+            block_trace: ctx.block_trace,
         }
     }
 }

@@ -28,12 +28,9 @@ pub mod geth_types;
 pub mod l2_types;
 pub mod sign_types;
 
+use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_base::utils::ScalarField;
-use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
-
-use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
@@ -45,9 +42,11 @@ pub use ethers_core::{
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
+use halo2_base::utils::ScalarField;
+use halo2_proofs::halo2curves::{bn256::Fr, group::ff::PrimeField};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     fmt::{Display, Formatter},
     str::FromStr,
@@ -680,6 +679,7 @@ pub struct ResultGethExecTrace {
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GethExecTrace {
     /// L1 fee
     #[serde(default)]
@@ -749,15 +749,34 @@ pub struct GethCallTrace {
     #[serde(default)]
     calls: Vec<GethCallTrace>,
     error: Option<String>,
-    // from: Address,
+    from: Address,
     // gas: U256,
-    // #[serde(rename = "gasUsed")]
-    // gas_used: U256,
+    #[serde(rename = "gasUsed")]
+    gas_used: U256,
     // input: Bytes,
-    // output: Bytes,
-    // to: Option<Address>,
+    output: Option<Bytes>,
+    to: Option<Address>,
     #[serde(rename = "type")]
     call_type: String,
+    // value: U256,
+}
+
+/// Flattened Call Trace
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlatGethCallTrace {
+    // error: Option<String>,
+    /// from
+    pub from: Address,
+    // gas: U256,
+    /// gas used
+    pub gas_used: U256,
+    // input: Bytes,
+    /// is callee code empty
+    pub is_callee_code_empty: bool,
+    /// to
+    pub to: Option<Address>,
+    /// call type
+    pub call_type: OpcodeId,
     // value: U256,
 }
 
@@ -769,6 +788,58 @@ impl GethCallTrace {
             call_is_success = call.gen_call_is_success(call_is_success);
         }
         call_is_success
+    }
+
+    /// flatten the call trace as it is.
+    pub fn flatten_trace(
+        &self,
+        prestate: &HashMap<Address, GethPrestateTrace>,
+    ) -> Vec<FlatGethCallTrace> {
+        let mut trace = vec![];
+        // store the code that created in this tx, which is not include in prestate
+        let mut created = HashSet::new();
+        self.flatten_trace_inner(prestate, &mut trace, &mut created);
+        trace
+    }
+
+    fn flatten_trace_inner(
+        &self,
+        prestate: &HashMap<Address, GethPrestateTrace>,
+        trace: &mut Vec<FlatGethCallTrace>,
+        created: &mut HashSet<Address>,
+    ) {
+        let call_type = OpcodeId::from_str(&self.call_type).unwrap();
+        let is_callee_code_empty = self
+            .to
+            .as_ref()
+            .map(|addr| {
+                !created.contains(addr)
+                    && prestate
+                        .get(addr)
+                        .unwrap()
+                        .code
+                        .as_ref()
+                        .unwrap()
+                        .is_empty()
+            })
+            .unwrap_or(false);
+
+        trace.push(FlatGethCallTrace {
+            from: self.from,
+            to: self.to,
+            is_callee_code_empty,
+            gas_used: self.gas_used,
+            call_type,
+        });
+
+        for call in &self.calls {
+            call.flatten_trace_inner(prestate, trace, created);
+        }
+
+        let has_output = self.output.as_ref().map(|x| !x.is_empty()).unwrap_or(false);
+        if call_type.is_create() && has_output {
+            created.insert(self.to.unwrap());
+        }
     }
 }
 
@@ -808,10 +879,12 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_types::{opcode_ids::OpcodeId, stack::Stack};
+    use crate::evm_types::opcode_ids::OpcodeId;
 
     #[cfg(feature = "enable-memory")]
     use crate::evm_types::memory::Memory;
+    #[cfg(feature = "enable-stack")]
+    use crate::evm_types::stack::Stack;
 
     #[test]
     fn test_to_u16_array() {
@@ -890,7 +963,11 @@ mod tests {
     "callTrace": {
       "calls": [],
       "error": null,
-      "type": "CALL"
+      "from": "0x000000000000000000000000000000000cafe001",
+      "to": null,
+      "gasUsed": "0x0",
+      "type": "CALL",
+      "output": "0x00"
     }
   }
         "#;
@@ -978,7 +1055,11 @@ mod tests {
                 call_trace: GethCallTrace {
                     calls: Vec::new(),
                     error: None,
+                    from: address!("0x000000000000000000000000000000000cafe001"),
+                    to: None,
+                    gas_used: U256::zero(),
                     call_type: "CALL".to_string(),
+                    output: Some(Bytes::from([0x00]))
                 }
             }
         );

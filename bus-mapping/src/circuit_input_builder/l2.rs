@@ -2,13 +2,14 @@ pub use super::block::{Block, BlockContext};
 use crate::{
     circuit_input_builder::{self, BlockHead, CircuitInputBuilder, CircuitsParams},
     error::Error,
+    precompile::is_precompiled,
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{
     self,
     evm_types::OpcodeId,
     l2_types::{BlockTrace, EthBlock, ExecStep, StorageTrace},
-    Address, ToAddress, ToWord, Word, H256,
+    Address, ToWord, Word, H256,
 };
 use ethers_core::types::Bytes;
 use mpt_zktrie::state::{AccountData, ZktrieState};
@@ -51,32 +52,34 @@ fn trace_code(
     code_hash: Option<H256>,
     code: Bytes,
     step: &ExecStep,
+    addr: Option<Address>,
     sdb: &StateDB,
-    stack_pos: usize,
 ) {
     // first, try to read from sdb
-    let stack = match step.stack.as_ref() {
-        Some(stack) => stack,
-        None => {
-            log::error!("stack underflow, step {step:?}");
-            return;
-        }
-    };
-    if stack_pos >= stack.len() {
-        log::error!("stack underflow, step {step:?}");
-        return;
-    }
-    let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
-
+    // let stack = match step.stack.as_ref() {
+    //     Some(stack) => stack,
+    //     None => {
+    //         log::error!("stack underflow, step {step:?}");
+    //         return;
+    //     }
+    // };
+    // if stack_pos >= stack.len() {
+    //     log::error!("stack underflow, step {step:?}");
+    //     return;
+    // }
+    // let addr = stack[stack.len() - stack_pos - 1].to_address(); //stack N-stack_pos
+    //
     let code_hash = code_hash.or_else(|| {
-        let (_existed, acc_data) = sdb.get_account(&addr);
-        if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
-            // they must be same
-            Some(acc_data.code_hash)
-        } else {
-            // let us re-calculate it
-            None
-        }
+        addr.and_then(|addr| {
+            let (_existed, acc_data) = sdb.get_account(&addr);
+            if acc_data.code_hash != CodeDB::empty_code_hash() && !code.is_empty() {
+                // they must be same
+                Some(acc_data.code_hash)
+            } else {
+                // let us re-calculate it
+                None
+            }
+        })
     });
     let code_hash = match code_hash {
         Some(code_hash) => {
@@ -141,13 +144,57 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
             }
         }
 
-        for step in execution_result.exec_steps.iter().rev() {
+        // filter all precompile calls, empty calls and create
+        let mut call_trace = execution_result
+            .call_trace
+            .flatten_trace(&execution_result.prestate)
+            .into_iter()
+            .inspect(|c| println!("{c:?}"))
+            .filter(|call| {
+                let is_call_to_precompile = call.to.as_ref().map(is_precompiled).unwrap_or(false);
+                let is_call_to_empty = call.gas_used.is_zero()
+                    && !call.call_type.is_create()
+                    && call.is_callee_code_empty;
+                !(is_call_to_precompile || is_call_to_empty || call.call_type.is_create())
+            })
+            .collect::<Vec<_>>();
+        log::trace!("call_trace: {call_trace:?}");
+
+        for (idx, step) in execution_result.exec_steps.iter().enumerate().rev() {
+            if step.op.is_create() {
+                continue;
+            }
+            let call = if step.op.is_call_or_create() {
+                // filter call to empty/precompile/!precheck_ok
+                if let Some(next_step) = execution_result.exec_steps.get(idx + 1) {
+                    // the call doesn't have inner steps, it could be:
+                    // - a call to a precompiled contract
+                    // - a call to an empty account
+                    // - a call that !is_precheck_ok
+                    if next_step.depth != step.depth + 1 {
+                        log::trace!("skip call step due to no inner step, curr: {step:?}, next: {next_step:?}");
+                        continue;
+                    }
+                } else {
+                    // this is the final step, no inner steps
+                    log::trace!("skip call step due this is the final step: {step:?}");
+                    continue;
+                }
+                let call = call_trace.pop();
+                log::trace!("call_trace pop: {call:?}, current step: {step:?}");
+                call
+            } else {
+                None
+            };
+
             if let Some(data) = &step.extra_data {
                 match step.op {
                     OpcodeId::CALL
                     | OpcodeId::CALLCODE
                     | OpcodeId::DELEGATECALL
                     | OpcodeId::STATICCALL => {
+                        let call = call.unwrap();
+                        assert_eq!(call.call_type, step.op, "{call:?}");
                         let code_idx = if block.transactions[er_idx].to.is_none() {
                             0
                         } else {
@@ -164,18 +211,20 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                             OpcodeId::STATICCALL => data.get_code_hash_at(0),
                             _ => None,
                         };
+                        let addr = call.to.unwrap();
                         trace_code(
                             cdb,
                             code_hash,
                             callee_code.unwrap_or_default(),
                             step,
+                            Some(addr),
                             sdb,
-                            1,
                         );
                     }
                     OpcodeId::CREATE | OpcodeId::CREATE2 => {
                         // notice we do not need to insert code for CREATE,
                         // bustmapping do this job
+                        unreachable!()
                     }
                     OpcodeId::EXTCODESIZE | OpcodeId::EXTCODECOPY => {
                         let code = data.get_code_at(0);
@@ -183,7 +232,7 @@ fn update_codedb(cdb: &mut CodeDB, sdb: &StateDB, block: &BlockTrace) -> Result<
                             log::warn!("unable to fetch code from step. {step:?}");
                             continue;
                         }
-                        trace_code(cdb, None, code.unwrap(), step, sdb, 0);
+                        trace_code(cdb, None, code.unwrap(), step, None, sdb);
                     }
 
                     _ => {}
