@@ -19,7 +19,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -55,7 +55,7 @@ pub(crate) struct ReturnRevertGadget<F> {
     code_hash: Word32Cell<F>,
 
     caller_id: Cell<F>,
-    address: WordCell<F>,
+    address: WordLoHiCell<F>,
     reversion_info: ReversionInfo<F>,
 }
 
@@ -137,7 +137,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let code_hash = cb.query_word32();
             let deployed_code_rlc = cb.query_cell_phase2();
             cb.copy_table_lookup(
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 code_hash.to_word(),
                 CopyDataType::Bytecode.expr(),
@@ -179,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::IsPersistent,
-                Word::from_lo_unchecked(is_success.expr()),
+                WordLoHi::from_lo_unchecked(is_success.expr()),
             );
             cb.require_step_state_transition(StepStateTransition {
                 program_counter: To(0.expr()),
@@ -234,9 +234,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 * not::expr(copy_rw_increase_is_zero.expr()),
             |cb| {
                 cb.copy_table_lookup(
-                    Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                    WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                     CopyDataType::Memory.expr(),
-                    Word::from_lo_unchecked(cb.next.state.call_id.expr()),
+                    WordLoHi::from_lo_unchecked(cb.next.state.call_id.expr()),
                     CopyDataType::Memory.expr(),
                     range.offset(),
                     range.address(),

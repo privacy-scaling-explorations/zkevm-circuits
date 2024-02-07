@@ -6,12 +6,12 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            sum, CachedRegion, Cell, Word,
+            sum, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
     witness::{Block, Call, ExecStep, Transaction},
@@ -87,14 +87,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         cb.stack_pop(cd_length.to_word());
         cb.stack_pop(rd_offset.to_word());
         cb.stack_pop(rd_length.to_word());
-        cb.stack_push(Word::zero());
+        cb.stack_push(WordLoHi::zero());
 
         for (field_tag, value) in [
             (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
             (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
         ] {
-            cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
+            cb.call_context_lookup_write(None, field_tag, WordLoHi::from_lo_unchecked(value));
         }
 
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);

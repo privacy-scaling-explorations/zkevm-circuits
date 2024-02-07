@@ -14,7 +14,7 @@ use crate::{
         },
     },
     util::{
-        word::{Word, WordCell},
+        word::{WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -55,10 +55,10 @@ pub(crate) trait CommonMemoryAddressGadget<F: Field> {
     ) -> Result<u64, Error>;
 
     /// Return original word of memory offset.
-    fn offset_word(&self) -> Word<Expression<F>>;
+    fn offset_word(&self) -> WordLoHi<Expression<F>>;
 
     /// Return original word of memory length.
-    fn length_word(&self) -> Word<Expression<F>>;
+    fn length_word(&self) -> WordLoHi<Expression<F>>;
 
     /// Return valid memory length of Uint64.
     fn length(&self) -> Expression<F>;
@@ -74,7 +74,7 @@ pub(crate) trait CommonMemoryAddressGadget<F: Field> {
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAddressGadget<F> {
     memory_offset_bytes: MemoryAddress<F>,
-    memory_offset: WordCell<F>,
+    memory_offset: WordLoHiCell<F>,
     memory_length: MemoryAddress<F>,
     memory_length_is_zero: IsZeroGadget<F>,
 }
@@ -82,7 +82,7 @@ pub(crate) struct MemoryAddressGadget<F> {
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        memory_offset: WordCell<F>,
+        memory_offset: WordLoHiCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
         let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
@@ -92,7 +92,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         cb.condition(has_length, |cb| {
             cb.require_equal_word(
                 "Offset decomposition into 5 bytes",
-                Word::from_lo_unchecked(memory_offset_bytes.expr()),
+                WordLoHi::from_lo_unchecked(memory_offset_bytes.expr()),
                 memory_offset.to_word(),
             );
         });
@@ -157,11 +157,11 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
         })
     }
 
-    fn offset_word(&self) -> Word<Expression<F>> {
+    fn offset_word(&self) -> WordLoHi<Expression<F>> {
         self.memory_offset.to_word()
     }
 
-    fn length_word(&self) -> Word<Expression<F>> {
+    fn length_word(&self) -> WordLoHi<Expression<F>> {
         self.memory_length.to_word()
     }
 
@@ -260,12 +260,12 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         Ok(address)
     }
 
-    fn offset_word(&self) -> Word<Expression<F>> {
+    fn offset_word(&self) -> WordLoHi<Expression<F>> {
         let addends = self.offset_length_sum.addends();
         addends[0].to_word()
     }
 
-    fn length_word(&self) -> Word<Expression<F>> {
+    fn length_word(&self) -> WordLoHi<Expression<F>> {
         let addends = self.offset_length_sum.addends();
         addends[1].to_word()
     }

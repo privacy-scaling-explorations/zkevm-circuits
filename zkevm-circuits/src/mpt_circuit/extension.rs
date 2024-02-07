@@ -22,7 +22,7 @@ use crate::{
         param::HASH_WIDTH,
         FixedTableTag, MPTConfig, MptMemory, RlpItemType,
     },
-    util::word::Word,
+    util::word::WordLoHi,
 };
 
 #[derive(Clone, Debug)]
@@ -32,7 +32,7 @@ pub(crate) struct ExtState<F> {
     pub(crate) num_nibbles: Expression<F>,
     pub(crate) is_key_odd: Expression<F>,
 
-    pub(crate) branch_rlp_word: [Word<Expression<F>>; 2],
+    pub(crate) branch_rlp_word: [WordLoHi<Expression<F>>; 2],
     pub(crate) branch_rlp_rlc: [Expression<F>; 2],
 }
 
@@ -100,7 +100,7 @@ impl<F: Field> ExtensionGadget<F> {
             require!((FixedTableTag::ExtOddKey.expr(), first_byte, config.is_key_part_odd.expr()) =>> @FIXED);
 
             let mut branch_rlp_rlc = vec![0.expr(); 2];
-            let mut branch_rlp_word = vec![Word::zero(); 2];
+            let mut branch_rlp_word = vec![WordLoHi::zero(); 2];
             for is_s in [true, false] {
                 // In C we have the key nibbles, we check below only for S.
                 if is_s {

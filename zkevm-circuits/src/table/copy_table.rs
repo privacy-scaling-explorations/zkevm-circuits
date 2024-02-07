@@ -14,7 +14,7 @@ pub struct CopyTable {
     /// 1. Call ID/Caller ID for CopyDataType::Memory
     /// 2. The hi/lo limbs of bytecode hash for CopyDataType::Bytecode
     /// 3. Transaction ID for CopyDataType::TxCalldata, CopyDataType::TxLog
-    pub id: word::Word<Column<Advice>>,
+    pub id: WordLoHi<Column<Advice>>,
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
@@ -45,7 +45,7 @@ impl CopyTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
-            id: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            id: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             q_enable,
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),

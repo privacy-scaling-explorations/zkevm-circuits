@@ -14,7 +14,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordExpr},
+        word::{WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            Word::from_lo_unchecked(return_data_length.expr()),
+            WordLoHi::from_lo_unchecked(return_data_length.expr()),
         );
 
         // Check if `data_offset` is Uint64 overflow.

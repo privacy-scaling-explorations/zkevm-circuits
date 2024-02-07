@@ -21,7 +21,7 @@ use halo2_proofs::{
 use zkevm_circuits::{
     mpt_circuit::{MPTCircuit, MPTCircuitParams, MPTConfig},
     table::{KeccakTable, MptTable},
-    util::{word, Challenges},
+    util::{word::WordLoHi, Challenges},
 };
 
 use super::witness::{
@@ -117,12 +117,12 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
         let pi_instance = meta.instance_column();
         let pi_mpt = MptTable {
             address: meta.advice_column(),
-            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            storage_key: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             proof_type: meta.advice_column(),
-            new_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            old_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            new_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            old_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            new_root: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            old_root: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            new_value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            old_value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
         };
 
         for col in [

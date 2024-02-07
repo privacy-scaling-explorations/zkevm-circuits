@@ -15,7 +15,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -102,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             "shift == shift.cells[0] when divisor != 0",
             shift
                 .to_word()
-                .sub_unchecked(Word::from_lo_unchecked(shift.limbs[0].expr()))
+                .sub_unchecked(WordLoHi::from_lo_unchecked(shift.limbs[0].expr()))
                 .mul_selector(1.expr() - divisor_is_zero.expr()),
         );
 
@@ -207,9 +207,9 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
         self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         self.divisor_is_zero
-            .assign(region, offset, Word::from(divisor))?;
+            .assign(region, offset, WordLoHi::from(divisor))?;
         self.remainder_is_zero
-            .assign(region, offset, Word::from(remainder))?;
+            .assign(region, offset, WordLoHi::from(remainder))?;
         self.remainder_lt_divisor
             .assign(region, offset, remainder, divisor)?;
         Ok(())

@@ -10,7 +10,7 @@ use crate::{
         util::{from_bytes, not, rlc},
     },
     table::KeccakTable,
-    util::{word::Word, Challenges, Expr},
+    util::{word::WordLoHi, Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
@@ -292,8 +292,8 @@ pub(crate) struct AssignedECDSA<F: Field> {
 
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
-    pub(crate) address: Word<AssignedValue<F>>,
-    pub(crate) msg_hash: Word<AssignedValue<F>>,
+    pub(crate) address: WordLoHi<AssignedValue<F>>,
+    pub(crate) msg_hash: WordLoHi<AssignedValue<F>>,
 }
 
 // Return an array of bytes that corresponds to the little endian representation
@@ -451,7 +451,7 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         is_address_zero: &AssignedCell<F, F>,
         pk_rlc: &AssignedCell<F, F>,
-        pk_hash: &Word<AssignedCell<F, F>>,
+        pk_hash: &WordLoHi<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
         let copy = |ctx: &mut RegionCtx<F>, name, column, assigned: &AssignedCell<F, F>| {
             let copied = ctx.assign_advice(|| name, column, assigned.value().copied())?;
@@ -559,8 +559,8 @@ impl<F: Field> SignVerifyChip<F> {
             )?;
 
             (
-                Word::new([address_cell_lo, address_cell_hi]),
-                Word::new([pk_hash_cell_lo, pk_hash_cell_hi]),
+                WordLoHi::new([address_cell_lo, address_cell_hi]),
+                WordLoHi::new([pk_hash_cell_lo, pk_hash_cell_hi]),
             )
         };
 
@@ -594,7 +594,7 @@ impl<F: Field> SignVerifyChip<F> {
                 |_, _| Ok(()),
             )?;
 
-            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
+            WordLoHi::new([msg_hash_cell_lo, msg_hash_cell_hi])
         };
 
         let pk_rlc = {

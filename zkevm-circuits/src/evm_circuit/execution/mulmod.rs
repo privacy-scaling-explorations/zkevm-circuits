@@ -14,7 +14,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
         self.lt.assign(region, offset, r, n)?;
 
-        self.n_is_zero.assign(region, offset, Word::from(n))?;
+        self.n_is_zero.assign(region, offset, WordLoHi::from(n))?;
         Ok(())
     }
 }

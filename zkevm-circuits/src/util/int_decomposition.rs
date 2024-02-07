@@ -12,7 +12,7 @@ use crate::evm_circuit::{
     util::{rlc, CachedRegion, Cell},
 };
 
-use super::word::{Word, WordExpr};
+use super::word::{WordExpr, WordLoHi};
 
 #[derive(Clone, Debug)]
 /// IntDecomposition decompose integer into byte limbs
@@ -89,7 +89,7 @@ impl<F: Field, const N_LIMBS: usize> Expr<F> for IntDecomposition<F, N_LIMBS> {
 }
 
 impl<F: Field, const N_LIMBS: usize> WordExpr<F> for IntDecomposition<F, N_LIMBS> {
-    fn to_word(&self) -> Word<Expression<F>> {
+    fn to_word(&self) -> WordLoHi<Expression<F>> {
         let exprs = self
             .limbs
             .clone()
@@ -97,7 +97,7 @@ impl<F: Field, const N_LIMBS: usize> WordExpr<F> for IntDecomposition<F, N_LIMBS
             .chunks(N_BYTES_HALF_WORD)
             .map(|chunk| rlc::expr(chunk, 256.expr()))
             .collect::<Vec<Expression<F>>>();
-        Word::new(
+        WordLoHi::new(
             (0..2)
                 .map(|id| exprs.get(id).unwrap_or(&0.expr()).clone())
                 .collect_vec()

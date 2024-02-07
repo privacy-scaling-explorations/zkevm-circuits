@@ -19,7 +19,7 @@ use crate::{
     table::{CallContextFieldTag, TxLogFieldTag},
     util::{
         build_tx_log_expression,
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -39,7 +39,7 @@ pub(crate) struct LogGadget<F> {
     topics: [Word32Cell<F>; 4],
     topic_selectors: [Cell<F>; 4],
 
-    contract_address: WordCell<F>,
+    contract_address: WordLoHiCell<F>,
     is_static_call: Cell<F>,
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
@@ -139,9 +139,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
             cb.copy_table_lookup(
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
-                Word::from_lo_unchecked(tx_id.expr()),
+                WordLoHi::from_lo_unchecked(tx_id.expr()),
                 CopyDataType::TxLog.expr(),
                 memory_address.offset(),
                 memory_address.address(),

@@ -30,7 +30,7 @@ use crate::{
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
-    util::word::{self, Word},
+    util::word::WordLoHi,
     witness::MptUpdateRow,
 };
 
@@ -149,10 +149,10 @@ impl<F: Field> AccountLeafConfig<F> {
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut nonce = vec![Word::zero(); 2];
-            let mut balance = vec![Word::zero(); 2];
-            let mut storage = vec![Word::zero(); 2];
-            let mut codehash = vec![Word::zero(); 2];
+            let mut nonce = vec![WordLoHi::zero(); 2];
+            let mut balance = vec![WordLoHi::zero(); 2];
+            let mut storage = vec![WordLoHi::zero(); 2];
+            let mut codehash = vec![WordLoHi::zero(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
@@ -292,7 +292,7 @@ impl<F: Field> AccountLeafConfig<F> {
                             ifx! {parent_data[is_s.idx()].is_root.expr() => {
                                 // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
                                 // the trie needs to be empty.
-                                let empty_hash = Word::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
+                                let empty_hash = WordLoHi::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
                                 let hash = parent_data[is_s.idx()].hash.expr();
                                 require!(hash.lo() => Expression::Constant(empty_hash.lo()));
                                 require!(hash.hi() => Expression::Constant(empty_hash.hi()));
@@ -467,11 +467,11 @@ impl<F: Field> AccountLeafConfig<F> {
                         &mut cb.base,
                         address.clone(),
                         proof_type.clone(),
-                        Word::zero(),
+                        WordLoHi::zero(),
                         config.main_data.new_root.expr(),
                         config.main_data.old_root.expr(),
-                        Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
-                        Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
+                        WordLoHi::<Expression<F>>::new([new_value_lo, new_value_hi]),
+                        WordLoHi::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
                     );
                 } elsex {
                     // Non-existing proof doesn't have the value set to 0 in the case of a wrong leaf - we set it to 0
@@ -481,11 +481,11 @@ impl<F: Field> AccountLeafConfig<F> {
                         &mut cb.base,
                         address.clone(),
                         proof_type.clone(),
-                        Word::zero(),
+                        WordLoHi::zero(),
                         config.main_data.new_root.expr(),
                         config.main_data.old_root.expr(),
-                        Word::zero(),
-                        Word::zero(),
+                        WordLoHi::zero(),
+                        WordLoHi::zero(),
                     );
                 }};
             } elsex {
@@ -499,11 +499,11 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut cb.base,
                     address,
                     proof_type,
-                    Word::zero(),
+                    WordLoHi::zero(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::zero(),
-                    Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
+                    WordLoHi::zero(),
+                    WordLoHi::<Expression<F>>::new([old_value_lo, old_value_hi]),
                 );
             }};
         });
@@ -554,10 +554,10 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut nonce = vec![Word::zero(); 2];
-        let mut balance = vec![Word::zero(); 2];
-        let mut storage = vec![Word::zero(); 2];
-        let mut codehash = vec![Word::zero(); 2];
+        let mut nonce = vec![WordLoHi::zero(); 2];
+        let mut balance = vec![WordLoHi::zero(); 2];
+        let mut storage = vec![WordLoHi::zero(); 2];
+        let mut codehash = vec![WordLoHi::zero(); 2];
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
@@ -727,11 +727,11 @@ impl<F: Field> AccountLeafConfig<F> {
         } else if is_codehash_mod {
             (MPTProofType::CodeHashChanged, codehash)
         } else if is_account_delete_mod {
-            (MPTProofType::AccountDestructed, vec![Word::zero(); 2])
+            (MPTProofType::AccountDestructed, vec![WordLoHi::zero(); 2])
         } else if is_non_existing_proof {
-            (MPTProofType::AccountDoesNotExist, vec![Word::zero(); 2])
+            (MPTProofType::AccountDoesNotExist, vec![WordLoHi::zero(); 2])
         } else {
-            (MPTProofType::Disabled, vec![Word::zero(); 2])
+            (MPTProofType::Disabled, vec![WordLoHi::zero(); 2])
         };
 
         if account.is_mod_extension[0] || account.is_mod_extension[1] {
@@ -746,10 +746,10 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut new_value = value[false.idx()];
         let mut old_value = value[true.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::zero();
+            new_value = WordLoHi::zero();
         } else if is_non_existing_proof {
-            new_value = word::Word::zero();
-            old_value = word::Word::zero();
+            new_value = WordLoHi::zero();
+            old_value = WordLoHi::zero();
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -758,7 +758,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 address: Value::known(from_bytes::value(
                     &account.address.iter().cloned().rev().collect::<Vec<_>>(),
                 )),
-                storage_key: word::Word::zero().into_value(),
+                storage_key: WordLoHi::zero().into_value(),
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),

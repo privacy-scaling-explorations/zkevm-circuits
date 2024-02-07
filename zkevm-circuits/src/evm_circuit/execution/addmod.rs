@@ -17,7 +17,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         cb.require_equal_word(
             "check a_reduced + b 512 bit carry if n != 0",
             sum_areduced_b_overflow.to_word(),
-            Word::from_lo_unchecked(sum_areduced_b.carry().clone().unwrap().expr())
+            WordLoHi::from_lo_unchecked(sum_areduced_b.carry().clone().unwrap().expr())
                 .mul_selector(not::expr(n_is_zero.expr())),
         );
 
@@ -220,7 +220,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
         self.n_is_zero
-            .assign_value(region, offset, Value::known(Word::from(n)))?;
+            .assign_value(region, offset, Value::known(WordLoHi::from(n)))?;
 
         Ok(())
     }

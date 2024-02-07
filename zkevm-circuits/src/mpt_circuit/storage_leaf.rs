@@ -24,7 +24,7 @@ use crate::{
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
-    util::word::{self, Word},
+    util::word::WordLoHi,
     witness::MptUpdateRow,
 };
 
@@ -104,7 +104,7 @@ impl<F: Field> StorageLeafConfig<F> {
             require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut value_word = vec![Word::zero(); 2];
+            let mut value_word = vec![WordLoHi::zero(); 2];
             let mut value_rlp_rlc = vec![0.expr(); 2];
             let mut value_rlp_rlc_mult = vec![0.expr(); 2];
 
@@ -168,7 +168,7 @@ impl<F: Field> StorageLeafConfig<F> {
                         require!(config.rlp_value[is_s.idx()].num_bytes() => value_item[is_s.idx()].num_bytes() + 1.expr());
                         (value.lo(), value.hi(), value_rlp_rlc, rlp_value_rlc_mult.1 * value_item[is_s.idx()].mult())
                     }};
-                    value_word[is_s.idx()] = Word::<Expression<F>>::new([value_lo, value_hi]);
+                    value_word[is_s.idx()] = WordLoHi::<Expression<F>>::new([value_lo, value_hi]);
 
                     let leaf_rlc = rlp_key.rlc2(&cb.keccak_r).rlc_chain_rev((
                         value_rlp_rlc[is_s.idx()].expr(),
@@ -191,7 +191,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
-                        require!(value_word[is_s.idx()] => Word::<Expression<F>>::zero());
+                        require!(value_word[is_s.idx()] => WordLoHi::<Expression<F>>::zero());
                     }}
 
                     // Make sure the RLP encoding is correct.
@@ -223,7 +223,7 @@ impl<F: Field> StorageLeafConfig<F> {
                             ifx! {parent_data[is_s.idx()].is_root.expr() => {
                                 // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
                                 // the trie needs to be empty.
-                                let empty_hash = Word::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
+                                let empty_hash = WordLoHi::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
                                 let hash = parent_data[is_s.idx()].hash.expr();
                                 require!(hash.lo() => Expression::Constant(empty_hash.lo()));
                                 require!(hash.hi() => Expression::Constant(empty_hash.hi()));
@@ -246,11 +246,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 ParentData::store(
                     cb,
                     &mut ctx.memory[parent_memory(is_s)],
-                    word::Word::zero(),
+                    WordLoHi::zero(),
                     0.expr(),
                     true.expr(),
                     false.expr(),
-                    word::Word::zero(),
+                    WordLoHi::zero(),
                 );
             }
 
@@ -377,8 +377,8 @@ impl<F: Field> StorageLeafConfig<F> {
                         address_item.word(),
                         config.main_data.new_root.expr(),
                         config.main_data.old_root.expr(),
-                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
-                        Word::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        WordLoHi::<Expression<F>>::new([0.expr(), 0.expr()]),
+                        WordLoHi::<Expression<F>>::new([0.expr(), 0.expr()]),
                     );
                 }};
             } elsex {
@@ -395,7 +395,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     address_item.word(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::zero(),
+                    WordLoHi::zero(),
                     value_word[true.idx()].clone(),
                 );
             }};
@@ -436,7 +436,7 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut value_word = vec![Word::zero(); 2];
+        let mut value_word = vec![WordLoHi::zero(); 2];
         for is_s in [true, false] {
             self.is_mod_extension[is_s.idx()].assign(
                 region,
@@ -504,7 +504,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &storage.value_rlp_bytes[is_s.idx()],
             )?;
             value_word[is_s.idx()] = if value_witness.is_short() {
-                Word::<F>::new([value_witness.rlc_value(region.key_r), 0.scalar()])
+                WordLoHi::<F>::new([value_witness.rlc_value(region.key_r), 0.scalar()])
             } else {
                 value_item[is_s.idx()].word()
             };
@@ -513,11 +513,11 @@ impl<F: Field> StorageLeafConfig<F> {
                 region,
                 offset,
                 &mut memory[parent_memory(is_s)],
-                word::Word::<F>::new([F::ZERO, F::ZERO]),
+                WordLoHi::<F>::new([F::ZERO, F::ZERO]),
                 F::ZERO,
                 true,
                 false,
-                word::Word::<F>::new([F::ZERO, F::ZERO]),
+                WordLoHi::<F>::new([F::ZERO, F::ZERO]),
             )?;
 
             self.is_placeholder_leaf[is_s.idx()].assign(
@@ -571,8 +571,8 @@ impl<F: Field> StorageLeafConfig<F> {
             MPTProofType::Disabled as usize,
             false,
             F::ZERO,
-            Word::new([F::ZERO, F::ZERO]),
-            Word::new([F::ZERO, F::ZERO]),
+            WordLoHi::new([F::ZERO, F::ZERO]),
+            WordLoHi::new([F::ZERO, F::ZERO]),
         )?;
 
         // Put the data in the lookup table
@@ -596,10 +596,10 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut new_value = value_word[false.idx()];
         let mut old_value = value_word[true.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::zero();
+            new_value = WordLoHi::zero();
         } else if is_non_existing_proof {
-            new_value = word::Word::zero();
-            old_value = word::Word::zero();
+            new_value = WordLoHi::zero();
+            old_value = WordLoHi::zero();
         }
         mpt_config.mpt_table.assign_cached(
             region,
