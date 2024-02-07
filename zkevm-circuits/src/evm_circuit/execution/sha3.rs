@@ -58,14 +58,11 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let rlc_acc = cb.query_cell_phase2();
 
         cb.condition(memory_address.has_length(), |cb| {
-            cb.copy_table_lookup(
-                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                CopyDataType::Memory.expr(),
-                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                CopyDataType::RlcAcc.expr(),
+            cb.copy_memory_to_rlc(
+                cb.curr.state.call_id.expr(),
+                cb.curr.state.call_id.expr(),
                 memory_address.offset(),
                 memory_address.address(),
-                0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
                 copy_rwc_inc.expr(),

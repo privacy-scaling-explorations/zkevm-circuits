@@ -136,14 +136,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             // copy circuit enforces that it is the hash of the bytes in the copy lookup.
             let code_hash = cb.query_word32();
             let deployed_code_rlc = cb.query_cell_phase2();
-            cb.copy_table_lookup(
-                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                CopyDataType::Memory.expr(),
+            cb.copy_mem_to_code(
+                cb.curr.state.call_id.expr(),
                 code_hash.to_word(),
-                CopyDataType::Bytecode.expr(),
                 range.offset(),
                 range.address(),
-                0.expr(),
                 range.length(),
                 deployed_code_rlc.expr(),
                 copy_rw_increase.expr(),
@@ -232,16 +229,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 * not::expr(is_root.clone())
                 * not::expr(copy_rw_increase_is_zero.expr()),
             |cb| {
-                cb.copy_table_lookup(
-                    WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                    CopyDataType::Memory.expr(),
-                    WordLoHi::from_lo_unchecked(cb.next.state.call_id.expr()),
-                    CopyDataType::Memory.expr(),
+                cb.copy_memory_short(
+                    cb.curr.state.call_id.expr(),
+                    cb.next.state.call_id.expr(),
                     range.offset(),
                     range.address(),
                     return_data_offset.expr(),
                     copy_length.min(),
-                    0.expr(),
                     copy_rw_increase.expr(),
                 );
             },

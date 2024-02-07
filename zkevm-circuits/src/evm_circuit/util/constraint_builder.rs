@@ -24,7 +24,9 @@ use crate::{
     },
 };
 use bus_mapping::{
-    circuit_input_builder::FeatureConfig, operation::Target, state_db::EMPTY_CODE_HASH_LE,
+    circuit_input_builder::{CopyDataType, FeatureConfig},
+    operation::Target,
+    state_db::EMPTY_CODE_HASH_LE,
 };
 use eth_types::{Field, OpsIdentity};
 use gadgets::util::{not, sum};
@@ -1639,6 +1641,102 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             },
         );
         self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
+    }
+
+    pub(crate) fn copy_memory_short(
+        &mut self,
+        src_id: Expression<F>,
+        dst_id: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        dst_addr: Expression<F>,
+        length: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.copy_table_lookup(
+            Word::from_lo_unchecked(src_id),
+            CopyDataType::Memory.expr(),
+            Word::from_lo_unchecked(dst_id),
+            CopyDataType::Memory.expr(),
+            src_addr,
+            src_addr_end,
+            dst_addr,
+            length,
+            0.expr(),
+            rwc_inc,
+        );
+    }
+
+    pub(crate) fn copy_memory_to_rlc(
+        &mut self,
+        src_id: Expression<F>,
+        dst_id: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        length: Expression<F>,
+        rlc_acc: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.copy_table_lookup(
+            Word::from_lo_unchecked(src_id),
+            CopyDataType::Memory.expr(),
+            Word::from_lo_unchecked(dst_id),
+            CopyDataType::RlcAcc.expr(),
+            src_addr,
+            src_addr_end,
+            0.expr(),
+            length,
+            rlc_acc,
+            rwc_inc,
+        );
+    }
+
+    pub(crate) fn copy_code_to_mem(
+        &mut self,
+        src_id: Word<Expression<F>>,
+        dst_id: Expression<F>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        dst_addr: Expression<F>,
+        length: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.copy_table_lookup(
+            src_id,
+            CopyDataType::Bytecode.expr(),
+            Word::from_lo_unchecked(dst_id),
+            CopyDataType::Memory.expr(),
+            src_addr,
+            src_addr_end,
+            dst_addr,
+            length,
+            0.expr(),
+            rwc_inc,
+        );
+    }
+
+    pub(crate) fn copy_mem_to_code(
+        &mut self,
+        src_id: Expression<F>,
+        dst_id: Word<Expression<F>>,
+        src_addr: Expression<F>,
+        src_addr_end: Expression<F>,
+        length: Expression<F>,
+        rlc_acc: Expression<F>,
+        rwc_inc: Expression<F>,
+    ) {
+        self.copy_table_lookup(
+            Word::from_lo_unchecked(src_id),
+            CopyDataType::Memory.expr(),
+            dst_id,
+            CopyDataType::Bytecode.expr(),
+            src_addr,
+            src_addr_end,
+            0.expr(),
+            length,
+            rlc_acc,
+            rwc_inc,
+        );
     }
 
     // Exponentiation Table

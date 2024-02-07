@@ -117,16 +117,13 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
-            cb.copy_table_lookup(
-                WordLoHi::from_lo_unchecked(last_callee_id.expr()),
-                CopyDataType::Memory.expr(),
-                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                CopyDataType::Memory.expr(),
+            cb.copy_memory_short(
+                last_callee_id.expr(),
+                cb.curr.state.call_id.expr(),
                 return_data_offset.expr() + data_offset.expr(),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
-                0.expr(), // for RETURNDATACOPY rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
         });

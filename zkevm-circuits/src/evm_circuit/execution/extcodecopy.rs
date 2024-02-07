@@ -123,16 +123,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 code_size.expr(),
             );
 
-            cb.copy_table_lookup(
+            cb.copy_code_to_mem(
                 code_hash.to_word(),
-                CopyDataType::Bytecode.expr(),
-                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                CopyDataType::Memory.expr(),
+                cb.curr.state.call_id.expr(),
                 src_addr,
                 code_size.expr(),
                 memory_address.offset(),
                 memory_address.length(),
-                0.expr(),
                 copy_rwc_inc.expr(),
             );
         });

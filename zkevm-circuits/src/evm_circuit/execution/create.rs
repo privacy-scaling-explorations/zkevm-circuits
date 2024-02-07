@@ -266,14 +266,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.condition(init_code.has_length(), |cb| {
                 // the init code is being copied from memory to bytecode, so a copy table lookup
                 // to verify that the associated fields for the copy event.
-                cb.copy_table_lookup(
-                    WordLoHi::from_lo_unchecked(current_call_id.expr()),
-                    CopyDataType::Memory.expr(),
+                cb.copy_mem_to_code(
+                    current_call_id.expr(),
                     create.code_hash(),
-                    CopyDataType::Bytecode.expr(),
                     init_code.offset(),
                     init_code.address(),
-                    0.expr(),             // dst_addr
                     init_code.length(),   // length
                     init_code_rlc.expr(), // rlc_acc
                     init_code.length(),   // rwc_inc

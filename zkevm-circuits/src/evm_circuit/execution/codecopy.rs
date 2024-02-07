@@ -96,16 +96,13 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 code_size.expr(),
             );
 
-            cb.copy_table_lookup(
+            cb.copy_code_to_mem(
                 code_hash.to_word(),
-                CopyDataType::Bytecode.expr(),
-                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                CopyDataType::Memory.expr(),
+                cb.curr.state.call_id.expr(),
                 src_addr,
                 code_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
-                0.expr(), // for CODECOPY, rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
         });

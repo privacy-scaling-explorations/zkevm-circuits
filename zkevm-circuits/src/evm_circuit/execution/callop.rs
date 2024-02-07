@@ -401,14 +401,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_input_bytes_rlc =
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
-                        cb.copy_table_lookup(
-                            WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
-                            WordLoHi::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::RlcAcc.expr(),
+                        cb.copy_memory_to_rlc(
+                            cb.curr.state.call_id.expr(),
+                            callee_call_id.expr(),
                             call_gadget.cd_address.offset(),
                             call_gadget.cd_address.offset() + precompile_input_len.expr(),
-                            0.expr(),
                             precompile_input_len.expr(),
                             precompile_input_bytes_rlc.expr(),
                             precompile_input_rws.expr(), // reads + writes
@@ -455,16 +452,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ]),
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
-                        cb.copy_table_lookup(
-                            WordLoHi::from_lo_unchecked(callee_call_id.expr()),
-                            CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
-                            WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
-                            CopyDataType::Memory.expr(),
+                        cb.copy_memory_short(
+                            callee_call_id.expr(),
+                            cb.curr.state.call_id.expr(),
                             0.expr(),
                             precompile_return_data_copy_size.min(),
                             call_gadget.rd_address.offset(),
                             precompile_return_data_copy_size.min(),
-                            0.expr(),
                             precompile_return_rws.expr(), // writes
                         ); // rwc_delta += `return_data_copy_size.min()` for precompile
                         precompile_return_bytes_rlc
