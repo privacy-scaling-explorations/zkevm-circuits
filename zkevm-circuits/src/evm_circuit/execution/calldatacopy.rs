@@ -125,7 +125,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 );
 
             let src_addr_end = call_data_offset.expr() + call_data_length.expr();
-
             cb.copy_table_lookup(
                 WordLoHi::from_lo_unchecked(src_id.expr()),
                 src_tag,

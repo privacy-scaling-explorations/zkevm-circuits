@@ -138,6 +138,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         );
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
+            // Copy mem to txlog
             cb.copy_table_lookup(
                 WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
