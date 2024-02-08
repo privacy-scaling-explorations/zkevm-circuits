@@ -18,6 +18,33 @@ use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use std::collections::HashMap;
+use strum_macros::EnumIter;
+
+/// Tx type
+#[derive(Default, Debug, Copy, Clone, EnumIter, Serialize, PartialEq, Eq)]
+pub enum TxType {
+    /// EIP 155 tx
+    #[default]
+    Eip155 = 0,
+    /// Pre EIP 155 tx
+    PreEip155,
+    /// EIP 1559 tx
+    Eip1559,
+    /// EIP 2930 tx
+    Eip2930,
+}
+
+impl From<TxType> for usize {
+    fn from(value: TxType) -> Self {
+        value as usize
+    }
+}
+
+impl From<TxType> for u64 {
+    fn from(value: TxType) -> Self {
+        value as u64
+    }
+}
 
 /// Definition of all of the data related to an account.
 #[serde_as]
