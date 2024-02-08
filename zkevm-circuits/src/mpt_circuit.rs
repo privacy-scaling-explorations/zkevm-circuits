@@ -10,7 +10,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var, marker::PhantomData};
+use std::{convert::TryInto, env::var, io::Read, marker::PhantomData};
 
 mod account_leaf;
 mod branch;
@@ -359,10 +359,10 @@ impl<F: Field> MPTConfig<F> {
         }
         let cell_columns = [rlp_cm.columns(), state_cm.columns()].concat();
 
-        println!("max expression degree: {}", meta.degree());
-        println!("num lookups: {}", meta.lookups().len());
-        println!("num advices: {}", meta.num_advice_columns());
-        println!("num fixed: {}", meta.num_fixed_columns());
+        log::info!("max expression degree: {}", meta.degree());
+        log::info!("num lookups: {}", meta.lookups().len());
+        log::info!("num advices: {}", meta.num_advice_columns());
+        log::info!("num fixed: {}", meta.num_fixed_columns());
         // cb.base.print_stats();
 
         MPTConfig {
@@ -733,11 +733,9 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     }
 }
 
-/// Loads an MPT proof from disk
-pub fn load_proof(path: &str) -> Vec<Node> {
-    let file = std::fs::File::open(path);
-    let reader = std::io::BufReader::new(file.unwrap());
-    let mut nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
+/// Loads an MPT proof from reader
+pub fn load_proof<R: Read>(reader: R) -> Result<Vec<Node>, serde_json::Error> {
+    let mut nodes: Vec<Node> = serde_json::from_reader(reader)?;
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {
@@ -754,7 +752,14 @@ pub fn load_proof(path: &str) -> Vec<Node> {
                 .push([vec![160], storage.key.to_vec()].concat().into());
         }
     }
-    nodes
+    Ok(nodes)
+}
+
+/// Loads an MPT proof from disk
+pub fn load_proof_from_file(path: &str) -> Vec<Node> {
+    let file = std::fs::File::open(path);
+    let reader = std::io::BufReader::new(file.unwrap());
+    load_proof(reader).unwrap()
 }
 
 #[cfg(test)]
@@ -782,7 +787,7 @@ mod tests {
                 let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
 
-                let nodes = load_proof(path.to_str().unwrap());
+                let nodes = load_proof_from_file(path.to_str().unwrap());
                 let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let mut keccak_data = vec![];
