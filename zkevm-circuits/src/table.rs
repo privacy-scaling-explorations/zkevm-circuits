@@ -11,7 +11,7 @@ use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::BinaryNumberBits,
     util::{split_u256, split_u256_limb64},
 };
 use halo2_proofs::{

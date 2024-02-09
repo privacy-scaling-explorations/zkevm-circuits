@@ -34,11 +34,58 @@ where
     }
 }
 
+/// Columns of the binary number chip.  This can be instantiated without the associated constraints
+/// of the BinaryNumberChip in order to be used as part of a shared table for unit tests.
+#[derive(Clone, Copy, Debug)]
+pub struct BinaryNumberBits<const N: usize>(
+    /// Must be constrained to be binary for correctness.
+    pub [Column<Advice>; N],
+);
+
+impl<const N: usize> BinaryNumberBits<N> {
+    /// Construct a new BinaryNumberBits without adding any constraints.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self([0; N].map(|_| meta.advice_column()))
+    }
+
+    /// Assign a value to the binary number bits. A generic type that implements
+    /// the AsBits trait can be provided for assignment.
+    pub fn assign<F: Field, T: AsBits<N>>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: &T,
+    ) -> Result<(), Error> {
+        for (&bit, &column) in value.as_bits().iter().zip(&self.0) {
+            region.assign_advice(
+                || format!("binary number {:?}", column),
+                column,
+                offset,
+                || Value::known(F::from(bit as u64)),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Returns the expression value of the bits at the given rotation.
+    pub fn value<F: Field>(
+        &self,
+        rotation: Rotation,
+    ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
+        let bits = self.0;
+        move |meta: &mut VirtualCells<'_, F>| {
+            let bits = bits.map(|bit| meta.query_advice(bit, rotation));
+            bits.iter()
+                .fold(0.expr(), |result, bit| bit.clone() + result * 2.expr())
+        }
+    }
+}
+
 /// Config for the binary number chip.
 #[derive(Clone, Copy, Debug)]
 pub struct BinaryNumberConfig<T, const N: usize> {
     /// Must be constrained to be binary for correctness.
-    pub bits: [Column<Advice>; N],
+    pub bits: BinaryNumberBits<N>,
     _marker: PhantomData<T>,
 }
 
@@ -51,12 +98,7 @@ where
         &self,
         rotation: Rotation,
     ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
-        let bits = self.bits;
-        move |meta: &mut VirtualCells<'_, F>| {
-            let bits = bits.map(|bit| meta.query_advice(bit, rotation));
-            bits.iter()
-                .fold(0.expr(), |result, bit| bit.clone() + result * 2.expr())
-        }
+        self.bits.value(rotation)
     }
 
     /// Return the constant that represents a given value. To be compared with the value expression.
@@ -77,7 +119,9 @@ where
         rotation: Rotation,
     ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
         let bits = self.bits;
-        move |meta| Self::value_equals_expr(value, bits.map(|bit| meta.query_advice(bit, rotation)))
+        move |meta| {
+            Self::value_equals_expr(value, bits.0.map(|bit| meta.query_advice(bit, rotation)))
+        }
     }
 
     /// Returns a binary expression that evaluates to 1 if expressions are equal
@@ -104,10 +148,11 @@ where
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
         let mut annotations = Vec::new();
-        for (i, _) in self.bits.iter().enumerate() {
+        for (i, _) in self.bits.0.iter().enumerate() {
             annotations.push(format!("GADGETS_binary_number_{}", i));
         }
         self.bits
+            .0
             .iter()
             .zip(annotations.iter())
             .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
@@ -140,11 +185,11 @@ where
     /// Configure constraints for the binary number chip.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        bits: BinaryNumberBits<N>,
         selector: Column<Fixed>,
         value: Option<Column<Advice>>,
     ) -> BinaryNumberConfig<T, N> {
-        let bits = [0; N].map(|_| meta.advice_column());
-        bits.map(|bit| {
+        bits.0.map(|bit| {
             meta.create_gate("bit column is 0 or 1", |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let bit = meta.query_advice(bit, Rotation::cur());
@@ -194,15 +239,7 @@ where
         offset: usize,
         value: &T,
     ) -> Result<(), Error> {
-        for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
-            region.assign_advice(
-                || format!("binary number {:?}", column),
-                column,
-                offset,
-                || Value::known(F::from(bit as u64)),
-            )?;
-        }
-        Ok(())
+        self.config.bits.assign(region, offset, value)
     }
 }
 
