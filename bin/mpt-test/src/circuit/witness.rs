@@ -215,10 +215,50 @@ impl<F: Field> Witness<F> {
                     storage_keys: Vec::new(),
                 });
             }
-        }
+        } 
 
         let mut initial_values = Vec::new();
         let mut changed_values = Vec::new();
+
+        // Put the read proofs first:
+        if include_initial_values {
+            for entry in access_list.clone().0 {
+                let AccessListItem {
+                    address,
+                    storage_keys,
+                } = entry;
+
+                let old = provider
+                    .get_proof(
+                        address,
+                        storage_keys.clone(),
+                        Some(BlockId::Number(BlockNumber::Number(block_no - 1))),
+                    )
+                    .await?;
+
+                // Skip if the account doesn't exist in the old block.
+                if old.balance.is_zero() && old.code_hash.is_zero()
+                    && old.nonce.is_zero() && old.storage_hash.is_zero()
+                {
+                    continue;
+                }
+
+                initial_values.push(TrieModification::balance(address, old.balance));
+                initial_values.push(TrieModification::nonce(address, old.nonce));
+                initial_values.push(TrieModification::codehash(address, old.code_hash));
+
+                for key in storage_keys.iter() {
+                    let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
+                    if old.value == U256::zero() {
+                        initial_values.push(TrieModification::storage_does_not_exist(
+                            address, *key, old.value,
+                        ));
+                    } else {
+                        initial_values.push(TrieModification::storage(address, *key, old.value));
+                    }
+                }
+            }
+        }
 
         for entry in access_list.0 {
             let AccessListItem {
@@ -252,23 +292,6 @@ impl<F: Field> Witness<F> {
                 continue;
             }
 
-            if include_initial_values {
-                initial_values.push(TrieModification::balance(address, old.balance));
-                initial_values.push(TrieModification::nonce(address, old.nonce));
-                initial_values.push(TrieModification::codehash(address, old.code_hash));
-
-                for key in storage_keys.iter() {
-                    let old = old.storage_proof.iter().find(|p| p.key == *key).unwrap();
-                    if old.value == U256::zero() {
-                        initial_values.push(TrieModification::storage_does_not_exist(
-                            address, *key, old.value,
-                        ));
-                    } else {
-                        initial_values.push(TrieModification::storage(address, *key, old.value));
-                    }
-                }
-            }
-
             // check for this address changes
             if old.nonce != new.nonce {
                 changed_values.push(TrieModification::nonce(address, new.nonce));
@@ -276,8 +299,8 @@ impl<F: Field> Witness<F> {
             if old.balance != new.balance {
                 changed_values.push(TrieModification::balance(address, new.balance));
             }
-            if old.code_hash != new.code_hash
-            // && new.code_hash != *DEFAULT_CODE_HASH
+
+            if old.code_hash != new.code_hash && new.code_hash != *DEFAULT_CODE_HASH
             {
                 changed_values.push(TrieModification::codehash(address, new.code_hash));
             }
@@ -285,6 +308,17 @@ impl<F: Field> Witness<F> {
             for key in storage_keys {
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
                 changed_values.push(TrieModification::storage(address, key, new.value));
+
+                /*
+                let old = old.storage_proof.iter().find(|p| p.key == key).unwrap();
+                if old.value == U256::zero() && new.value == U256::zero() {
+                    changed_values.push(TrieModification::storage_does_not_exist(
+                        address, key, old.value,
+                    ));
+                } else {
+                    changed_values.push(TrieModification::storage(address, key, new.value));
+                }
+                */
             }
         }
 
