@@ -1,20 +1,20 @@
 //! Build with `--features="stats"`
 
+mod halo2_stats;
+mod helpers;
+
 use bus_mapping::circuit_input_builder::FeatureConfig;
 use cli_table::{print_stdout, Cell, Style, Table};
 use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
 use halo2_proofs::{
     halo2curves::bn256::Fr,
-    plonk::{Circuit, ConstraintSystem},
+    plonk::{Circuit, ConstraintSystem, Expression},
 };
-use std::{array, collections::BTreeSet, iter};
-mod helpers;
-use eth_types::Field;
-use halo2_proofs::plonk::Expression;
+use halo2_stats::StatsCollection;
 use helpers::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
 use itertools::Itertools;
 use mock::MOCK_ACCOUNTS;
-use std::env;
+use std::{array, env, iter};
 use zkevm_circuits::{
     bytecode_circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
     copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
@@ -226,155 +226,6 @@ fn get_exec_steps_occupancy() {
     );
 }
 
-// From Scroll https://github.com/scroll-tech/zkevm-circuits/blob/7d9bc181953cfc6e7baf82ff0ce651281fd70a8a/zkevm-circuits/src/util.rs#L275
-#[derive(Debug, Default)]
-pub(crate) struct CircuitStats {
-    num_constraints: usize,
-    num_fixed_columns: usize,
-    num_lookups: usize,
-    num_shuffles: usize,
-    num_advice_columns: usize,
-    num_instance_columns: usize,
-    num_selectors: usize,
-    // num_simple_selectors: usize,
-    num_permutation_columns: usize,
-    degree: usize,
-    blinding_factors: usize,
-    num_challenges: usize,
-    max_phase: u8,
-    num_rotation: usize,
-    min_rotation: i32,
-    max_rotation: i32,
-    num_verification_ecmul: usize,
-    // Aux data to diff between records
-    num_advice_queries: usize,
-    num_gates: usize,
-}
-
-// Return the stats in `meta`, accounting only for the circuit delta from the last aggregated stats
-// in `agg`.
-// Adaptaed from Scroll https://github.com/scroll-tech/zkevm-circuits/blob/7d9bc181953cfc6e7baf82ff0ce651281fd70a8a/zkevm-circuits/src/util.rs#L294
-pub(crate) fn circuit_stats<F: Field>(
-    agg: &CircuitStats,
-    meta: &ConstraintSystem<F>,
-) -> CircuitStats {
-    let max_phase = meta
-        .advice_column_phase()
-        .iter()
-        .skip(agg.num_advice_columns)
-        .max()
-        .copied()
-        .unwrap_or_default();
-
-    let rotations = meta
-        .advice_queries()
-        .iter()
-        .skip(agg.num_advice_queries)
-        .map(|(_, q)| q.0)
-        .collect::<BTreeSet<i32>>();
-
-    let num_fixed_columns = meta.num_fixed_columns() - agg.num_fixed_columns;
-    let num_lookups = meta.lookups().len() - agg.num_lookups;
-    let num_shuffles = meta.shuffles().len() - agg.num_shuffles;
-    let num_advice_columns = meta.num_advice_columns() - agg.num_advice_columns;
-    let num_instance_columns = meta.num_instance_columns() - agg.num_instance_columns;
-    let num_selectors = meta.num_selectors() - agg.num_selectors;
-    let num_permutation_columns =
-        meta.permutation().get_columns().len() - agg.num_permutation_columns;
-
-    let max_queries_per_advice = 0; // TODO
-    CircuitStats {
-        num_constraints: meta
-            .gates()
-            .iter()
-            .skip(agg.num_gates)
-            .map(|g| g.polynomials().len())
-            .sum::<usize>(),
-        num_fixed_columns,
-        num_lookups,
-        num_shuffles,
-        num_advice_columns,
-        num_instance_columns,
-        num_selectors,
-        // num_simple_selectors: meta.num_simple_selectors(),
-        num_permutation_columns,
-        degree: meta.degree(),
-        blinding_factors: meta.blinding_factors(),
-        num_challenges: meta.num_challenges() - agg.num_challenges,
-        max_phase,
-        num_rotation: rotations.len(),
-        min_rotation: rotations.first().cloned().unwrap_or_default(),
-        max_rotation: rotations.last().cloned().unwrap_or_default(),
-        num_verification_ecmul: num_advice_columns
-            + num_instance_columns
-            + num_permutation_columns
-            + num_shuffles
-            + num_selectors
-            + num_fixed_columns
-            + 3 * num_lookups
-            + rotations.len(),
-        num_advice_queries: meta.advice_queries().len() - agg.num_advice_queries,
-        num_gates: meta.gates().len() - agg.num_gates,
-    }
-}
-
-struct StatsCollection<F: Field> {
-    aggregate: bool,
-    shared_cs: ConstraintSystem<F>,
-    agg: CircuitStats,
-    list: Vec<(String, CircuitStats)>,
-}
-
-impl<F: Field> StatsCollection<F> {
-    // With aggregate=true, all records are overwritten each time, leading to a single
-    // aggregate stats that represents the final circuit.
-    // With aggregate=false, each record is stored in a different entry with a name, and the
-    // ConstraintSystem is reset so that each entry is independent.
-    fn new(aggregate: bool) -> Self {
-        Self {
-            aggregate,
-            shared_cs: ConstraintSystem::default(),
-            agg: CircuitStats::default(),
-            list: Vec::new(),
-        }
-    }
-
-    // Record a shared table
-    fn record_shared(&mut self, name: &str, meta: &mut ConstraintSystem<F>) {
-        // Shared tables should only add columns, and nothing more
-        assert_eq!(meta.lookups().len(), 0);
-        assert_eq!(meta.shuffles().len(), 0);
-        assert_eq!(meta.permutation().get_columns().len(), 0);
-        // assert_eq!(meta.degree(), 3); // 3 comes from the permutation argument
-        assert_eq!(meta.blinding_factors(), 5); // 5 is the minimum blinding factor
-
-        // assert_eq!(meta.advice_queries().len(), 0);
-        // assert_eq!(meta.gates().len(), 0);
-
-        if self.aggregate {
-            self.agg = circuit_stats(&CircuitStats::default(), meta);
-        } else {
-            let stats = circuit_stats(&self.agg, meta);
-            self.agg = circuit_stats(&CircuitStats::default(), meta);
-            self.list.push((name.to_string(), stats));
-            // Keep the ConstraintSystem with all the tables
-            self.shared_cs = meta.clone();
-        }
-    }
-
-    // Record a subcircuit
-    fn record(&mut self, name: &str, meta: &mut ConstraintSystem<F>) {
-        if self.aggregate {
-            self.agg = circuit_stats(&CircuitStats::default(), meta);
-        } else {
-            let stats = circuit_stats(&self.agg, meta);
-            self.list.push((name.to_string(), stats));
-            // Revert meta to the ConstraintSystem just with the tables
-            *meta = self.shared_cs.clone();
-        }
-    }
-}
-
 #[allow(unused_variables)]
 fn record_stats<F: eth_types::Field>(
     stats: &mut StatsCollection<F>,
@@ -497,7 +348,7 @@ fn record_stats<F: eth_types::Field>(
             tx_table,
             rw_table,
             bytecode_table,
-            block_table: block_table.clone(),
+            block_table,
             copy_table,
             keccak_table,
             exp_table,
@@ -523,28 +374,22 @@ fn general_subcircuit_stats() {
         .iter()
         .chain(iter::once(&("super".to_string(), stats_agg.agg)))
     {
-        let commitments = stats.num_advice_columns
-            + stats.num_permutation_columns // TODO: Adjust this, I think the permutation argument batches several permutation columns into one.
-            + stats.num_shuffles // Z_p // TODO: Are shuffles batched?
-            + 3 * stats.num_lookups; // Z, A', S'
-
-        // Assume extended evaluation domain 2^k = 8 (k = 3), assuming max expression degree = 7.
-        let ext_k = 3;
-        // Assume k = 25.
-        let k = 26;
         // At 0.0139 gas/row this gives us 2^26 * 0.0139 = ~900k gas.  For 30M gas we would need 33
         // chunks.
-        let f_size_bytes = 32; // 4 limbs * 64 bits
-        let lagrange_mem_gb =
-            commitments * 2usize.pow(k) * 2usize.pow(ext_k) * f_size_bytes / 1024 / 1024 / 1024;
+        let k = 26;
+        let peak_mem_gb = stats.estimate_peak_mem(k) / 1024 / 1024 / 1024;
         table.push(vec![
             name.cell(),
+            stats.num_constraints.cell(),
+            stats.num_rotation.cell(),
+            format!("{}/{}", stats.min_rotation, stats.max_rotation).cell(),
+            stats.num_fixed_columns.cell(),
+            stats.num_selectors.cell(),
             stats.num_advice_columns.cell(),
             stats.num_permutation_columns.cell(),
             stats.num_lookups.cell(),
             stats.degree.cell(),
-            commitments.cell(),
-            lagrange_mem_gb.cell(),
+            peak_mem_gb.cell(),
         ]);
     }
     let table = table
@@ -552,12 +397,16 @@ fn general_subcircuit_stats() {
         .title(
             [
                 "circuit",
+                "constraints",
+                "rots",
+                "min/max(rots)",
+                "fix_cols",
+                "selectors",
                 "adv_cols",
                 "perm_cols",
                 "lookups",
                 "degree",
-                "commitments",
-                "mem(gb)",
+                "mem_gb",
             ]
             .iter()
             .map(|s| s.cell().bold(true)),
