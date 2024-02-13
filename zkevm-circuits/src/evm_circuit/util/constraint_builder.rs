@@ -30,8 +30,10 @@ use halo2_proofs::{
 };
 
 use super::{
+    math_gadget::{IsEqualGadget, LtGadget, MinMaxGadget},
     rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
+use crate::evm_circuit::util::math_gadget::IsZeroGadget;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -579,6 +581,31 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(memory_word_size);
         constrain!(reversible_write_counter);
         constrain!(log_id);
+    }
+
+    // Sugars
+    pub(crate) fn is_zero(&mut self, value: Expression<F>) -> IsZeroGadget<F> {
+        IsZeroGadget::construct(self, value)
+    }
+
+    pub(crate) fn is_eq(&mut self, lhs: Expression<F>, rhs: Expression<F>) -> IsEqualGadget<F> {
+        IsEqualGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_lt<const N_BYTES: usize>(
+        &mut self,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> LtGadget<F, N_BYTES> {
+        LtGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn min_max<const N_BYTES: usize>(
+        &mut self,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> MinMaxGadget<F, N_BYTES> {
+        MinMaxGadget::construct(self, lhs, rhs)
     }
 
     // Fixed
