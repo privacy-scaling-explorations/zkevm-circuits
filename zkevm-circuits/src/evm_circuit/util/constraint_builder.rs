@@ -3,7 +3,10 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
         table::{FixedTableTag, Lookup, RwValues, Table},
-        util::{Cell, RandomLinearCombination},
+        util::{
+            math_gadget::{IsEqualWordGadget, IsZeroGadget},
+            Cell, RandomLinearCombination,
+        },
     },
     table::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
@@ -33,7 +36,6 @@ use super::{
     math_gadget::{IsEqualGadget, IsZeroWordGadget, LtGadget, MinMaxGadget},
     rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
-use crate::evm_circuit::util::math_gadget::IsZeroGadget;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -594,6 +596,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn is_eq(&mut self, lhs: Expression<F>, rhs: Expression<F>) -> IsEqualGadget<F> {
         IsEqualGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_eq_word<T1: WordExpr<F>, T2: WordExpr<F>>(
+        &mut self,
+        lhs: &T1,
+        rhs: &T2,
+    ) -> IsEqualWordGadget<F, T1, T2> {
+        IsEqualWordGadget::construct(self, lhs, rhs)
     }
 
     pub(crate) fn is_lt<const N_BYTES: usize>(

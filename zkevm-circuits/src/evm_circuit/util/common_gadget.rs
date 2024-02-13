@@ -792,7 +792,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             callee_code_hash.to_word(),
         );
         let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash());
+            cb.is_eq_word( &callee_code_hash, &cb.empty_code_hash());
         let callee_not_exists = cb.is_zero_word(&callee_code_hash);
 
         Self {
@@ -973,8 +973,8 @@ impl<F: Field, T: WordExpr<F> + Clone> SstoreGasGadget<F, T> {
         value_prev: T,
         original_value: T,
     ) -> Self {
-        let value_eq_prev = IsEqualWordGadget::construct(cb, &value, &value_prev);
-        let original_eq_prev = IsEqualWordGadget::construct(cb, &original_value, &value_prev);
+        let value_eq_prev = cb.is_eq_word( &value, &value_prev);
+        let original_eq_prev = cb.is_eq_word( &original_value, &value_prev);
         let original_is_zero = cb.is_zero_word(&original_value);
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
