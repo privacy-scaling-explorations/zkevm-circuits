@@ -56,8 +56,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_length.expr());
 
         let num_bytes_needed = opcode.expr() - OpcodeId::PUSH0.expr();
-        let is_out_of_bound =
-            LtGadget::construct(cb, code_length_left.expr(), num_bytes_needed.expr());
+        let is_out_of_bound = cb.is_lt(code_length_left.expr(), num_bytes_needed.expr());
         let num_bytes_padding = select::expr(
             is_out_of_bound.expr(),
             num_bytes_needed.expr() - code_length_left.expr(),

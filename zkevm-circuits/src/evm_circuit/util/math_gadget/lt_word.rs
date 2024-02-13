@@ -24,7 +24,7 @@ impl<F: Field> LtWordGadget<F> {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
         let comparison_hi = ComparisonGadget::construct(cb, lhs_hi.expr(), rhs_hi.expr());
-        let lt_lo = LtGadget::construct(cb, lhs_lo.expr(), rhs_lo.expr());
+        let lt_lo = cb.is_lt(lhs_lo.expr(), rhs_lo.expr());
         Self {
             comparison_hi,
             lt_lo,

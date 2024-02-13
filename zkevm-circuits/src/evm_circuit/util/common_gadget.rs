@@ -791,8 +791,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
-        let is_empty_code_hash =
-            cb.is_eq_word( &callee_code_hash, &cb.empty_code_hash());
+        let is_empty_code_hash = cb.is_eq_word(&callee_code_hash, &cb.empty_code_hash());
         let callee_not_exists = cb.is_zero_word(&callee_code_hash);
 
         Self {
@@ -973,8 +972,8 @@ impl<F: Field, T: WordExpr<F> + Clone> SstoreGasGadget<F, T> {
         value_prev: T,
         original_value: T,
     ) -> Self {
-        let value_eq_prev = cb.is_eq_word( &value, &value_prev);
-        let original_eq_prev = cb.is_eq_word( &original_value, &value_prev);
+        let value_eq_prev = cb.is_eq_word(&value, &value_prev);
+        let original_eq_prev = cb.is_eq_word(&original_value, &value_prev);
         let original_is_zero = cb.is_zero_word(&original_value);
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
@@ -1193,7 +1192,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
         let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
-        let lt_cap = LtGadget::construct(cb, value, cap);
+        let lt_cap = cb.is_lt(value, cap);
 
         Self { word, lt_cap }
     }

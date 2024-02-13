@@ -38,7 +38,7 @@ impl<F: Field> AbsWordGadget<F> {
         let sum = cb.query_word32();
         let (x_lo, x_hi) = x.to_word().to_lo_hi();
         let (x_abs_lo, x_abs_hi) = x_abs.to_word().to_lo_hi();
-        let is_neg = LtGadget::construct(cb, 127.expr(), x.limbs[31].expr());
+        let is_neg = cb.is_lt(127.expr(), x.limbs[31].expr());
 
         cb.add_constraint(
             "x_abs_lo == x_lo when x >= 0",

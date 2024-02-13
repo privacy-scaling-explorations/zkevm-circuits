@@ -72,8 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         );
 
         // constrain code size > MAXCODESIZE
-        let max_code_size_exceed =
-            LtGadget::construct(cb, MAXCODESIZE.expr(), memory_address.length());
+        let max_code_size_exceed = cb.is_lt(MAXCODESIZE.expr(), memory_address.length());
 
         // check must be one of CodeStoreOutOfGas or MaxCodeSizeExceeded
         cb.require_in_set(

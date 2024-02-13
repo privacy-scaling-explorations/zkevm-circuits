@@ -19,7 +19,7 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let lt = LtGadget::construct(cb, lhs.clone(), rhs.clone());
+        let lt = cb.is_lt(lhs.clone(), rhs.clone());
         let max = select::expr(lt.expr(), rhs.clone(), lhs.clone());
         let min = select::expr(lt.expr(), lhs, rhs);
 

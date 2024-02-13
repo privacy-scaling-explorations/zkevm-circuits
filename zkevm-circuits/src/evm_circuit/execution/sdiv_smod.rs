@@ -109,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         // `sign(dividend) == sign(divisor) ^ sign(quotient)` cannot be applied
         // for this case.
         let dividend_is_signed_overflow =
-            LtGadget::construct(cb, 127.expr(), dividend_abs.x_abs().limbs[31].expr());
+            cb.is_lt(127.expr(), dividend_abs.x_abs().limbs[31].expr());
 
         // Constrain sign(dividend) == sign(divisor) ^ sign(quotient) when both
         // quotient and divisor are non-zero and dividend is not signed overflow.

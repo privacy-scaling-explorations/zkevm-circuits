@@ -114,8 +114,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         );
 
         // gas_left < required_gas
-        let insufficient_gas =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), required_gas.expr());
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), required_gas.expr());
         cb.require_equal("gas_left < required_gas", insufficient_gas.expr(), 1.expr());
 
         let restore_context = RestoreContextGadget::construct2(

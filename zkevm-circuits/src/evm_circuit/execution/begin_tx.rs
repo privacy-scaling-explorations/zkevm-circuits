@@ -155,8 +155,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let code_hash = cb.query_word_unchecked();
-        let is_empty_code_hash =
-            cb.is_eq_word( &code_hash.to_word(), &cb.empty_code_hash());
+        let is_empty_code_hash = cb.is_eq_word(&code_hash.to_word(), &cb.empty_code_hash());
         let callee_not_exists = cb.is_zero_word(&code_hash);
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
