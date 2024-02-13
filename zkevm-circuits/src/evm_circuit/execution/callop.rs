@@ -195,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
         // callee_reversion_info.rw_delta()
         let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance.to_word(), &call_gadget.value.to_word());
+            cb.is_lt_word(&caller_balance.to_word(), &call_gadget.value.to_word());
         // depth < 1025
         let is_depth_ok = cb.is_lt(depth.expr(), 1025.expr());
 

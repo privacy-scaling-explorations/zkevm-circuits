@@ -1,12 +1,16 @@
+use super::{
+    math_gadget::{
+        IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget, LtWordGadget,
+        MinMaxGadget,
+    },
+    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
+};
 use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
         table::{FixedTableTag, Lookup, RwValues, Table},
-        util::{
-            math_gadget::{IsEqualWordGadget, IsZeroGadget},
-            Cell, RandomLinearCombination,
-        },
+        util::{Cell, RandomLinearCombination},
     },
     table::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
@@ -30,11 +34,6 @@ use halo2_proofs::{
         Expression::{self, Constant},
         VirtualCells,
     },
-};
-
-use super::{
-    math_gadget::{IsEqualGadget, IsZeroWordGadget, LtGadget, MinMaxGadget},
-    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -612,6 +611,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rhs: Expression<F>,
     ) -> LtGadget<F, N_BYTES> {
         LtGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_lt_word<T: Expr<F> + Clone>(
+        &mut self,
+        lhs: &WordLoHi<T>,
+        rhs: &WordLoHi<T>,
+    ) -> LtWordGadget<F> {
+        LtWordGadget::construct(self, lhs, rhs)
     }
 
     pub(crate) fn min_max<const N_BYTES: usize>(

@@ -144,8 +144,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // Pre-check: call depth, user's nonce and user's balance
         let is_depth_in_range = cb.is_lt(depth.expr(), 1025.expr());
-        let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance.to_word(), &value.to_word());
+        let is_insufficient_balance = cb.is_lt_word(&caller_balance.to_word(), &value.to_word());
         let is_nonce_in_range = cb.is_lt(caller_nonce.expr(), u64::MAX.expr());
         let is_precheck_ok = and::expr([
             is_depth_in_range.expr(),

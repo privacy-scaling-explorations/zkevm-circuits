@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
 
         let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
         let divisor_is_zero = cb.is_zero_word(&b);
-        let lt_word = LtWordGadget::construct(cb, &c.to_word(), &b.to_word());
+        let lt_word = cb.is_lt_word(&c.to_word(), &b.to_word());
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
