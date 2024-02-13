@@ -585,6 +585,19 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Math gadgets
+
+    // abs_word
+    // add_word
+    // binary_number
+    // byte_size
+    // cmp_words
+    // comparison
+    // constant_division
+    // modulo
+    // mul_add_words
+    // mul_add_words512
+    // mul_word_u64
+
     pub(crate) fn is_zero(&mut self, value: Expression<F>) -> IsZeroGadget<F> {
         IsZeroGadget::construct(self, value)
     }
