@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{IsZeroGadget, IsZeroWordGadget},
+            math_gadget::{IsEqualGadget, IsZeroWordGadget},
             AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorWriteProtectionGadget<F> {
     opcode: Cell<F>,
-    is_call: IsZeroGadget<F>,
+    is_call: IsEqualGadget<F>,
     gas: WordLoHiCell<F>,
     code_address: AccountAddress<F>,
     value: WordLoHiCell<F>,
@@ -37,7 +37,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
+        let is_call = cb.is_eq(opcode.expr(), OpcodeId::CALL.expr());
         let gas_word = cb.query_word_unchecked();
         let code_address = cb.query_account_address();
         let value = cb.query_word_unchecked();
@@ -122,7 +122,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         self.is_call.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_value_zero
             .assign(region, offset, WordLoHi::from(value))?;

@@ -10,7 +10,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            math_gadget::{IsZeroGadget, LtGadget},
+            math_gadget::{IsEqualGadget, LtGadget},
             not, or, select, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +27,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
-    is_push0: IsZeroGadget<F>,
+    is_push0: IsEqualGadget<F>,
     value: Word32Cell<F>,
     is_pushed: [Cell<F>; 32],
     is_padding: [Cell<F>; 32],
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
+        let is_push0 = cb.is_eq(opcode.expr(), OpcodeId::PUSH0.expr());
 
         let value = cb.query_word32();
         cb.stack_push(value.to_word());
@@ -170,7 +170,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.is_push0.assign(
             region,
             offset,
-            F::from(opcode.as_u64() - OpcodeId::PUSH0.as_u64()),
+            F::from(opcode.as_u64()),
+            OpcodeId::PUSH0.as_u64().into(),
         )?;
 
         let bytecode = block

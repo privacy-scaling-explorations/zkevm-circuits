@@ -773,12 +773,12 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
+        let gas_is_u64 = cb.is_zero(sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // construct common gadget
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -1255,7 +1255,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word32();
-        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.limbs[VALID_BYTES..]));
+        let not_overflow = cb.is_zero(sum::expr(&original.limbs[VALID_BYTES..]));
 
         Self {
             original,

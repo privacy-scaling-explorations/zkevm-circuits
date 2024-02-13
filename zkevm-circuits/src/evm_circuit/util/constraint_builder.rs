@@ -30,7 +30,7 @@ use halo2_proofs::{
 };
 
 use super::{
-    math_gadget::{IsEqualGadget, LtGadget, MinMaxGadget},
+    math_gadget::{IsEqualGadget, IsZeroWordGadget, LtGadget, MinMaxGadget},
     rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
 use crate::evm_circuit::util::math_gadget::IsZeroGadget;
@@ -583,9 +583,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(log_id);
     }
 
-    // Sugars
+    // Math gadgets
     pub(crate) fn is_zero(&mut self, value: Expression<F>) -> IsZeroGadget<F> {
         IsZeroGadget::construct(self, value)
+    }
+
+    pub(crate) fn is_zero_word<T: WordExpr<F>>(&mut self, value: &T) -> IsZeroWordGadget<F, T> {
+        IsZeroWordGadget::construct(self, value)
     }
 
     pub(crate) fn is_eq(&mut self, lhs: Expression<F>, rhs: Expression<F>) -> IsEqualGadget<F> {

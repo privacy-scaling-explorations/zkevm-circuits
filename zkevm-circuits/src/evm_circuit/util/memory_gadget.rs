@@ -85,7 +85,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: WordLoHiCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
-        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
+        let memory_length_is_zero = cb.is_zero(memory_length.sum_expr());
         let memory_offset_bytes = cb.query_memory_address();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
@@ -196,16 +196,15 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         let length = cb.query_word32();
         let sum = cb.query_word32();
 
-        let sum_lt_cap = LtGadget::construct(
-            cb,
+        let sum_lt_cap = cb.is_lt(
             from_bytes::expr(&sum.limbs[..N_BYTES_U64]),
             (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr(),
         );
 
         let sum_overflow_hi = sum::expr(&sum.limbs[N_BYTES_U64..]);
-        let sum_within_u64 = IsZeroGadget::construct(cb, sum_overflow_hi);
+        let sum_within_u64 = cb.is_zero(sum_overflow_hi);
 
-        let length_is_zero = IsZeroGadget::construct(cb, sum::expr(&length.limbs));
+        let length_is_zero = cb.is_zero(sum::expr(&length.limbs));
         let offset_length_sum = AddWordsGadget::construct(cb, [offset, length], sum);
 
         Self {

@@ -13,7 +13,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, IsZeroWordGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroWordGadget,
                 LtGadget, LtWordGadget,
             },
             memory_gadget::{
@@ -53,7 +53,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     reversion_info: ReversionInfo<F>,
     depth: Cell<F>,
 
-    is_create2: IsZeroGadget<F>,
+    is_create2: IsEqualGadget<F>,
     is_success: Cell<F>,
     was_warm: Cell<F>,
     value: Word32Cell<F>,
@@ -95,7 +95,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             opcode.expr(),
             vec![OpcodeId::CREATE2.expr(), OpcodeId::CREATE.expr()],
         );
-        let is_create2 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CREATE2.expr());
+        let is_create2 = cb.is_eq(opcode.expr(), OpcodeId::CREATE2.expr());
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -525,7 +525,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.is_create2.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CREATE2.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CREATE2.as_u64()),
         )?;
 
         self.tx_id
