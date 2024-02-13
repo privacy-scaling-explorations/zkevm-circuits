@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let gas_word = cb.query_word_unchecked();
         let code_address = cb.query_account_address();
         let value = cb.query_word_unchecked();
-        let is_value_zero = IsZeroWordGadget::construct(cb, &value);
+        let is_value_zero = cb.is_zero_word(&value);
 
         // require_in_set method will spilit into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes

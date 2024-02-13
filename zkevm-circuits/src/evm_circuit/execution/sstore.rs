@@ -248,9 +248,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value_prev: T,
         original_value: T,
     ) -> Self {
-        let value_prev_is_zero_gadget = IsZeroWordGadget::construct(cb, &value_prev.to_word());
-        let value_is_zero_gadget = IsZeroWordGadget::construct(cb, &value.to_word());
-        let original_is_zero_gadget = IsZeroWordGadget::construct(cb, &original_value.to_word());
+        let value_prev_is_zero_gadget = cb.is_zero_word(&value_prev.to_word());
+        let value_is_zero_gadget = cb.is_zero_word(&value.to_word());
+        let original_is_zero_gadget = cb.is_zero_word(&original_value.to_word());
 
         let original_eq_value_gadget =
             IsEqualWordGadget::construct(cb, &original_value.to_word(), &value.to_word());

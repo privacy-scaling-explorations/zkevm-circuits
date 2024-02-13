@@ -52,9 +52,9 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let divisor_abs = AbsWordGadget::construct(cb);
         let remainder_abs = AbsWordGadget::construct(cb);
         let dividend_abs = AbsWordGadget::construct(cb);
-        let quotient_is_zero = IsZeroWordGadget::construct(cb, quotient_abs.x());
-        let divisor_is_zero = IsZeroWordGadget::construct(cb, divisor_abs.x());
-        let remainder_is_zero = IsZeroWordGadget::construct(cb, remainder_abs.x());
+        let quotient_is_zero = cb.is_zero_word(quotient_abs.x());
+        let divisor_is_zero = cb.is_zero_word(divisor_abs.x());
+        let remainder_is_zero = cb.is_zero_word(remainder_abs.x());
 
         cb.stack_pop(dividend_abs.x().to_word());
         cb.stack_pop(divisor_abs.x().to_word());

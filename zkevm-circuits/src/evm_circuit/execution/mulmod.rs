@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
-        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
+        let n_is_zero = cb.is_zero_word(&n);
         let lt = LtWordGadget::construct(cb, &r.to_word(), &n.to_word());
         cb.add_constraint(
             " (1 - (r < n) - (n==0)) ",

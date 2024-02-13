@@ -36,8 +36,8 @@ impl<F: Field> ModGadget<F> {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word32();
         let a_or_zero = cb.query_word32();
-        let n_is_zero = IsZeroWordGadget::construct(cb, n);
-        let a_or_is_zero = IsZeroWordGadget::construct(cb, &a_or_zero);
+        let n_is_zero = cb.is_zero_word(n);
+        let a_or_is_zero = cb.is_zero_word(&a_or_zero);
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let eq = IsEqualWordGadget::construct(cb, a, &a_or_zero);
         let lt = LtWordGadget::construct(cb, &r.to_word(), &n.to_word());

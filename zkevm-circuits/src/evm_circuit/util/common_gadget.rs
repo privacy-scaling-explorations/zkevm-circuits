@@ -385,7 +385,7 @@ impl<F: Field> TransferToGadget<F> {
         mut reversion_info: Option<&mut ReversionInfo<F>>,
         account_write: bool,
     ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         if account_write {
             Self::create_account(
                 cb,
@@ -497,7 +497,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     ) -> Self {
         let sender_sub_fee =
             UpdateBalanceGadget::construct(cb, sender_address.to_word(), vec![gas_fee], None);
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         // If receiver doesn't exist, create it
         TransferToGadget::create_account(
             cb,
@@ -618,7 +618,7 @@ impl<F: Field> TransferGadget<F> {
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         // If receiver doesn't exist, create it
         TransferToGadget::create_account(
             cb,
@@ -793,7 +793,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         );
         let is_empty_code_hash =
             IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash());
-        let callee_not_exists = IsZeroWordGadget::construct(cb, &callee_code_hash);
+        let callee_not_exists = cb.is_zero_word(&callee_code_hash);
 
         Self {
             is_success,
@@ -975,7 +975,7 @@ impl<F: Field, T: WordExpr<F> + Clone> SstoreGasGadget<F, T> {
     ) -> Self {
         let value_eq_prev = IsEqualWordGadget::construct(cb, &value, &value_prev);
         let original_eq_prev = IsEqualWordGadget::construct(cb, &original_value, &value_prev);
-        let original_is_zero = IsZeroWordGadget::construct(cb, &original_value);
+        let original_is_zero = cb.is_zero_word(&original_value);
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),

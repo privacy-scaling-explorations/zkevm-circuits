@@ -34,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         let opcode = cb.query_cell();
 
         let value = cb.query_word_unchecked();
-        let is_zero_word = math_gadget::IsZeroWordGadget::construct(cb, &value);
+        let is_zero_word = cb.is_zero_word(&value);
 
         cb.stack_pop(value.to_word());
         cb.stack_push(WordLoHi::from_lo_unchecked(is_zero_word.expr()));

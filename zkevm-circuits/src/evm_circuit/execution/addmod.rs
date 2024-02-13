@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let a_reduced = cb.query_word32();
         let d = cb.query_word32();
 
-        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
+        let n_is_zero = cb.is_zero_word(&n);
 
         // 1. check k * N + a_reduced == a without overflow
         let muladd_k_n_areduced =

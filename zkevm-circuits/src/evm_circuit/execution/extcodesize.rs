@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let not_exists = cb.is_zero_word(&code_hash);
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_u64();
