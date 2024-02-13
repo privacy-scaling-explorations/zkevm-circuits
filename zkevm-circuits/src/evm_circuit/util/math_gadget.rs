@@ -20,7 +20,6 @@ mod modulo;
 mod mul_add_words;
 mod mul_add_words512;
 mod mul_word_u64;
-mod pair_select;
 mod range_check;
 mod rlp;
 #[cfg(test)]
@@ -44,7 +43,6 @@ pub(crate) use modulo::ModGadget;
 pub(crate) use mul_add_words::MulAddWordsGadget;
 pub(crate) use mul_add_words512::MulAddWords512Gadget;
 pub(crate) use mul_word_u64::MulWordByU64Gadget;
-pub(crate) use pair_select::PairSelectGadget;
 pub(crate) use range_check::RangeCheckGadget;
 pub(crate) use rlp::ContractCreateGadget;
 

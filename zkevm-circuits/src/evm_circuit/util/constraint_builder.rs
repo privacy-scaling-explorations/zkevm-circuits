@@ -581,6 +581,31 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(log_id);
     }
 
+    // Math gadgets
+
+    /// - `is_a` is `1` when `value == a`, else `0`
+    /// - `value` is required to be either `a` or `b`.
+    /// The benefit of this gadget over `IsEqualGadget` is that the expression returned is a single
+    /// value which will make future expressions depending on this result more efficient.
+    pub(crate) fn pair_select(
+        &mut self,
+        value: Expression<F>,
+        a: Expression<F>,
+        b: Expression<F>,
+    ) -> Expression<F> {
+        let is_a = self.query_bool();
+        let is_a = is_a.expr();
+        // Force `is_a` to be `0` when `value != a`
+        self.add_constraint("is_a ⋅ (value - a)", is_a.clone() * (value.clone() - a));
+        // Force `1 - is_a` to be `0` when `value != b`
+        self.add_constraint(
+            "(1 - is_a) ⋅ (value - b)",
+            (1.expr() - is_a.clone()) * (value - b),
+        );
+
+        is_a
+    }
+
     // Fixed
 
     pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {

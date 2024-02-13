@@ -10,7 +10,7 @@ use crate::{
                 CommonErrorGadget, SloadGasGadget, SstoreGasGadget,
             },
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{LtGadget, PairSelectGadget},
+            math_gadget::LtGadget,
             or, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -40,7 +40,6 @@ pub(crate) struct ErrorOOGSloadSstoreGadget<F> {
     value_prev: WordLoHiCell<F>,
     original_value: WordLoHiCell<F>,
     is_warm: Cell<F>,
-    is_sstore: PairSelectGadget<F>,
     sstore_gas_cost: SstoreGasGadget<F, WordLoHiCell<F>>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     // Constrain for SSTORE reentrancy sentry.
@@ -56,8 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let is_sstore = PairSelectGadget::construct(
-            cb,
+        let is_sstore = cb.pair_select(
             opcode.expr(),
             OpcodeId::SSTORE.expr(),
             OpcodeId::SLOAD.expr(),
@@ -68,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
         // Constrain `is_static` must be false for SSTORE.
-        cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr().0);
+        cb.require_zero("is_static == false", is_static.expr() * is_sstore.clone());
 
         let key = cb.query_word_unchecked();
         let value = cb.query_word_unchecked();
@@ -85,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         );
 
         let sload_gas_cost = SloadGasGadget::construct(cb, is_warm.expr());
-        let sstore_gas_cost = cb.condition(is_sstore.expr().0, |cb| {
+        let sstore_gas_cost = cb.condition(is_sstore.clone(), |cb| {
             cb.stack_pop(value.to_word());
 
             cb.account_storage_read(
@@ -109,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             cb,
             cb.curr.state.gas_left.expr(),
             select::expr(
-                is_sstore.expr().0,
+                is_sstore.clone(),
                 sstore_gas_cost.expr(),
                 sload_gas_cost.expr(),
             ),
@@ -124,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             "Gas left is less than gas cost or gas sentry (only for SSTORE)",
             or::expr([
                 insufficient_gas_cost.expr(),
-                and::expr([is_sstore.expr().0, insufficient_gas_sentry.expr()]),
+                and::expr([is_sstore, insufficient_gas_sentry.expr()]),
             ]),
             1.expr(),
         );
@@ -142,7 +140,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             value_prev,
             original_value,
             is_warm,
-            is_sstore,
             sstore_gas_cost,
             insufficient_gas_cost,
             insufficient_gas_sentry,
@@ -199,13 +196,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        self.is_sstore.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::SSTORE.as_u64()),
-            F::from(OpcodeId::SLOAD.as_u64()),
-        )?;
         self.sstore_gas_cost
             .assign(region, offset, value, value_prev, original_value, is_warm)?;
         self.insufficient_gas_cost.assign_value(

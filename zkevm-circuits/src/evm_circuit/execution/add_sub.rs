@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::{AddWordsGadget, PairSelectGadget},
+            math_gadget::AddWordsGadget,
             CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +27,6 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct AddSubGadget<F> {
     same_context: SameContextGadget<F>,
     add_words: AddWordsGadget<F, 2, false>,
-    is_sub: PairSelectGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
@@ -44,19 +43,14 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()], c.clone());
 
         // Swap a and c if opcode is SUB
-        let is_sub = PairSelectGadget::construct(
-            cb,
-            opcode.expr(),
-            OpcodeId::SUB.expr(),
-            OpcodeId::ADD.expr(),
-        );
+        let is_sub = cb.pair_select(opcode.expr(), OpcodeId::SUB.expr(), OpcodeId::ADD.expr());
 
         // ADD: Pop a and b from the stack, push c on the stack
         // SUB: Pop c and b from the stack, push a on the stack
 
-        cb.stack_pop(WordLoHi::select(is_sub.expr().0, c.to_word(), a.to_word()));
+        cb.stack_pop(WordLoHi::select(is_sub.clone(), c.to_word(), a.to_word()));
         cb.stack_pop(b.to_word());
-        cb.stack_push(WordLoHi::select(is_sub.expr().0, a.to_word(), c.to_word()));
+        cb.stack_push(WordLoHi::select(is_sub, a.to_word(), c.to_word()));
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -71,7 +65,6 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         Self {
             same_context,
             add_words,
-            is_sub,
         }
     }
 
@@ -94,13 +87,6 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         };
         let [a, b, c] = indices.map(|index| block.get_rws(step, index).stack_value());
         self.add_words.assign(region, offset, [a, b], c)?;
-        self.is_sub.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::SUB.as_u64()),
-            F::from(OpcodeId::ADD.as_u64()),
-        )?;
 
         Ok(())
     }

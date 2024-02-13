@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            math_gadget::{LtGadget, PairSelectGadget},
+            math_gadget::LtGadget,
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
                 MemoryWordSizeGadget,
@@ -30,7 +30,6 @@ pub(crate) struct ErrorOOGCreateGadget<F> {
     opcode: Cell<F>,
     value: Word32Cell<F>,
     salt: Word32Cell<F>,
-    is_create2: PairSelectGadget<F>,
     minimum_word_size: MemoryWordSizeGadget<F>,
     memory_address: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -51,8 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let is_create2 = PairSelectGadget::construct(
-            cb,
+        let is_create2 = cb.pair_select(
             opcode.expr(),
             OpcodeId::CREATE2.expr(),
             OpcodeId::CREATE.expr(),
@@ -66,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         cb.stack_pop(value.to_word());
         cb.stack_pop(memory_address.offset_word());
         cb.stack_pop(memory_address.length_word());
-        cb.condition(is_create2.expr().0, |cb| cb.stack_pop(salt.to_word()));
+        cb.condition(is_create2.clone(), |cb| cb.stack_pop(salt.to_word()));
 
         let init_code_size_overflow =
             LtGadget::construct(cb, MAX_INIT_CODE_SIZE.expr(), memory_address.length());
@@ -76,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
 
         let code_store_gas_cost = minimum_word_size.expr()
             * select::expr(
-                is_create2.expr().0,
+                is_create2.clone(),
                 CREATE2_GAS_PER_CODE_WORD.expr(),
                 CREATE_GAS_PER_CODE_WORD.expr(),
             );
@@ -96,14 +94,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct(
             cb,
             opcode.expr(),
-            select::expr(is_create2.expr().0, 4.expr(), 3.expr()),
+            select::expr(is_create2, 4.expr(), 3.expr()),
         );
 
         Self {
             opcode,
             value,
             salt,
-            is_create2,
             minimum_word_size,
             memory_address,
             memory_expansion,
@@ -132,13 +129,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         let is_create2 = opcode == OpcodeId::CREATE2;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        self.is_create2.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::CREATE2.as_u64()),
-            F::from(OpcodeId::CREATE.as_u64()),
-        )?;
 
         let [value, memory_offset, memory_length] =
             [0, 1, 2].map(|i| block.get_rws(step, i).stack_value());
