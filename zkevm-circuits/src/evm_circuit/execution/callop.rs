@@ -271,7 +271,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_cost = call_gadget.gas_cost_expr(is_warm_prev.expr(), is_call.expr());
         // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
-        let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
+        let one_64th_gas = cb.div_by_const(gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
         let capped_callee_gas_left =
             cb.min_max(call_gadget.gas_expr(), all_but_one_64th_gas.clone());
@@ -476,8 +476,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let callee_gas_left = callee_gas_left.expr()
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-                let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> =
-                    ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
+                let precompile_output_word_size_div =
+                    cb.div_by_const(precompile_output_rws.expr(), 32);
                 let precompile_output_word_size_div_remainder_zero =
                     cb.is_zero(precompile_output_word_size_div.remainder());
                 let precompile_output_word_size = precompile_output_word_size_div.quotient()

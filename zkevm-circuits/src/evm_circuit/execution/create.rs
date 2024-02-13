@@ -168,7 +168,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost.clone();
-        let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
+        let gas_left = cb.div_by_const(gas_remaining.clone(), 64);
         let callee_gas_left = gas_remaining - gas_left.quotient();
 
         let was_warm = cb.query_bool();

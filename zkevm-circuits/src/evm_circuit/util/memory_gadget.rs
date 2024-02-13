@@ -339,7 +339,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
 
 impl<F: Field> MemoryWordSizeGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: Expression<F>) -> Self {
-        let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
+        let memory_word_size = cb.div_by_const(address + 31.expr(), 32);
 
         Self { memory_word_size }
     }

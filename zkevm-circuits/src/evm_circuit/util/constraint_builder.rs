@@ -1,7 +1,7 @@
 use super::{
     math_gadget::{
-        IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget, LtWordGadget,
-        MinMaxGadget,
+        ConstantDivisionGadget, IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
+        LtGadget, LtWordGadget, MinMaxGadget,
     },
     rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
@@ -586,18 +586,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     // Math gadgets
 
-    // abs_word
-    // add_word
-    // binary_number
-    // byte_size
-    // cmp_words
-    // comparison
-    // constant_division
-    // modulo
-    // mul_add_words
-    // mul_add_words512
-    // mul_word_u64
-
     pub(crate) fn is_zero(&mut self, value: Expression<F>) -> IsZeroGadget<F> {
         IsZeroGadget::construct(self, value)
     }
@@ -640,6 +628,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         rhs: Expression<F>,
     ) -> MinMaxGadget<F, N_BYTES> {
         MinMaxGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn div_by_const<const N_BYTES: usize>(
+        &mut self,
+        numerator: Expression<F>,
+        denominator: u64,
+    ) -> ConstantDivisionGadget<F, N_BYTES> {
+        ConstantDivisionGadget::construct(self, numerator, denominator)
     }
 
     // Fixed
