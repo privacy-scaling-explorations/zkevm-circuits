@@ -41,10 +41,10 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         let b = cb.query_word_unchecked();
 
         // Check if opcode is EQ
-        let is_eq = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());
+        let is_eq = cb.is_eq(opcode.expr(), OpcodeId::EQ.expr());
         // Check if opcode is GT. For GT we swap the stack inputs so that we
         // actually do greater than instead of smaller than.
-        let is_gt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::GT.expr());
+        let is_gt = cb.is_eq(opcode.expr(), OpcodeId::GT.expr());
 
         let word_comparison = CmpWordsGadget::construct(cb, a.clone(), b.clone());
 

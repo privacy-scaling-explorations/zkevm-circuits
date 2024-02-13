@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we
         // swap the order in which the inputs are placed on the stack.
-        let is_sgt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::SGT.expr());
+        let is_sgt = cb.is_eq(opcode.expr(), OpcodeId::SGT.expr());
 
         // Both a and b are to be treated as two's complement signed 256-bit
         // (32 cells) integers. This means, the first bit denotes the sign

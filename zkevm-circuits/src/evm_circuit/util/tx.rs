@@ -81,7 +81,7 @@ impl<F: Field> EndTxHelperGadget<F> {
         gas_used: Expression<F>,
         num_rw: Expression<F>,
     ) -> Self {
-        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
+        let is_first_tx = cb.is_eq(tx_id.expr(), 1.expr());
 
         // Constrain tx receipt fields
         cb.tx_receipt_lookup(

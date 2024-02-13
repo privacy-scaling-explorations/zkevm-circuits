@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
             AccountFieldTag::Nonce,
             WordLoHi::from_lo_unchecked(account_nonce.expr()),
         );
-        let is_nonce_match = IsEqualGadget::construct(cb, account_nonce.expr(), tx.nonce.expr());
+        let is_nonce_match = cb.is_eq(account_nonce.expr(), tx.nonce.expr());
 
         // Check if the gas limit is larger or equal to the intrinsic gas cost
         let insufficient_gas_limit =

@@ -54,10 +54,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             vec![OpcodeId::JUMP.expr(), OpcodeId::JUMPI.expr()],
         );
 
-        let is_jumpi = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::JUMPI.expr());
+        let is_jumpi = cb.is_eq(opcode.expr(), OpcodeId::JUMPI.expr());
 
         // initialize is_jump_dest
-        let is_jump_dest = IsEqualGadget::construct(cb, value.expr(), OpcodeId::JUMPDEST.expr());
+        let is_jump_dest = cb.is_eq(value.expr(), OpcodeId::JUMPDEST.expr());
 
         // first default this condition, if use will re-construct with real condition
         // value

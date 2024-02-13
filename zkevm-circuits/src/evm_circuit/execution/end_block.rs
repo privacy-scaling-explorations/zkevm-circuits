@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
-        let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
+        let total_txs_is_max_txs = cb.is_eq(total_txs.expr(), max_txs.expr());
         // Note that rw_counter starts at 1
         let is_empty_block = cb.is_eq(cb.curr.state.rw_counter.clone().expr(), 1.expr());
 
