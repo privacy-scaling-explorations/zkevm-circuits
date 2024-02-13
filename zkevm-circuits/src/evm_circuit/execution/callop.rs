@@ -274,7 +274,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
         let capped_callee_gas_left =
-            MinMaxGadget::construct(cb, call_gadget.gas_expr(), all_but_one_64th_gas.clone());
+            cb.min_max(call_gadget.gas_expr(), all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
             call_gadget.gas_is_u64.expr(),
             capped_callee_gas_left.min(),

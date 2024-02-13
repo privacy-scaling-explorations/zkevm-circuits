@@ -612,7 +612,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         let is_empty = not::expr(&selectors[0]);
         let cap = select::expr(is_empty.expr(), 0.expr(), MAX_BYTES.expr());
         let signed_len = addr_end - addr_start;
-        let min_gadget = MinMaxGadget::construct(cb, cap, signed_len);
+        let min_gadget = cb.min_max(cap, signed_len);
 
         // If we claim that the buffer is empty, we prove that the end is at or before the start.
         //     buffer_len = max(0, signed_len) = 0

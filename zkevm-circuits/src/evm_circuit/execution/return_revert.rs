@@ -218,8 +218,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     CallContextFieldTag::ReturnDataLength,
                 ]
                 .map(|field_tag| cb.call_context(None, field_tag));
-                let copy_length =
-                    MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+                let copy_length = cb.min_max(return_data_length.expr(), range.length());
                 cb.require_equal(
                     "increase rw counter twice for each memory to memory byte copied",
                     copy_length.min() + copy_length.min(),
