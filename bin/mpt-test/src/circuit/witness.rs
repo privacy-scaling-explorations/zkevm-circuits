@@ -307,23 +307,25 @@ impl<F: Field> Witness<F> {
 
             for key in storage_keys {
                 let new = new.storage_proof.iter().find(|p| p.key == key).unwrap();
-                changed_values.push(TrieModification::storage(address, key, new.value));
-
-                /*
                 let old = old.storage_proof.iter().find(|p| p.key == key).unwrap();
-                if old.value == U256::zero() && new.value == U256::zero() {
-                    changed_values.push(TrieModification::storage_does_not_exist(
-                        address, key, old.value,
-                    ));
-                } else {
+                if !(old.value == U256::zero() && new.value == U256::zero()) {
                     changed_values.push(TrieModification::storage(address, key, new.value));
                 }
-                */
             }
         }
 
-        let mut trie_modifications = initial_values;
-        trie_modifications.append(&mut changed_values);
+        println!("initial_values.len(): {}", initial_values.len());
+        println!("changed_values.len(): {}", changed_values.len());
+
+        for c in changed_values.iter() {
+            println!("{:?}", c);
+            println!("");
+        }
+
+        // let mut trie_modifications = initial_values;
+        // trie_modifications.append(&mut changed_values);
+
+        let trie_modifications = changed_values;
 
         Ok(Transforms {
             block_no,
