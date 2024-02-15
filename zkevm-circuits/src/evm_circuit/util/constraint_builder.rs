@@ -207,7 +207,8 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
     }
-
+    /// Under active development
+    #[allow(dead_code)]
     fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
         for (name, constraint) in constraints {
             self.add_constraint(name, constraint);
