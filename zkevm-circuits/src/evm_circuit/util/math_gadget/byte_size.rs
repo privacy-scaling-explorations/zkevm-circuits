@@ -86,7 +86,7 @@ impl<F: Field> ByteSizeGadget<F> {
                 region,
                 offset,
                 Value::known(
-                    F::from(u64::try_from(most_significant_nonzero_byte).unwrap())
+                    F::from(u64::from(most_significant_nonzero_byte))
                         .invert()
                         .unwrap(),
                 ),

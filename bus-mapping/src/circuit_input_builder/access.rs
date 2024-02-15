@@ -72,7 +72,7 @@ impl From<Vec<Access>> for AccessSet {
         for access in list {
             match access.value {
                 AccessValue::Account { address } => {
-                    state.entry(address).or_insert_with(HashSet::new);
+                    state.entry(address).or_default();
                 }
                 AccessValue::Storage { address, key } => match state.entry(address) {
                     Entry::Vacant(entry) => {
@@ -85,7 +85,7 @@ impl From<Vec<Access>> for AccessSet {
                     }
                 },
                 AccessValue::Code { address } => {
-                    state.entry(address).or_insert_with(HashSet::new);
+                    state.entry(address).or_default();
                     code.insert(address);
                 }
             }

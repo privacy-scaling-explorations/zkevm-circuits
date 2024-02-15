@@ -168,7 +168,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lookups,
             rw_table,
             mpt_table,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -447,7 +447,7 @@ impl<F: Field> StateCircuit<F> {
             n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }

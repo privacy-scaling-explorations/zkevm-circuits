@@ -322,7 +322,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
 
     pub(crate) fn query_default(&mut self) -> Cell<F> {
         self.query_cells_dyn(C::default(), 1)
-            .get(0)
+            .first()
             .expect("No cell found")
             .clone()
     }
@@ -536,7 +536,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 ));
                 self.stored_expressions
                     .entry(self.region_id)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(StoredExpression {
                         name,
                         cell: cell.clone(),

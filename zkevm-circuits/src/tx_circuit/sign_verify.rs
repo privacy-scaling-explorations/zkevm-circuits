@@ -105,7 +105,7 @@ impl<F: Field> Default for SignVerifyChip<F> {
             aux_generator: Secp256k1Affine::default(),
             window_size: 4,
             max_verif: 0,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
