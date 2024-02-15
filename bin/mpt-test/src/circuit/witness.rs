@@ -7,6 +7,8 @@ use std::{
     time::Duration,
 };
 
+use ethers::core::utils;
+
 use eth_types::{Field, ToScalar};
 
 use ethers::{
@@ -317,15 +319,8 @@ impl<F: Field> Witness<F> {
         println!("initial_values.len(): {}", initial_values.len());
         println!("changed_values.len(): {}", changed_values.len());
 
-        for c in changed_values.iter() {
-            println!("{:?}", c);
-            println!("");
-        }
-
-        // let mut trie_modifications = initial_values;
-        // trie_modifications.append(&mut changed_values);
-
-        let trie_modifications = changed_values;
+        let mut trie_modifications = initial_values;
+        trie_modifications.append(&mut changed_values);
 
         Ok(Transforms {
             block_no,
