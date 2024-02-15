@@ -509,7 +509,7 @@ mod test {
             };
             try_test!(
                 ContractCreateGadgetContainer<Fr, false>,
-                vec![
+                [
                     caller_address.to_word(),
                     Word::from(caller_nonce),
                     rlp_len,

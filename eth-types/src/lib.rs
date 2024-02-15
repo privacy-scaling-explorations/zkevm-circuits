@@ -8,7 +8,11 @@
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
-#![allow(clippy::upper_case_acronyms)] // Too pedantic
+
+// Too pedantic
+#![allow(clippy::upper_case_acronyms)]
+// Clippy is buggy on this one. Remove after https://github.com/rust-lang/rust-clippy/issues/12101 is resolved.
+#![allow(clippy::useless_vec)]
 
 #[macro_use]
 pub mod macros;
