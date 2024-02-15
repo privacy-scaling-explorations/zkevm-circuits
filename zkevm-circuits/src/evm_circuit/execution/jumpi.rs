@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         cb.stack_pop(condition.to_word());
 
         // Determine if the jump condition is met
-        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
+        let is_condition_zero = cb.is_zero_word(&condition);
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump

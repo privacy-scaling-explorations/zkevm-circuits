@@ -21,8 +21,8 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let lt = LtGadget::<F, N_BYTES>::construct(cb, lhs, rhs);
-        let eq = IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()));
+        let lt = cb.is_lt(lhs, rhs);
+        let eq = cb.is_zero(sum::expr(&lt.diff_bytes()));
 
         Self { lt, eq }
     }

@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
         let refund = cb.query_cell();
         cb.tx_refund_read(tx_id.expr(), WordLoHi::from_lo_unchecked(refund.expr()));
-        let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
+        let effective_refund = cb.min_max(max_refund.quotient(), refund.expr());
 
         // Add effective_refund * tx_gas_price back to caller's balance
         let mul_gas_price_by_refund = MulWordByU64Gadget::construct(
@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_word_unchecked();
         let coinbase_code_hash = cb.query_word_unchecked();
-        let coinbase_code_hash_is_zero = IsZeroWordGadget::construct(cb, &coinbase_code_hash);
+        let coinbase_code_hash_is_zero = cb.is_zero_word(&coinbase_code_hash);
         cb.account_read(
             coinbase.to_word(),
             AccountFieldTag::CodeHash,

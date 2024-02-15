@@ -11,7 +11,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
+                ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, LtGadget, LtWordGadget,
+                MinMaxGadget,
             },
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or,
@@ -44,10 +45,10 @@ use std::cmp::min;
 
 pub(crate) struct CallOpGadget<F> {
     opcode: Cell<F>,
-    is_call: IsZeroGadget<F>,
-    is_callcode: IsZeroGadget<F>,
-    is_delegatecall: IsZeroGadget<F>,
-    is_staticcall: IsZeroGadget<F>,
+    is_call: IsEqualGadget<F>,
+    is_callcode: IsEqualGadget<F>,
+    is_delegatecall: IsEqualGadget<F>,
+    is_staticcall: IsEqualGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     current_callee_address: WordLoHiCell<F>,
@@ -94,12 +95,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
-        let is_delegatecall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
-        let is_staticcall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+        let is_call = cb.is_eq(opcode.expr(), OpcodeId::CALL.expr());
+        let is_callcode = cb.is_eq(opcode.expr(), OpcodeId::CALLCODE.expr());
+        let is_delegatecall = cb.is_eq(opcode.expr(), OpcodeId::DELEGATECALL.expr());
+        let is_staticcall = cb.is_eq(opcode.expr(), OpcodeId::STATICCALL.expr());
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -196,9 +195,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
         // callee_reversion_info.rw_delta()
         let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance.to_word(), &call_gadget.value.to_word());
+            cb.is_lt_word(&caller_balance.to_word(), &call_gadget.value.to_word());
         // depth < 1025
-        let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
+        let is_depth_ok = cb.is_lt(depth.expr(), 1025.expr());
 
         let is_precheck_ok = and::expr([
             is_depth_ok.expr(),
@@ -215,18 +214,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
-        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address.expr());
-        let is_precompile_lt =
-            LtGadget::construct(cb, call_gadget.callee_address.expr(), 0x0A.expr());
+        let is_code_address_zero = cb.is_zero(call_gadget.callee_address.expr());
+        let is_precompile_lt = cb.is_lt(call_gadget.callee_address.expr(), 0x0A.expr());
         let is_precompile = and::expr([
             not::expr(is_code_address_zero.expr()),
             is_precompile_lt.expr(),
         ]);
         let precompile_return_length = cb.query_cell();
-        let precompile_return_length_zero =
-            IsZeroGadget::construct(cb, precompile_return_length.expr());
-        let precompile_return_data_copy_size = MinMaxGadget::construct(
-            cb,
+        let precompile_return_length_zero = cb.is_zero(precompile_return_length.expr());
+        let precompile_return_data_copy_size = cb.min_max(
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
@@ -275,10 +271,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_cost = call_gadget.gas_cost_expr(is_warm_prev.expr(), is_call.expr());
         // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
-        let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
+        let one_64th_gas = cb.div_by_const(gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
         let capped_callee_gas_left =
-            MinMaxGadget::construct(cb, call_gadget.gas_expr(), all_but_one_64th_gas.clone());
+            cb.min_max(call_gadget.gas_expr(), all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
             call_gadget.gas_is_u64.expr(),
             capped_callee_gas_left.min(),
@@ -480,10 +476,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let callee_gas_left = callee_gas_left.expr()
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-                let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> =
-                    ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
+                let precompile_output_word_size_div =
+                    cb.div_by_const(precompile_output_rws.expr(), 32);
                 let precompile_output_word_size_div_remainder_zero =
-                    IsZeroGadget::construct(cb, precompile_output_word_size_div.remainder());
+                    cb.is_zero(precompile_output_word_size_div.remainder());
                 let precompile_output_word_size = precompile_output_word_size_div.quotient()
                     + 1.expr()
                     - precompile_output_word_size_div_remainder_zero.expr();
@@ -891,22 +887,26 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_call.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_callcode.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CALLCODE.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CALLCODE.as_u64()),
         )?;
         self.is_delegatecall.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::DELEGATECALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::DELEGATECALL.as_u64()),
         )?;
         self.is_staticcall.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::STATICCALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::STATICCALL.as_u64()),
         )?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;

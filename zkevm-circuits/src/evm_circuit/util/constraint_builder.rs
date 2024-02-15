@@ -1,3 +1,10 @@
+use super::{
+    math_gadget::{
+        ConstantDivisionGadget, IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
+        LtGadget, LtWordGadget, MinMaxGadget,
+    },
+    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
+};
 use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
@@ -27,10 +34,6 @@ use halo2_proofs::{
         Expression::{self, Constant},
         VirtualCells,
     },
-};
-
-use super::{
-    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -579,6 +582,60 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(memory_word_size);
         constrain!(reversible_write_counter);
         constrain!(log_id);
+    }
+
+    // Math gadgets
+
+    pub(crate) fn is_zero(&mut self, value: Expression<F>) -> IsZeroGadget<F> {
+        IsZeroGadget::construct(self, value)
+    }
+
+    pub(crate) fn is_zero_word<T: WordExpr<F>>(&mut self, value: &T) -> IsZeroWordGadget<F, T> {
+        IsZeroWordGadget::construct(self, value)
+    }
+
+    pub(crate) fn is_eq(&mut self, lhs: Expression<F>, rhs: Expression<F>) -> IsEqualGadget<F> {
+        IsEqualGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_eq_word<T1: WordExpr<F>, T2: WordExpr<F>>(
+        &mut self,
+        lhs: &T1,
+        rhs: &T2,
+    ) -> IsEqualWordGadget<F, T1, T2> {
+        IsEqualWordGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_lt<const N_BYTES: usize>(
+        &mut self,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> LtGadget<F, N_BYTES> {
+        LtGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_lt_word<T: Expr<F> + Clone>(
+        &mut self,
+        lhs: &WordLoHi<T>,
+        rhs: &WordLoHi<T>,
+    ) -> LtWordGadget<F> {
+        LtWordGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn min_max<const N_BYTES: usize>(
+        &mut self,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> MinMaxGadget<F, N_BYTES> {
+        MinMaxGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn div_by_const<const N_BYTES: usize>(
+        &mut self,
+        numerator: Expression<F>,
+        denominator: u64,
+    ) -> ConstantDivisionGadget<F, N_BYTES> {
+        ConstantDivisionGadget::construct(self, numerator, denominator)
     }
 
     // Fixed

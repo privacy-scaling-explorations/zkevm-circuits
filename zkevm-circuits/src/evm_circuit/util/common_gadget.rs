@@ -385,7 +385,7 @@ impl<F: Field> TransferToGadget<F> {
         mut reversion_info: Option<&mut ReversionInfo<F>>,
         account_write: bool,
     ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         if account_write {
             Self::create_account(
                 cb,
@@ -497,7 +497,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     ) -> Self {
         let sender_sub_fee =
             UpdateBalanceGadget::construct(cb, sender_address.to_word(), vec![gas_fee], None);
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         // If receiver doesn't exist, create it
         TransferToGadget::create_account(
             cb,
@@ -618,7 +618,7 @@ impl<F: Field> TransferGadget<F> {
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         // If receiver doesn't exist, create it
         TransferToGadget::create_account(
             cb,
@@ -773,12 +773,12 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
+        let gas_is_u64 = cb.is_zero(sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // construct common gadget
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -791,9 +791,8 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
-        let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash());
-        let callee_not_exists = IsZeroWordGadget::construct(cb, &callee_code_hash);
+        let is_empty_code_hash = cb.is_eq_word(&callee_code_hash, &cb.empty_code_hash());
+        let callee_not_exists = cb.is_zero_word(&callee_code_hash);
 
         Self {
             is_success,
@@ -973,9 +972,9 @@ impl<F: Field, T: WordExpr<F> + Clone> SstoreGasGadget<F, T> {
         value_prev: T,
         original_value: T,
     ) -> Self {
-        let value_eq_prev = IsEqualWordGadget::construct(cb, &value, &value_prev);
-        let original_eq_prev = IsEqualWordGadget::construct(cb, &original_value, &value_prev);
-        let original_is_zero = IsZeroWordGadget::construct(cb, &original_value);
+        let value_eq_prev = cb.is_eq_word(&value, &value_prev);
+        let original_eq_prev = cb.is_eq_word(&original_value, &value_prev);
+        let original_is_zero = cb.is_zero_word(&original_value);
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1193,7 +1192,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
         let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
-        let lt_cap = LtGadget::construct(cb, value, cap);
+        let lt_cap = cb.is_lt(value, cap);
 
         Self { word, lt_cap }
     }
@@ -1255,7 +1254,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word32();
-        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.limbs[VALID_BYTES..]));
+        let not_overflow = cb.is_zero(sum::expr(&original.limbs[VALID_BYTES..]));
 
         Self {
             original,

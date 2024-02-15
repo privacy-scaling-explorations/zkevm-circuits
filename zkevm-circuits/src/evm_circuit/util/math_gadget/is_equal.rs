@@ -16,7 +16,7 @@ impl<F: Field> IsEqualGadget<F> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let is_zero = IsZeroGadget::construct(cb, lhs - rhs);
+        let is_zero = cb.is_zero(lhs - rhs);
 
         Self { is_zero }
     }

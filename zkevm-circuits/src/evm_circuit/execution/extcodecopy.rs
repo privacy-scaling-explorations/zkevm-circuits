@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash.to_word());
+        let not_exists = cb.is_zero_word(&code_hash.to_word());
         let exists = not::expr(not_exists.expr());
         cb.condition(exists.expr(), |cb| {
             cb.bytecode_length(code_hash.to_word(), code_size.expr());

@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we
         // swap the order in which the inputs are placed on the stack.
-        let is_sgt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::SGT.expr());
+        let is_sgt = cb.is_eq(opcode.expr(), OpcodeId::SGT.expr());
 
         // Both a and b are to be treated as two's complement signed 256-bit
         // (32 cells) integers. This means, the first bit denotes the sign
@@ -59,8 +59,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // number is negative if the most significant cell >= 128
         // (0b10000000). a and b being in the little-endian notation, the
         // most-significant byte is the last byte.
-        let sign_check_a = LtGadget::construct(cb, a.limbs[31].expr(), 128.expr());
-        let sign_check_b = LtGadget::construct(cb, b.limbs[31].expr(), 128.expr());
+        let sign_check_a = cb.is_lt(a.limbs[31].expr(), 128.expr());
+        let sign_check_b = cb.is_lt(b.limbs[31].expr(), 128.expr());
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
@@ -77,7 +77,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // b_hi) && (a_lo < b_lo)))
         let (a_lo, a_hi) = a.to_word().to_lo_hi();
         let (b_lo, b_hi) = b.to_word().to_lo_hi();
-        let lt_lo = LtGadget::construct(cb, a_lo, b_lo);
+        let lt_lo = cb.is_lt(a_lo, b_lo);
         let comparison_hi = ComparisonGadget::construct(cb, a_hi, b_hi);
         let a_lt_b_lo = lt_lo.expr();
         let (a_lt_b_hi, a_eq_b_hi) = comparison_hi.expr();

@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // These are globally defined because they are used across multiple cases.
         let copy_rw_increase = cb.query_cell();
-        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
+        let copy_rw_increase_is_zero = cb.is_zero(copy_rw_increase.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 
@@ -218,8 +218,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     CallContextFieldTag::ReturnDataLength,
                 ]
                 .map(|field_tag| cb.call_context(None, field_tag));
-                let copy_length =
-                    MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+                let copy_length = cb.min_max(return_data_length.expr(), range.length());
                 cb.require_equal(
                     "increase rw counter twice for each memory to memory byte copied",
                     copy_length.min() + copy_length.min(),

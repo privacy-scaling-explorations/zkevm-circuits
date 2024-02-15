@@ -81,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx.gas.expr() - tx.intrinsic_gas();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
-        let tx_caller_address_is_zero = IsZeroWordGadget::construct(cb, &tx.caller_address);
+        let tx_caller_address_is_zero = cb.is_zero_word(&tx.caller_address);
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
@@ -155,9 +155,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let code_hash = cb.query_word_unchecked();
-        let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &code_hash.to_word(), &cb.empty_code_hash());
-        let callee_not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let is_empty_code_hash = cb.is_eq_word(&code_hash.to_word(), &cb.empty_code_hash());
+        let callee_not_exists = cb.is_zero_word(&code_hash);
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).

@@ -53,7 +53,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         let is_byte_selected = array_init(|idx| {
             // Check if this byte is selected looking only at the LSB of the
             // index word
-            IsEqualGadget::construct(cb, index.limbs[0].expr(), (31 - idx).expr())
+            cb.is_eq(index.limbs[0].expr(), (31 - idx).expr())
         });
 
         // Sum all possible selected bytes

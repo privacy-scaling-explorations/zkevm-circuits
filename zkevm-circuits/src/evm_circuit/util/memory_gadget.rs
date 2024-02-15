@@ -85,7 +85,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: WordLoHiCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
-        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
+        let memory_length_is_zero = cb.is_zero(memory_length.sum_expr());
         let memory_offset_bytes = cb.query_memory_address();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
@@ -196,16 +196,15 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         let length = cb.query_word32();
         let sum = cb.query_word32();
 
-        let sum_lt_cap = LtGadget::construct(
-            cb,
+        let sum_lt_cap = cb.is_lt(
             from_bytes::expr(&sum.limbs[..N_BYTES_U64]),
             (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr(),
         );
 
         let sum_overflow_hi = sum::expr(&sum.limbs[N_BYTES_U64..]);
-        let sum_within_u64 = IsZeroGadget::construct(cb, sum_overflow_hi);
+        let sum_within_u64 = cb.is_zero(sum_overflow_hi);
 
-        let length_is_zero = IsZeroGadget::construct(cb, sum::expr(&length.limbs));
+        let length_is_zero = cb.is_zero(sum::expr(&length.limbs));
         let offset_length_sum = AddWordsGadget::construct(cb, [offset, length], sum);
 
         Self {
@@ -340,7 +339,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
 
 impl<F: Field> MemoryWordSizeGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: Expression<F>) -> Self {
-        let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
+        let memory_word_size = cb.div_by_const(address + 31.expr(), 32);
 
         Self { memory_word_size }
     }
@@ -613,7 +612,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         let is_empty = not::expr(&selectors[0]);
         let cap = select::expr(is_empty.expr(), 0.expr(), MAX_BYTES.expr());
         let signed_len = addr_end - addr_start;
-        let min_gadget = MinMaxGadget::construct(cb, cap, signed_len);
+        let min_gadget = cb.min_max(cap, signed_len);
 
         // If we claim that the buffer is empty, we prove that the end is at or before the start.
         //     buffer_len = max(0, signed_len) = 0

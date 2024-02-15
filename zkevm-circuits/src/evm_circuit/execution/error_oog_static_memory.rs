@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         );
 
         // Check if this is an MSTORE8
-        let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
+        let is_mstore8 = cb.is_eq(opcode.expr(), OpcodeId::MSTORE8.expr());
 
         // pop memory_offset from stack
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
