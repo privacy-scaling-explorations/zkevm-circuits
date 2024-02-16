@@ -363,7 +363,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 0.expr(),                                    // init_val_hi
             ]
             .into_iter()
-            .zip_eq(rw_table.table_exprs(meta).into_iter())
+            .zip_eq(rw_table.table_exprs(meta))
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -388,7 +388,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 0.expr(),                                    // init_val_hi
             ]
             .into_iter()
-            .zip_eq(rw_table.table_exprs(meta).into_iter())
+            .zip_eq(rw_table.table_exprs(meta))
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -406,7 +406,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value, Rotation::cur()),
             ]
             .into_iter()
-            .zip_eq(bytecode_table.table_exprs(meta).into_iter())
+            .zip_eq(bytecode_table.table_exprs(meta))
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -423,7 +423,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value, Rotation::cur()),
             ]
             .into_iter()
-            .zip(tx_table.table_exprs(meta).into_iter())
+            .zip(tx_table.table_exprs(meta))
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
@@ -807,7 +807,7 @@ impl<F: Field> CopyCircuit<F> {
         Self {
             copy_events,
             max_copy_rows,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             external_data: ExternalData::default(),
         }
     }
@@ -821,7 +821,7 @@ impl<F: Field> CopyCircuit<F> {
         Self {
             copy_events,
             max_copy_rows,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
             external_data,
         }
     }

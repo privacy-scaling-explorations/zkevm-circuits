@@ -1,7 +1,6 @@
 //! EVM byte code generator
 use crate::{evm_types::OpcodeId, keccak256, Bytes, Hash, ToBigEndian, ToWord, Word};
-use std::{collections::HashMap, iter, str::FromStr};
-
+use std::{collections::HashMap, fmt::Display, iter, str::FromStr};
 /// Error type for Bytecode related failures
 #[derive(Debug)]
 pub enum Error {
@@ -254,12 +253,13 @@ impl FromStr for OpcodeWithData {
     }
 }
 
-impl ToString for OpcodeWithData {
-    fn to_string(&self) -> String {
-        match self {
+impl Display for OpcodeWithData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
             OpcodeWithData::Opcode(opcode) => format!("{:?}", opcode),
             OpcodeWithData::PushWithData(n, word) => format!("PUSH{}({})", n, word),
-        }
+        };
+        f.write_str(&str)
     }
 }
 
@@ -576,6 +576,6 @@ mod tests {
             POP
             STOP
         };
-        assert_eq!(Bytecode::try_from(code.code()).unwrap(), code);
+        assert_eq!(Bytecode::from(code.code()), code);
     }
 }

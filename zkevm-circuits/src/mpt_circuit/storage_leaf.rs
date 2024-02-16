@@ -436,7 +436,7 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut value_word = vec![WordLoHi::zero(); 2];
+        let mut value_word = [WordLoHi::zero(); 2];
         for is_s in [true, false] {
             self.is_mod_extension[is_s.idx()].assign(
                 region,

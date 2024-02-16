@@ -158,7 +158,7 @@ impl TxTable {
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     let tx_id = Value::known(F::from(tx.id));
-                    let tx_data = vec![
+                    let tx_data = [
                         (TxContextFieldTag::Nonce, WordLoHi::from(tx.nonce.as_u64())),
                         (TxContextFieldTag::Gas, WordLoHi::from(tx.gas())),
                         (TxContextFieldTag::GasPrice, WordLoHi::from(tx.gas_price)),

@@ -801,7 +801,7 @@ mod test {
         // buffer len = data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(2),
                 Word::from(256),
@@ -812,7 +812,7 @@ mod test {
         // buffer len > data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(2),
                 Word::from(256),
@@ -826,7 +826,7 @@ mod test {
         // buffer len < data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(1),
                 Word::from(256),
@@ -837,7 +837,7 @@ mod test {
         // buffer len <= 0
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(0),
                 Word::from(256),
@@ -848,7 +848,7 @@ mod test {
         // empty buffer
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(0),
                 Word::from(256),
@@ -859,7 +859,7 @@ mod test {
         // MAX_BYTES < buffer size
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(31),
                 Word::from(256),

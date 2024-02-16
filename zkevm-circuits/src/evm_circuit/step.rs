@@ -29,7 +29,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::{fmt::Display, iter};
+use std::{fmt::Display, iter, marker::ConstParamTy};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -50,7 +50,7 @@ impl From<PrecompileCalls> for ExecutionState {
 }
 
 #[allow(non_camel_case_types, missing_docs)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter, ConstParamTy)]
 /// All the possible execution states that the computation of EVM can arrive.
 /// Some states are shared by multiple opcodes.
 pub enum ExecutionState {
