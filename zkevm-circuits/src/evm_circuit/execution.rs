@@ -981,7 +981,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .txs
                     .last()
                     .map(|tx| tx.calls()[0].clone())
-                    .unwrap_or_else(Call::default);
+                    .unwrap_or_default();
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
                 // Collect all steps

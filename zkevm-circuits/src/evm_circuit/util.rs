@@ -1,5 +1,5 @@
 pub use crate::util::{
-    word::{Word, WordExpr},
+    word::{WordExpr, WordLoHi},
     Challenges, Expr,
 };
 use crate::{
@@ -145,8 +145,8 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             .map(|r| rlc::value(le_bytes, r))
     }
 
-    pub fn code_hash(&self, n: U256) -> Word<Value<F>> {
-        Word::from(n).into_value()
+    pub fn code_hash(&self, n: U256) -> WordLoHi<Value<F>> {
+        WordLoHi::from(n).into_value()
     }
 
     /// Constrains a cell to have a constant value.

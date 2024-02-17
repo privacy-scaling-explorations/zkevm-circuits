@@ -69,7 +69,7 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: WordLoHi<Column<Advice>>,
 }
 
 impl TxTable {
@@ -79,7 +79,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -158,30 +158,24 @@ impl TxTable {
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     let tx_id = Value::known(F::from(tx.id));
-                    let tx_data = vec![
-                        (
-                            TxContextFieldTag::Nonce,
-                            word::Word::from(tx.nonce.as_u64()),
-                        ),
-                        (TxContextFieldTag::Gas, word::Word::from(tx.gas())),
-                        (TxContextFieldTag::GasPrice, word::Word::from(tx.gas_price)),
-                        (TxContextFieldTag::CallerAddress, word::Word::from(tx.from)),
+                    let tx_data = [
+                        (TxContextFieldTag::Nonce, WordLoHi::from(tx.nonce.as_u64())),
+                        (TxContextFieldTag::Gas, WordLoHi::from(tx.gas())),
+                        (TxContextFieldTag::GasPrice, WordLoHi::from(tx.gas_price)),
+                        (TxContextFieldTag::CallerAddress, WordLoHi::from(tx.from)),
                         (
                             TxContextFieldTag::CalleeAddress,
-                            word::Word::from(tx.to_or_contract_addr()),
+                            WordLoHi::from(tx.to_or_contract_addr()),
                         ),
-                        (
-                            TxContextFieldTag::IsCreate,
-                            word::Word::from(tx.is_create()),
-                        ),
-                        (TxContextFieldTag::Value, word::Word::from(tx.value)),
+                        (TxContextFieldTag::IsCreate, WordLoHi::from(tx.is_create())),
+                        (TxContextFieldTag::Value, WordLoHi::from(tx.value)),
                         (
                             TxContextFieldTag::CallDataLength,
-                            word::Word::from(tx.call_data.len() as u64),
+                            WordLoHi::from(tx.call_data.len() as u64),
                         ),
                         (
                             TxContextFieldTag::CallDataGasCost,
-                            word::Word::from(tx.call_data_gas_cost()),
+                            WordLoHi::from(tx.call_data_gas_cost()),
                         ),
                     ]
                     .iter()

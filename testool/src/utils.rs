@@ -181,18 +181,12 @@ pub fn current_submodule_git_commit() -> Result<String> {
 
 pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {
     let bytecode = if let Ok(bytes) = hex::decode(code) {
-        match Bytecode::try_from(bytes.clone()) {
-            Ok(bytecode) => {
-                for op in bytecode.iter() {
-                    info!("{}", op.to_string());
-                }
-                bytecode
-            }
-            Err(err) => {
-                error!("Failed to parse bytecode {:?}", err);
-                Bytecode::from_raw_unchecked(bytes)
-            }
+        let bytecode = Bytecode::from(bytes.clone());
+
+        for op in bytecode.iter() {
+            info!("{}", op.to_string());
         }
+        bytecode
     } else {
         let mut bytecode = Bytecode::default();
         for op in code.split(',') {

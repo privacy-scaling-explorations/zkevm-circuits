@@ -7,15 +7,15 @@ use crate::{
         util::{constraint_builder::EVMConstraintBuilder, CachedRegion},
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::word::{WordCell, WordExpr},
+    util::word::{WordExpr, WordLoHiCell},
 };
 use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DummyGadget<F, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState> {
-    pops: [WordCell<F>; N_POP],
-    pushes: [WordCell<F>; N_PUSH],
+    pops: [WordLoHiCell<F>; N_POP],
+    pushes: [WordLoHiCell<F>; N_PUSH],
     _marker: PhantomData<F>,
 }
 
@@ -27,8 +27,8 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let pops: [WordCell<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_unchecked());
-        let pushes: [WordCell<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_unchecked());
+        let pops: [WordLoHiCell<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_unchecked());
+        let pushes: [WordLoHiCell<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_unchecked());
         for pop in pops.iter() {
             cb.stack_pop(pop.to_word());
         }

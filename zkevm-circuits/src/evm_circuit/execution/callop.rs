@@ -11,18 +11,19 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
+                ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, LtGadget, LtWordGadget,
+                MinMaxGadget,
             },
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or,
             precompile_gadget::PrecompileGadget,
-            rlc, select, CachedRegion, Cell, StepRws, Word,
+            rlc, select, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -31,7 +32,9 @@ use bus_mapping::{
     evm::OpcodeId,
     precompile::{is_precompiled, PrecompileCalls},
 };
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToScalar, U256};
+use eth_types::{
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, OpsIdentity, ToAddress, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use std::cmp::min;
 
@@ -42,24 +45,24 @@ use std::cmp::min;
 
 pub(crate) struct CallOpGadget<F> {
     opcode: Cell<F>,
-    is_call: IsZeroGadget<F>,
-    is_callcode: IsZeroGadget<F>,
-    is_delegatecall: IsZeroGadget<F>,
-    is_staticcall: IsZeroGadget<F>,
+    is_call: IsEqualGadget<F>,
+    is_callcode: IsEqualGadget<F>,
+    is_delegatecall: IsEqualGadget<F>,
+    is_staticcall: IsEqualGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    current_callee_address: WordCell<F>,
-    current_caller_address: WordCell<F>,
+    current_callee_address: WordLoHiCell<F>,
+    current_caller_address: WordLoHiCell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     call: CommonCallGadget<F, MemoryAddressGadget<F>, true>,
-    current_value: Word<Cell<F>>,
+    current_value: WordLoHi<Cell<F>>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     transfer: TransferGadget<F>,
     // current handling Call* opcode's caller balance
-    caller_balance: Word<Cell<F>>,
+    caller_balance: WordLoHi<Cell<F>>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
@@ -92,12 +95,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
-        let is_delegatecall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
-        let is_staticcall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+        let is_call = cb.is_eq(opcode.expr(), OpcodeId::CALL.expr());
+        let is_callcode = cb.is_eq(opcode.expr(), OpcodeId::CALLCODE.expr());
+        let is_delegatecall = cb.is_eq(opcode.expr(), OpcodeId::DELEGATECALL.expr());
+        let is_staticcall = cb.is_eq(opcode.expr(), OpcodeId::STATICCALL.expr());
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -136,12 +137,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let caller_address = Word::select(
+        let caller_address = WordLoHi::select(
             is_delegatecall.expr(),
             current_caller_address.to_word(),
             current_callee_address.to_word(),
         );
-        let callee_address = Word::select(
+        let callee_address = WordLoHi::select(
             is_callcode.expr() + is_delegatecall.expr(),
             current_callee_address.to_word(),
             call_gadget.callee_address.to_word(),
@@ -194,9 +195,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
         // callee_reversion_info.rw_delta()
         let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance.to_word(), &call_gadget.value.to_word());
+            cb.is_lt_word(&caller_balance.to_word(), &call_gadget.value.to_word());
         // depth < 1025
-        let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
+        let is_depth_ok = cb.is_lt(depth.expr(), 1025.expr());
 
         let is_precheck_ok = and::expr([
             is_depth_ok.expr(),
@@ -213,18 +214,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
-        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address.expr());
-        let is_precompile_lt =
-            LtGadget::construct(cb, call_gadget.callee_address.expr(), 0x0A.expr());
+        let is_code_address_zero = cb.is_zero(call_gadget.callee_address.expr());
+        let is_precompile_lt = cb.is_lt(call_gadget.callee_address.expr(), 0x0A.expr());
         let is_precompile = and::expr([
             not::expr(is_code_address_zero.expr()),
             is_precompile_lt.expr(),
         ]);
         let precompile_return_length = cb.query_cell();
-        let precompile_return_length_zero =
-            IsZeroGadget::construct(cb, precompile_return_length.expr());
-        let precompile_return_data_copy_size = MinMaxGadget::construct(
-            cb,
+        let precompile_return_length_zero = cb.is_zero(precompile_return_length.expr());
+        let precompile_return_data_copy_size = cb.min_max(
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
@@ -273,10 +271,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_cost = call_gadget.gas_cost_expr(is_warm_prev.expr(), is_call.expr());
         // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
-        let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
+        let one_64th_gas = cb.div_by_const(gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
         let capped_callee_gas_left =
-            MinMaxGadget::construct(cb, call_gadget.gas_expr(), all_but_one_64th_gas.clone());
+            cb.min_max(call_gadget.gas_expr(), all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
             call_gadget.gas_is_u64.expr(),
             capped_callee_gas_left.min(),
@@ -321,7 +319,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb.call_context_lookup_write(
                     Some(callee_call_id.expr()),
                     CallContextFieldTag::IsSuccess,
-                    Word::from_lo_unchecked(call_gadget.is_success.expr()),
+                    WordLoHi::from_lo_unchecked(call_gadget.is_success.expr()),
                 );
                 cb.call_context_lookup_write(
                     Some(callee_call_id.expr()),
@@ -350,7 +348,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.call_context_lookup_write(
                         Some(callee_call_id.expr()),
                         field_tag,
-                        Word::from_lo_unchecked(value),
+                        WordLoHi::from_lo_unchecked(value),
                     );
                 }
 
@@ -384,7 +382,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         precompile_return_length.expr(),
                     ),
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
+                    cb.call_context_lookup_write(
+                        None,
+                        field_tag,
+                        WordLoHi::from_lo_unchecked(value),
+                    );
                 }
 
                 // copy table lookup to verify the copying of bytes:
@@ -394,9 +396,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.condition(call_gadget.cd_address.has_length(), |cb| {
                         let precompile_input_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                            WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                             CopyDataType::Memory.expr(),
-                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                             CopyDataType::RlcAcc.expr(),
                             call_gadget.cd_address.offset(),
                             call_gadget.cd_address.offset() + precompile_input_len.expr(),
@@ -419,9 +421,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     |cb| {
                         let precompile_output_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
-                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                             CopyDataType::RlcAcc.expr(),
-                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                             CopyDataType::Memory.expr(),
                             0.expr(),
                             precompile_return_length.expr(),
@@ -448,9 +450,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     |cb| {
                         let precompile_return_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
-                            Word::from_lo_unchecked(callee_call_id.expr()),
+                            WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                             CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
-                            Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                            WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                             CopyDataType::Memory.expr(),
                             0.expr(),
                             precompile_return_data_copy_size.min(),
@@ -474,10 +476,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let callee_gas_left = callee_gas_left.expr()
                     + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
-                let precompile_output_word_size_div: ConstantDivisionGadget<F, N_BYTES_U64> =
-                    ConstantDivisionGadget::construct(cb, precompile_output_rws.expr(), 32);
+                let precompile_output_word_size_div =
+                    cb.div_by_const(precompile_output_rws.expr(), 32);
                 let precompile_output_word_size_div_remainder_zero =
-                    IsZeroGadget::construct(cb, precompile_output_word_size_div.remainder());
+                    cb.is_zero(precompile_output_word_size_div.remainder());
                 let precompile_output_word_size = precompile_output_word_size_div.quotient()
                     + 1.expr()
                     - precompile_output_word_size_div_remainder_zero.expr();
@@ -534,13 +536,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb.call_context_lookup_write(
                     None,
                     CallContextFieldTag::LastCalleeId,
-                    Word::from_lo_unchecked(callee_call_id.expr()),
+                    WordLoHi::from_lo_unchecked(callee_call_id.expr()),
                 );
                 for field_tag in [
                     CallContextFieldTag::LastCalleeReturnDataOffset,
                     CallContextFieldTag::LastCalleeReturnDataLength,
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::zero());
+                    cb.call_context_lookup_write(None, field_tag, WordLoHi::zero());
                 }
 
                 // For CALL opcode, it has an extra stack pop `value` (+1) and if the value is
@@ -582,13 +584,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb.call_context_lookup_write(
                 None,
                 CallContextFieldTag::LastCalleeId,
-                Word::from_lo_unchecked(callee_call_id.expr()),
+                WordLoHi::from_lo_unchecked(callee_call_id.expr()),
             );
             for field_tag in [
                 CallContextFieldTag::LastCalleeReturnDataOffset,
                 CallContextFieldTag::LastCalleeReturnDataLength,
             ] {
-                cb.call_context_lookup_write(None, field_tag, Word::zero());
+                cb.call_context_lookup_write(None, field_tag, WordLoHi::zero());
             }
 
             cb.require_step_state_transition(StepStateTransition {
@@ -636,7 +638,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                     ),
                 ] {
-                    cb.call_context_lookup_write(None, field_tag, Word::from_lo_unchecked(value));
+                    cb.call_context_lookup_write(
+                        None,
+                        field_tag,
+                        WordLoHi::from_lo_unchecked(value),
+                    );
                 }
 
                 // Setup next call's context.
@@ -645,37 +651,37 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 for (field_tag, value) in [
                     (
                         CallContextFieldTag::CallerId,
-                        Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                        WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                     ),
                     (
                         CallContextFieldTag::TxId,
-                        Word::from_lo_unchecked(tx_id.expr()),
+                        WordLoHi::from_lo_unchecked(tx_id.expr()),
                     ),
                     (
                         CallContextFieldTag::Depth,
-                        Word::from_lo_unchecked(depth.expr() + 1.expr()),
+                        WordLoHi::from_lo_unchecked(depth.expr() + 1.expr()),
                     ),
                     (CallContextFieldTag::CallerAddress, caller_address),
                     (CallContextFieldTag::CalleeAddress, callee_address),
                     (
                         CallContextFieldTag::CallDataOffset,
-                        Word::from_lo_unchecked(cd_address.offset()),
+                        WordLoHi::from_lo_unchecked(cd_address.offset()),
                     ),
                     (
                         CallContextFieldTag::CallDataLength,
-                        Word::from_lo_unchecked(cd_address.length()),
+                        WordLoHi::from_lo_unchecked(cd_address.length()),
                     ),
                     (
                         CallContextFieldTag::ReturnDataOffset,
-                        Word::from_lo_unchecked(rd_address.offset()),
+                        WordLoHi::from_lo_unchecked(rd_address.offset()),
                     ),
                     (
                         CallContextFieldTag::ReturnDataLength,
-                        Word::from_lo_unchecked(rd_address.length()),
+                        WordLoHi::from_lo_unchecked(rd_address.length()),
                     ),
                     (
                         CallContextFieldTag::Value,
-                        Word::select(
+                        WordLoHi::select(
                             is_delegatecall.expr(),
                             current_value.to_word(),
                             call_gadget.value.to_word(),
@@ -683,23 +689,26 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                     (
                         CallContextFieldTag::IsSuccess,
-                        Word::from_lo_unchecked(call_gadget.is_success.expr()),
+                        WordLoHi::from_lo_unchecked(call_gadget.is_success.expr()),
                     ),
                     (
                         CallContextFieldTag::IsStatic,
-                        Word::from_lo_unchecked(or::expr([is_static.expr(), is_staticcall.expr()])),
+                        WordLoHi::from_lo_unchecked(or::expr([
+                            is_static.expr(),
+                            is_staticcall.expr(),
+                        ])),
                     ),
-                    (CallContextFieldTag::LastCalleeId, Word::zero()),
+                    (CallContextFieldTag::LastCalleeId, WordLoHi::zero()),
                     (
                         CallContextFieldTag::LastCalleeReturnDataOffset,
-                        Word::zero(),
+                        WordLoHi::zero(),
                     ),
                     (
                         CallContextFieldTag::LastCalleeReturnDataLength,
-                        Word::zero(),
+                        WordLoHi::zero(),
                     ),
-                    (CallContextFieldTag::IsRoot, Word::zero()),
-                    (CallContextFieldTag::IsCreate, Word::zero()),
+                    (CallContextFieldTag::IsRoot, WordLoHi::zero()),
+                    (CallContextFieldTag::IsCreate, WordLoHi::zero()),
                     (
                         CallContextFieldTag::CodeHash,
                         call_gadget.callee_code_hash.to_word(),
@@ -878,22 +887,26 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_call.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_callcode.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CALLCODE.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CALLCODE.as_u64()),
         )?;
         self.is_delegatecall.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::DELEGATECALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::DELEGATECALL.as_u64()),
         )?;
         self.is_staticcall.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::STATICCALL.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::STATICCALL.as_u64()),
         )?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;

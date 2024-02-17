@@ -17,7 +17,7 @@ use crate::{
     },
     table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -32,13 +32,13 @@ pub(crate) struct EndTxGadget<F> {
     refund: Cell<F>,
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
     mul_gas_price_by_refund: MulWordByU64Gadget<F>,
-    tx_caller_address: WordCell<F>,
+    tx_caller_address: WordLoHiCell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
-    coinbase: WordCell<F>,
-    coinbase_code_hash: WordCell<F>,
-    coinbase_code_hash_is_zero: IsZeroWordGadget<F, WordCell<F>>,
+    coinbase: WordLoHiCell<F>,
+    coinbase_code_hash: WordLoHiCell<F>,
+    coinbase_code_hash_is_zero: IsZeroWordGadget<F, WordLoHiCell<F>>,
     coinbase_reward: TransferToGadget<F>,
     is_persistent: Cell<F>,
     end_tx: EndTxHelperGadget<F>,
@@ -66,8 +66,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             MAX_REFUND_QUOTIENT_OF_GAS_USED as u64,
         );
         let refund = cb.query_cell();
-        cb.tx_refund_read(tx_id.expr(), Word::from_lo_unchecked(refund.expr()));
-        let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
+        cb.tx_refund_read(tx_id.expr(), WordLoHi::from_lo_unchecked(refund.expr()));
+        let effective_refund = cb.min_max(max_refund.quotient(), refund.expr());
 
         // Add effective_refund * tx_gas_price back to caller's balance
         let mul_gas_price_by_refund = MulWordByU64Gadget::construct(
@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_word_unchecked();
         let coinbase_code_hash = cb.query_word_unchecked();
-        let coinbase_code_hash_is_zero = IsZeroWordGadget::construct(cb, &coinbase_code_hash);
+        let coinbase_code_hash_is_zero = cb.is_zero_word(&coinbase_code_hash);
         cb.account_read(
             coinbase.to_word(),
             AccountFieldTag::CodeHash,

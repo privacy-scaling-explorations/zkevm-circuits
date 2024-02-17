@@ -11,16 +11,16 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, transpose_val_ret, CachedRegion,
     },
-    util::word::{Word, WordExpr},
+    util::word::{WordExpr, WordLoHi},
 };
 
-use super::IsZeroGadget;
+use super::IsEqualGadget;
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
 pub struct IsEqualWordGadget<F, T1, T2> {
-    is_zero_lo: IsZeroGadget<F>,
-    is_zero_hi: IsZeroGadget<F>,
+    is_zero_lo: IsEqualGadget<F>,
+    is_zero_hi: IsEqualGadget<F>,
     _marker: PhantomData<(T1, T2)>,
 }
 
@@ -28,8 +28,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: &T1, rhs: &T2) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_word().to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_word().to_lo_hi();
-        let is_zero_lo = IsZeroGadget::construct(cb, lhs_lo - rhs_lo);
-        let is_zero_hi = IsZeroGadget::construct(cb, lhs_hi - rhs_hi);
+        let is_zero_lo = cb.is_eq(lhs_lo, rhs_lo);
+        let is_zero_hi = cb.is_eq(lhs_hi, rhs_hi);
 
         Self {
             is_zero_lo,
@@ -46,13 +46,13 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
+        lhs: WordLoHi<F>,
+        rhs: WordLoHi<F>,
     ) -> Result<F, Error> {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
-        self.is_zero_lo.assign(region, offset, lhs_lo - rhs_lo)?;
-        self.is_zero_hi.assign(region, offset, lhs_hi - rhs_hi)?;
+        self.is_zero_lo.assign(region, offset, lhs_lo, rhs_lo)?;
+        self.is_zero_hi.assign(region, offset, lhs_hi, rhs_hi)?;
         Ok(F::from(2))
     }
 
@@ -60,8 +60,8 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Value<Word<F>>,
-        rhs: Value<Word<F>>,
+        lhs: Value<WordLoHi<F>>,
+        rhs: Value<WordLoHi<F>>,
     ) -> Result<Value<F>, Error> {
         transpose_val_ret(
             lhs.zip(rhs)
@@ -76,7 +76,7 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
         lhs: eth_types::Word,
         rhs: eth_types::Word,
     ) -> Result<F, Error> {
-        self.assign(region, offset, Word::from(lhs), Word::from(rhs))
+        self.assign(region, offset, WordLoHi::from(lhs), WordLoHi::from(rhs))
     }
 }
 

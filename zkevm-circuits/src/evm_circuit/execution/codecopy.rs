@@ -20,7 +20,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::{
-        word::{Word, WordExpr},
+        word::{WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -66,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.to_word());
         cb.stack_pop(code_offset.original_word().to_word());
-        cb.stack_pop(Word::from_lo_unchecked(length.expr()));
+        cb.stack_pop(WordLoHi::from_lo_unchecked(length.expr()));
 
         // Construct memory address in the destionation (memory) to which we copy code.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dst_memory_offset, length);
@@ -99,7 +99,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             cb.copy_table_lookup(
                 code_hash.to_word(),
                 CopyDataType::Bytecode.expr(),
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 src_addr,
                 code_size.expr(),

@@ -490,7 +490,7 @@ impl<F: Field> ExpCircuit<F> {
         Self {
             exp_events,
             max_exp_rows,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }

@@ -36,7 +36,7 @@ pub struct BlockTable {
     /// Index
     pub index: Column<Fixed>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: WordLoHi<Column<Advice>>,
 }
 
 impl BlockTable {
@@ -45,7 +45,7 @@ impl BlockTable {
         Self {
             tag: meta.fixed_column(),
             index: meta.fixed_column(),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -75,7 +75,7 @@ impl BlockTable {
                         || row[1],
                     )?;
 
-                    word::Word::new([row[2], row[3]]).assign_advice(
+                    WordLoHi::new([row[2], row[3]]).assign_advice(
                         &mut region,
                         || format!("block table value {}", offset),
                         self.value,

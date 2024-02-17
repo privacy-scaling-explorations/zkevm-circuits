@@ -22,12 +22,12 @@ use crate::{
     },
     table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::{evm_types::PRECOMPILE_COUNT, keccak256, Field, ToWord, U256};
+use eth_types::{evm_types::PRECOMPILE_COUNT, keccak256, Field, OpsIdentity, ToWord, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -37,19 +37,19 @@ use halo2_proofs::{
 pub(crate) struct BeginTxGadget<F> {
     begin_tx: BeginTxHelperGadget<F>,
     tx: TxDataGadget<F>,
-    tx_caller_address_is_zero: IsZeroWordGadget<F, WordCell<F>>,
+    tx_caller_address_is_zero: IsZeroWordGadget<F, WordLoHiCell<F>>,
     call_callee_address: AccountAddress<F>,
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
-    code_hash: WordCell<F>,
-    is_empty_code_hash: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
+    code_hash: WordLoHiCell<F>,
+    is_empty_code_hash: IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
     caller_nonce_hash_bytes: Word32Cell<F>,
     create: ContractCreateGadget<F, false>,
-    callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
+    callee_not_exists: IsZeroWordGadget<F, WordLoHiCell<F>>,
     is_caller_callee_equal: Cell<F>,
     // EIP-3651 (Warm COINBASE)
-    coinbase: WordCell<F>,
+    coinbase: WordLoHiCell<F>,
     // Caller, callee and a list addresses are added to the access list before
     // coinbase, and may be duplicate.
     // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
@@ -74,14 +74,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.call_context_lookup_write(
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
-            Word::from_lo_unchecked(reversion_info.is_persistent()),
+            WordLoHi::from_lo_unchecked(reversion_info.is_persistent()),
         ); // rwc_delta += 1
 
         // Check gas_left is sufficient
         let gas_left = tx.gas.expr() - tx.intrinsic_gas();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
-        let tx_caller_address_is_zero = IsZeroWordGadget::construct(cb, &tx.caller_address);
+        let tx_caller_address_is_zero = cb.is_zero_word(&tx.caller_address);
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
@@ -102,8 +102,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.account_write(
             tx.caller_address.to_word(),
             AccountFieldTag::Nonce,
-            Word::from_lo_unchecked(tx.nonce.expr() + 1.expr()),
-            Word::from_lo_unchecked(tx.nonce.expr()),
+            WordLoHi::from_lo_unchecked(tx.nonce.expr() + 1.expr()),
+            WordLoHi::from_lo_unchecked(tx.nonce.expr()),
             None,
         ); // rwc_delta += 1
 
@@ -111,7 +111,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         for addr in 1..=PRECOMPILE_COUNT {
             cb.account_access_list_write_unchecked(
                 tx_id.expr(),
-                Word::new([addr.expr(), 0.expr()]),
+                WordLoHi::new([addr.expr(), 0.expr()]),
                 1.expr(),
                 0.expr(),
                 None,
@@ -155,9 +155,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let code_hash = cb.query_word_unchecked();
-        let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &code_hash.to_word(), &cb.empty_code_hash());
-        let callee_not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let is_empty_code_hash = cb.is_eq_word(&code_hash.to_word(), &cb.empty_code_hash());
+        let callee_not_exists = cb.is_zero_word(&code_hash);
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).
@@ -221,12 +220,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.account_write(
                 call_callee_address.to_word(),
                 AccountFieldTag::Nonce,
-                Word::one(),
-                Word::zero(),
+                WordLoHi::one(),
+                WordLoHi::zero(),
                 Some(&mut reversion_info),
             );
             for (field_tag, value) in [
-                (CallContextFieldTag::Depth, Word::one()),
+                (CallContextFieldTag::Depth, WordLoHi::one()),
                 (
                     CallContextFieldTag::CallerAddress,
                     tx.caller_address.to_word(),
@@ -235,24 +234,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     CallContextFieldTag::CalleeAddress,
                     call_callee_address.to_word(),
                 ),
-                (CallContextFieldTag::CallDataOffset, Word::zero()),
+                (CallContextFieldTag::CallDataOffset, WordLoHi::zero()),
                 (
                     CallContextFieldTag::CallDataLength,
-                    Word::from_lo_unchecked(tx.call_data_length.expr()),
+                    WordLoHi::from_lo_unchecked(tx.call_data_length.expr()),
                 ),
                 (CallContextFieldTag::Value, tx.value.to_word()),
-                (CallContextFieldTag::IsStatic, Word::zero()),
-                (CallContextFieldTag::LastCalleeId, Word::zero()),
+                (CallContextFieldTag::IsStatic, WordLoHi::zero()),
+                (CallContextFieldTag::LastCalleeId, WordLoHi::zero()),
                 (
                     CallContextFieldTag::LastCalleeReturnDataOffset,
-                    Word::zero(),
+                    WordLoHi::zero(),
                 ),
                 (
                     CallContextFieldTag::LastCalleeReturnDataLength,
-                    Word::zero(),
+                    WordLoHi::zero(),
                 ),
-                (CallContextFieldTag::IsRoot, Word::one()),
-                (CallContextFieldTag::IsCreate, Word::one()),
+                (CallContextFieldTag::IsRoot, WordLoHi::one()),
+                (CallContextFieldTag::IsCreate, WordLoHi::one()),
                 (
                     CallContextFieldTag::CodeHash,
                     cb.curr.state.code_hash.to_word(),
@@ -349,7 +348,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             |cb| {
                 // Setup first call's context.
                 for (field_tag, value) in [
-                    (CallContextFieldTag::Depth, Word::one()),
+                    (CallContextFieldTag::Depth, WordLoHi::one()),
                     (
                         CallContextFieldTag::CallerAddress,
                         tx.caller_address.to_word(),
@@ -358,26 +357,26 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         CallContextFieldTag::CalleeAddress,
                         tx.callee_address.to_word(),
                     ),
-                    (CallContextFieldTag::CallDataOffset, Word::zero()),
+                    (CallContextFieldTag::CallDataOffset, WordLoHi::zero()),
                     (
                         CallContextFieldTag::CallDataLength,
-                        Word::from_lo_unchecked(tx.call_data_length.expr()),
+                        WordLoHi::from_lo_unchecked(tx.call_data_length.expr()),
                     ),
                     (CallContextFieldTag::Value, tx.value.to_word()),
-                    (CallContextFieldTag::IsStatic, Word::zero()),
-                    (CallContextFieldTag::LastCalleeId, Word::zero()),
+                    (CallContextFieldTag::IsStatic, WordLoHi::zero()),
+                    (CallContextFieldTag::LastCalleeId, WordLoHi::zero()),
                     (
                         CallContextFieldTag::LastCalleeReturnDataOffset,
-                        Word::zero(),
+                        WordLoHi::zero(),
                     ),
                     (
                         CallContextFieldTag::LastCalleeReturnDataLength,
-                        Word::zero(),
+                        WordLoHi::zero(),
                     ),
-                    (CallContextFieldTag::IsRoot, Word::one()),
+                    (CallContextFieldTag::IsRoot, WordLoHi::one()),
                     (
                         CallContextFieldTag::IsCreate,
-                        Word::from_lo_unchecked(tx.is_create.expr()),
+                        WordLoHi::from_lo_unchecked(tx.is_create.expr()),
                     ),
                     (CallContextFieldTag::CodeHash, code_hash.to_word()),
                 ] {

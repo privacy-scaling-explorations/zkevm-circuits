@@ -17,7 +17,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -39,7 +39,7 @@ pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     /// Extra stack pop for `EXTCODECOPY`
     external_address: AccountAddress<F>,
     /// Source offset
-    src_offset: WordCell<F>,
+    src_offset: WordLoHiCell<F>,
     /// Destination offset and size to copy
     dst_memory_addr: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::TxId,
-                Word::from_lo_unchecked(tx_id.expr()),
+                WordLoHi::from_lo_unchecked(tx_id.expr()),
             );
 
             // Check if EXTCODECOPY external address is warm.

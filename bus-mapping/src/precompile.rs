@@ -36,8 +36,9 @@ pub(crate) fn execute_precompiled(
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let Some(Precompile::Standard(precompile_fn)) = Precompiles::berlin()
-        .get(address.as_fixed_bytes())  else {
+        let Some(Precompile::Standard(precompile_fn)) =
+            Precompiles::berlin().get(address.as_fixed_bytes())
+        else {
             panic!("calling non-exist precompiled contract address")
         };
         let (return_data, gas_cost, is_oog, is_ok) = match precompile_fn(input, gas) {

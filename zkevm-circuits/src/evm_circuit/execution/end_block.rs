@@ -6,15 +6,15 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::IsEqualGadget,
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::{word::Word, Expr},
+    util::{word::WordLoHi, Expr},
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
-    is_empty_block: IsZeroGadget<F>,
+    is_empty_block: IsEqualGadget<F>,
     max_rws: Cell<F>,
     max_txs: Cell<F>,
 }
@@ -36,10 +36,9 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
-        let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
+        let total_txs_is_max_txs = cb.is_eq(total_txs.expr(), max_txs.expr());
         // Note that rw_counter starts at 1
-        let is_empty_block =
-            IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
+        let is_empty_block = cb.is_eq(cb.curr.state.rw_counter.clone().expr(), 1.expr());
 
         let total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
             + select::expr(
@@ -59,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::TxId,
-                Word::from_lo_unchecked(total_txs.expr()),
+                WordLoHi::from_lo_unchecked(total_txs.expr()),
             );
         });
 
@@ -74,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                Word::zero(),
+                WordLoHi::zero(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at
@@ -126,7 +125,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_empty_block
-            .assign(region, offset, F::from(u64::from(step.rwc) - 1))?;
+            .assign(region, offset, F::from(u64::from(step.rwc)), F::ONE)?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 

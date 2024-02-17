@@ -16,7 +16,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -30,8 +30,8 @@ pub(crate) struct ExtcodesizeGadget<F> {
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
-    code_hash: WordCell<F>,
-    not_exists: IsZeroWordGadget<F, WordCell<F>>,
+    code_hash: WordLoHiCell<F>,
+    not_exists: IsZeroWordGadget<F, WordLoHiCell<F>>,
     code_size: U64Cell<F>,
 }
 
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let not_exists = cb.is_zero_word(&code_hash);
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_u64();
@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists
-            .assign(region, offset, Word::from(code_hash))?;
+            .assign(region, offset, WordLoHi::from(code_hash))?;
 
         let code_size = block.get_rws(step, 6).stack_value().as_u64();
         self.code_size

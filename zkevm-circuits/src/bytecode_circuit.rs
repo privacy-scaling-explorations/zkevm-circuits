@@ -16,8 +16,8 @@ use crate::{
     },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{
-        self, get_push_size,
-        word::{empty_code_hash_word_value, Word, Word32, WordExpr},
+        get_push_size,
+        word::{empty_code_hash_word_value, Word32, WordExpr, WordLoHi},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
     witness::{self},
@@ -40,7 +40,7 @@ const PUSH_TABLE_WIDTH: usize = 2;
 #[derive(Debug, Clone, Default)]
 /// Row for assignment
 pub(crate) struct BytecodeCircuitRow<F: Field> {
-    pub(crate) code_hash: Word<Value<F>>,
+    pub(crate) code_hash: WordLoHi<Value<F>>,
     tag: F,
     pub(crate) index: F,
     pub(crate) is_code: F,
@@ -52,7 +52,13 @@ pub(crate) struct BytecodeCircuitRow<F: Field> {
 }
 impl<F: Field> BytecodeCircuitRow<F> {
     #[cfg(test)]
-    pub(crate) fn new(code_hash: Word<Value<F>>, tag: F, index: F, is_code: F, value: F) -> Self {
+    pub(crate) fn new(
+        code_hash: WordLoHi<Value<F>>,
+        tag: F,
+        index: F,
+        is_code: F,
+        value: F,
+    ) -> Self {
         Self {
             code_hash,
             tag,
@@ -89,7 +95,7 @@ impl<F: Field> From<Vec<Bytecode>> for BytecodeCircuitAssignment<F> {
     fn from(codes: Vec<Bytecode>) -> Self {
         let mut rows = vec![];
         for bytecode in codes.iter() {
-            let code_hash = util::word::Word::from(bytecode.hash()).into_value();
+            let code_hash = WordLoHi::from(bytecode.hash()).into_value();
             let code_size = bytecode.codesize();
             let head = BytecodeCircuitRow {
                 code_hash,
@@ -341,7 +347,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     is_byte(meta),
                 ]);
 
-                let lookup_columns = vec![value, push_data_size];
+                let lookup_columns = [value, push_data_size];
 
                 let mut constraints = vec![];
 
@@ -366,7 +372,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            let empty_hash_word: Word<Expression<F>> =
+            let empty_hash_word: WordLoHi<Expression<F>> =
                 Word32::new(*EMPTY_CODE_HASH_LE).to_expr().to_word();
 
             cb.require_equal_word(

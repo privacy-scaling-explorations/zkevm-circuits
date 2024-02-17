@@ -18,7 +18,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::word::{Word, Word32Cell, WordExpr},
+    util::word::{Word32Cell, WordExpr, WordLoHi},
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
@@ -40,7 +40,7 @@ pub(crate) struct ExtcodecopyGadget<F> {
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
     code_hash: Word32Cell<F>,
-    not_exists: IsZeroWordGadget<F, Word<Expression<F>>>,
+    not_exists: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
     code_size: Cell<F>,
     copy_rwc_inc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash.to_word());
+        let not_exists = cb.is_zero_word(&code_hash.to_word());
         let exists = not::expr(not_exists.expr());
         cb.condition(exists.expr(), |cb| {
             cb.bytecode_length(code_hash.to_word(), code_size.expr());
@@ -126,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             cb.copy_table_lookup(
                 code_hash.to_word(),
                 CopyDataType::Bytecode.expr(),
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 src_addr,
                 code_size.expr(),

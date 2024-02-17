@@ -9,7 +9,7 @@ use std::{
 use crate::{
     evm_circuit::util::rlc,
     table::LookupTable,
-    util::{query_expression, word::Word, Expr},
+    util::{query_expression, word::WordLoHi, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{and, sum, Scalar};
@@ -18,7 +18,7 @@ use itertools::Itertools;
 
 use super::{
     cached_region::StoredExpression,
-    cell_manager::{Cell, CellManager, CellType, WordCell},
+    cell_manager::{Cell, CellManager, CellType, WordLoHiCell},
 };
 
 fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F> {
@@ -322,7 +322,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
 
     pub(crate) fn query_default(&mut self) -> Cell<F> {
         self.query_cells_dyn(C::default(), 1)
-            .get(0)
+            .first()
             .expect("No cell found")
             .clone()
     }
@@ -352,8 +352,8 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
-    pub(crate) fn query_word_unchecked(&mut self) -> WordCell<F> {
-        Word::new(self.query_cells_dyn(C::default(), 2).try_into().unwrap())
+    pub(crate) fn query_word_unchecked(&mut self) -> WordLoHiCell<F> {
+        WordLoHi::new(self.query_cells_dyn(C::default(), 2).try_into().unwrap())
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -536,7 +536,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
                 ));
                 self.stored_expressions
                     .entry(self.region_id)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(StoredExpression {
                         name,
                         cell: cell.clone(),
@@ -718,7 +718,7 @@ impl<F: Field, E: Expr<F>> ExprVec<F> for &[E] {
     }
 }
 
-impl<F: Field, E: Expr<F> + Clone> ExprVec<F> for Word<E> {
+impl<F: Field, E: Expr<F> + Clone> ExprVec<F> for WordLoHi<E> {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
         vec![self.lo().expr(), self.hi().expr()]
     }

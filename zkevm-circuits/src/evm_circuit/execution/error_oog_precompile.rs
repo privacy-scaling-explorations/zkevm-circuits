@@ -63,9 +63,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         });
 
         // calculate required gas for precompile
-        let precompiles_required_gas = vec![
+        let precompiles_required_gas = [
             (
-                addr_bits.value_equals(PrecompileCalls::Ecrecover),
+                addr_bits.value_equals(PrecompileCalls::ECRecover),
                 GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
             ),
             // addr_bits.value_equals(PrecompileCalls::Sha256),
@@ -114,8 +114,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         );
 
         // gas_left < required_gas
-        let insufficient_gas =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), required_gas.expr());
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), required_gas.expr());
         cb.require_equal("gas_left < required_gas", insufficient_gas.expr(), 1.expr());
 
         let restore_context = RestoreContextGadget::construct2(

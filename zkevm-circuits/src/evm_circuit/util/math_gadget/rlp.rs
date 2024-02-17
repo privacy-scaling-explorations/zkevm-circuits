@@ -1,7 +1,3 @@
-use crate::{
-    evm_circuit::util::rlc,
-    util::word::{Word32Cell, WordExpr},
-};
 use eth_types::{Address, Field, ToScalar, Word};
 use gadgets::util::{and, expr_from_bytes, not, select, sum, Expr};
 use halo2_proofs::{
@@ -14,10 +10,10 @@ use crate::{
         param::{N_BYTES_U64, N_BYTES_WORD},
         util::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-            AccountAddress, CachedRegion, Cell, RandomLinearCombination,
+            rlc, AccountAddress, CachedRegion, Cell, RandomLinearCombination,
         },
     },
-    util::word,
+    util::word::{Word32Cell, WordExpr, WordLoHi},
 };
 
 use super::IsZeroGadget;
@@ -52,7 +48,7 @@ impl<F: Field> RlpU64Gadget<F> {
                 .zip(&is_most_significant_byte)
                 .map(|(byte, indicator)| byte.expr() * indicator.expr()),
         );
-        let most_significant_byte_is_zero = IsZeroGadget::construct(cb, most_significant_byte);
+        let most_significant_byte_is_zero = cb.is_zero(most_significant_byte);
         let is_lt_128 = cb.query_bool();
 
         let value = expr_from_bytes(&value_rlc.cells);
@@ -260,7 +256,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Caller address' value.
-    pub(crate) fn caller_address(&self) -> word::Word<Expression<F>> {
+    pub(crate) fn caller_address(&self) -> WordLoHi<Expression<F>> {
         self.caller_address.to_word()
     }
 
@@ -270,7 +266,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Code hash word RLC.
-    pub(crate) fn code_hash(&self) -> word::Word<Expression<F>> {
+    pub(crate) fn code_hash(&self) -> WordLoHi<Expression<F>> {
         self.code_hash.to_word()
     }
 
@@ -287,7 +283,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
-    pub(crate) fn salt(&self) -> word::Word<Expression<F>> {
+    pub(crate) fn salt(&self) -> WordLoHi<Expression<F>> {
         self.salt.to_word()
     }
 
@@ -513,7 +509,7 @@ mod test {
             };
             try_test!(
                 ContractCreateGadgetContainer<Fr, false>,
-                vec![
+                [
                     caller_address.to_word(),
                     Word::from(caller_nonce),
                     rlp_len,

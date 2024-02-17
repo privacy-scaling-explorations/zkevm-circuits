@@ -12,7 +12,7 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         transpose_val_ret, CachedRegion, Cell, CellType,
     },
-    util::word::{Word, WordExpr},
+    util::word::{WordExpr, WordLoHi},
 };
 
 /// Returns `1` when `word == 0`, and returns `0` otherwise.
@@ -69,7 +69,7 @@ impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        value: Word<F>,
+        value: WordLoHi<F>,
     ) -> Result<F, Error> {
         let (value_lo, value_hi) = value.to_lo_hi();
         let inverse_lo = value_lo.invert().unwrap_or(F::from(0));
@@ -91,14 +91,14 @@ impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
         offset: usize,
         value: eth_types::Word,
     ) -> Result<F, Error> {
-        self.assign(region, offset, Word::from(value))
+        self.assign(region, offset, WordLoHi::from(value))
     }
 
     pub(crate) fn assign_value(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        value: Value<Word<F>>,
+        value: Value<WordLoHi<F>>,
     ) -> Result<Value<F>, Error> {
         transpose_val_ret(value.map(|value| self.assign(region, offset, value)))
     }
