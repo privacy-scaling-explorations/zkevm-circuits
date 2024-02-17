@@ -17,7 +17,7 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
-    util::word::{Word, Word32Cell, WordCell, WordExpr, WordLimbs},
+    util::word::{Word32Cell, WordExpr, WordLimbs, WordLoHi, WordLoHiCell},
     witness::{Block, Call, ExecStep, Transaction},
 };
 
@@ -32,7 +32,7 @@ pub struct EcrecoverGadget<F> {
     msg_hash_mod: ModGadget<F>,
     sig_r: Word32Cell<F>,
     sig_s: Word32Cell<F>,
-    sig_v: WordCell<F>,
+    sig_v: WordLoHiCell<F>,
 
     sig_r_canonical: LtWordGadget<F>,
     sig_s_canonical: LtWordGadget<F>,
@@ -119,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 select::expr(is_recovered.expr(), 32.expr(), 0.expr()),
             ),
         ] {
-            cb.call_context_lookup_read(None, field_tag, Word::from_lo_unchecked(value));
+            cb.call_context_lookup_read(None, field_tag, WordLoHi::from_lo_unchecked(value));
         }
 
         let gas_cost = select::expr(

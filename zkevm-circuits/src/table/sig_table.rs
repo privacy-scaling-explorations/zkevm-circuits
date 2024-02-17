@@ -8,11 +8,11 @@ pub struct SigTable {
     /// Indicates whether or not the gates are enabled on the current row.
     pub q_enable: Column<Fixed>,
     /// Keccak256 hash of the message that's signed.
-    pub msg_hash: Word<Column<Advice>>,
+    pub msg_hash: WordLoHi<Column<Advice>>,
     /// signature's `r` component.
-    pub sig_r: Word<Column<Advice>>,
+    pub sig_r: WordLoHi<Column<Advice>>,
     /// signature's `s` component.
-    pub sig_s: Word<Column<Advice>>,
+    pub sig_s: WordLoHi<Column<Advice>>,
     /// should be in range [0, 1]
     pub sig_v: Column<Advice>,
     /// The recovered address, i.e. the 20-bytes address that must have signed the message.
@@ -26,9 +26,9 @@ impl SigTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
-            msg_hash: Word::new([meta.advice_column(), meta.advice_column()]),
-            sig_r: Word::new([meta.advice_column(), meta.advice_column()]),
-            sig_s: Word::new([meta.advice_column(), meta.advice_column()]),
+            msg_hash: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            sig_r: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            sig_s: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             sig_v: meta.advice_column(),
             recovered_addr: meta.advice_column(),
             is_valid: meta.advice_column(),
@@ -48,11 +48,11 @@ impl SigTable {
 
                 for (offset, sign_data) in signatures.iter().enumerate() {
                     let msg_hash =
-                        Word::from(U256::from(sign_data.msg_hash.to_bytes())).into_value();
+                        WordLoHi::from(U256::from(sign_data.msg_hash.to_bytes())).into_value();
                     let sig_r =
-                        Word::from(U256::from(sign_data.signature.0.to_bytes())).into_value();
+                        WordLoHi::from(U256::from(sign_data.signature.0.to_bytes())).into_value();
                     let sig_s =
-                        Word::from(U256::from(sign_data.signature.1.to_bytes())).into_value();
+                        WordLoHi::from(U256::from(sign_data.signature.1.to_bytes())).into_value();
                     let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
                     let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
                     region.assign_fixed(

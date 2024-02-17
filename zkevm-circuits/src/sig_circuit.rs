@@ -23,7 +23,7 @@ use crate::{
         utils::{calc_required_advices, FpChip},
     },
     table::{KeccakTable, SigTable},
-    util::{word::Word, Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{word::WordLoHi, Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
 use eth_types::{
     self,
@@ -428,7 +428,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
         offset: usize,
         is_address_zero: &AssignedValue<F>,
         pk_rlc: &AssignedValue<F>,
-        pk_hash: &Word<AssignedValue<F>>,
+        pk_hash: &WordLoHi<AssignedValue<F>>,
     ) -> Result<(), Error> {
         log::trace!("keccak lookup");
 
@@ -674,7 +674,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 word_lo_hi_powers.clone(),
             );
 
-            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
+            WordLoHi::new([msg_hash_cell_lo, msg_hash_cell_hi])
         };
 
         log::trace!(
@@ -711,7 +711,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 word_lo_hi_powers.clone(),
             );
 
-            Word::new([pk_hash_cell_lo, pk_hash_cell_hi])
+            WordLoHi::new([pk_hash_cell_lo, pk_hash_cell_hi])
         };
 
         // step 4: r,s
@@ -730,7 +730,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 word_lo_hi_powers.clone(),
             );
 
-            Word::new([r_cell_lo, r_cell_hi])
+            WordLoHi::new([r_cell_lo, r_cell_hi])
         };
         let s_cells = {
             let s_lo_cell_bytes = &sign_data_decomposed.s_cells[..16];
@@ -747,7 +747,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                 word_lo_hi_powers,
             );
 
-            Word::new([s_cell_lo, s_cell_hi])
+            WordLoHi::new([s_cell_lo, s_cell_hi])
         };
 
         log::trace!(
@@ -884,7 +884,7 @@ impl<F: Field + halo2_base::utils::ScalarField> SigCircuit<F> {
                         offset,
                         is_address_zero,
                         pk_rlc,
-                        &Word::new([*pk_hash_lo, *pk_hash_hi]),
+                        &WordLoHi::new([*pk_hash_lo, *pk_hash_hi]),
                     )?;
                 }
 

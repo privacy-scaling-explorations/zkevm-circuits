@@ -362,10 +362,10 @@ pub(crate) enum Lookup<F> {
         exponentiation_lo_hi: [Expression<F>; 2],
     },
     SigTable {
-        msg_hash: Word<Expression<F>>,
+        msg_hash: WordLoHi<Expression<F>>,
         sig_v: Expression<F>,
-        sig_r: Word<Expression<F>>,
-        sig_s: Word<Expression<F>>,
+        sig_r: WordLoHi<Expression<F>>,
+        sig_s: WordLoHi<Expression<F>>,
         recovered_addr: Expression<F>,
         is_valid: Expression<F>,
     },

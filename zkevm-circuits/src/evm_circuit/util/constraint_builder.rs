@@ -1493,10 +1493,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// Sig Table
     pub(crate) fn sig_table_lookup(
         &mut self,
-        msg_hash: Word<Expression<F>>,
+        msg_hash: WordLoHi<Expression<F>>,
         sig_v: Expression<F>,
-        sig_r: Word<Expression<F>>,
-        sig_s: Word<Expression<F>>,
+        sig_r: WordLoHi<Expression<F>>,
+        sig_s: WordLoHi<Expression<F>>,
         recovered_addr: Expression<F>,
         is_valid: Expression<F>,
     ) {
