@@ -15,7 +15,6 @@ pub(crate) struct CircuitStats {
     pub num_advice_columns: usize,
     pub num_instance_columns: usize,
     pub num_selectors: usize,
-    // num_simple_selectors: usize,
     pub num_permutation_columns: usize,
     pub degree: usize,
     pub blinding_factors: usize,
@@ -49,9 +48,9 @@ impl CircuitStats {
     //
     // The memory usage M.C and M.S stands for:
     //
-    // - M.C: number of "n elliptic curve points" (with symbol ◯)
-    // - M.S: number of "n field elements"        (with symbol △)
-    // - M.E: number of "e * n field elements"    (with symbol ⬡)
+    // - M.C: number of "elliptic curve points"                         (with symbol ◯)
+    // - M.S: number of "field elements"                                (with symbol △)
+    // - M.E: number of "field elements" that will be extended by "* e" (with symbol ⬡)
     //
     // So the actual memory usage in terms of bytes will be:
     //
@@ -239,13 +238,16 @@ impl CircuitStats {
         let c_l = self.num_lookups;
         let c_pg = (c_p + self.degree - 3) / (self.degree - 2);
         let e = (self.degree - 1).next_power_of_two();
-        // number of "n elliptic curve points"
+        // The estimated peak memory formula comes from point 9 of the analysis, which is the step
+        // of proving that needs the most memory (after that step, allocations start getting freed)
+
+        // number of "elliptic curve points"
         let m_c = 2;
-        // number of "n field elements"
+        // number of "field elements"
         let m_s = 1 + 2 * c_f + 2 * c_p + 2 * c_i + c_a + 3 * c_l + c_pg;
-        // number of "e * n field elements"
+        // number of "field elements" that will be extended by "* e"
         let m_e = 4 + c_f + c_p + c_pg + c_i + c_a + 3 * (c_l > 0) as usize;
-        let unit = m_c + m_s + e * m_e;
+        let unit = 2 * m_c + m_s + e * m_e;
         unit * 2usize.pow(k) * field_bytes
     }
 }
@@ -294,7 +296,6 @@ pub(crate) fn circuit_stats<F: Field>(
         num_advice_columns,
         num_instance_columns,
         num_selectors,
-        // num_simple_selectors: meta.num_simple_selectors(),
         num_permutation_columns,
         degree: meta.degree(),
         blinding_factors: meta.blinding_factors(),

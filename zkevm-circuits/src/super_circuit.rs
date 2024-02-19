@@ -146,7 +146,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             power_of_randomness[0].clone(),
         );
         #[cfg(not(feature = "mock-challenge"))]
-        let challenges_exprs = { challenges.exprs(meta) };
+        let challenges_exprs = challenges.exprs(meta);
 
         let sig_table = SigTable::construct(meta);
 
