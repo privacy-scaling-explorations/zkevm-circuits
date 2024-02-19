@@ -766,6 +766,7 @@ pub fn load_proof_from_file(path: &str) -> Vec<Node> {
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use itertools::Itertools;
     use std::{fs, ops::Deref, path::PathBuf};
 
     #[test]
@@ -808,6 +809,7 @@ mod tests {
                     false
                 }
             })
+            .sorted_by(|a, b| a.file_name().cmp(&b.file_name()))
             .map(|f| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');
