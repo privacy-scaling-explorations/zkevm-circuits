@@ -31,8 +31,8 @@ use zkevm_circuits::{
     pi_circuit::{PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
-        UXTable, WdTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, SigTable,
+        TxTable, UXTable, WdTable,
     },
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuitConfig},
@@ -257,6 +257,8 @@ fn record_stats<F: eth_types::Field>(
     stats.record_shared("exp_table", meta);
     let keccak_table = KeccakTable::construct(meta);
     stats.record_shared("keccak_table", meta);
+    let sig_table = SigTable::construct(meta);
+    stats.record_shared("sig_table", meta);
     let u8_table = UXTable::construct(meta);
     stats.record_shared("u8_table", meta);
     let u10_table = UXTable::construct(meta);
@@ -354,6 +356,7 @@ fn record_stats<F: eth_types::Field>(
             exp_table,
             u8_table,
             u16_table,
+            sig_table,
             feature_config,
         },
     );
