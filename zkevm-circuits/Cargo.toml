@@ -63,7 +63,7 @@ test-circuits = []
 # Test utilities for testool crate to consume
 test-util = ["dep:mock"]
 warn-unimplemented = ["eth-types/warn-unimplemented"]
-stats = ["warn-unimplemented", "dep:cli-table"]
+stats = ["warn-unimplemented", "dep:cli-table", "test-util", "test-circuits"]
 
 [[bin]]
 name = "stats"

@@ -100,7 +100,7 @@ impl<F: Field> LookupTable<F> for MptTable {
 
 impl MptTable {
     /// Construct a new MptTable
-    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             address: meta.advice_column(),
             storage_key: WordLoHi::new([meta.advice_column(), meta.advice_column()]),

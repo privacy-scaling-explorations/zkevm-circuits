@@ -46,20 +46,18 @@ pub(crate) mod ux_table;
 /// withdrawal table
 pub(crate) mod wd_table;
 
-pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
-pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
-pub(crate) use copy_table::CopyTable;
-pub(crate) use exp_table::ExpTable;
+pub use block_table::{BlockContextFieldTag, BlockTable};
+pub use bytecode_table::{BytecodeFieldTag, BytecodeTable};
+pub use copy_table::CopyTable;
+pub use exp_table::ExpTable;
 pub use keccak_table::KeccakTable;
-pub(crate) use ux_table::UXTable;
+pub use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
-pub(crate) use rw_table::RwTable;
-pub(crate) use sig_table::SigTable;
-pub(crate) use tx_table::{
-    TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
-};
-pub(crate) use wd_table::WdTable;
+pub use rw_table::RwTable;
+pub use sig_table::SigTable;
+pub use tx_table::{TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable};
+pub use wd_table::WdTable;
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {
