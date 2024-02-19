@@ -141,7 +141,7 @@ impl FixedTableTag {
             ),
             Self::PrecompileInfo => Box::new(
                 vec![
-                    PrecompileCalls::ECRecover,
+                    PrecompileCalls::Ecrecover,
                     PrecompileCalls::Sha256,
                     PrecompileCalls::Ripemd160,
                     PrecompileCalls::Identity,
@@ -191,6 +191,8 @@ pub enum Table {
     Keccak,
     /// Lookup for exp table
     Exp,
+    /// Lookup for sig table
+    Sig,
 }
 
 #[derive(Clone, Debug)]
@@ -359,6 +361,15 @@ pub(crate) enum Lookup<F> {
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
     },
+    SigTable {
+        msg_hash: WordLoHi<Expression<F>>,
+        sig_v: Expression<F>,
+        sig_r: WordLoHi<Expression<F>>,
+        sig_s: WordLoHi<Expression<F>>,
+        recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
+    },
+
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -378,6 +389,7 @@ impl<F: Field> Lookup<F> {
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
+            Self::SigTable { .. } => Table::Sig,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -495,6 +507,25 @@ impl<F: Field> Lookup<F> {
                 exponent_lo_hi[1].clone(),
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
+            ],
+            Self::SigTable {
+                msg_hash,
+                sig_v,
+                sig_r,
+                sig_s,
+                recovered_addr,
+                is_valid,
+            } => vec![
+                1.expr(), // q_enable
+                msg_hash.lo(),
+                msg_hash.hi(),
+                sig_v.clone(),
+                sig_r.lo(),
+                sig_r.hi(),
+                sig_s.lo(),
+                sig_s.hi(),
+                recovered_addr.clone(),
+                is_valid.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

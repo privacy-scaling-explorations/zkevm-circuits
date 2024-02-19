@@ -31,6 +31,7 @@ use eth_types::{
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
@@ -112,6 +113,11 @@ pub struct FixedCParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// This number indicate what 100% usage means, for example if we can support up to 2
+    /// ecPairing inside circuit, and max_vertical_circuit_rows is set to 1_000_000,
+    /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
+    /// for the ec circuit.
+    pub max_vertical_circuit_rows: usize,
 }
 
 /// Unset Circuits Parameters
@@ -153,6 +159,7 @@ impl Default for FixedCParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_vertical_circuit_rows: 0,
         }
     }
 }
@@ -497,6 +504,7 @@ impl CircuitInputBuilder<DynamicCParams> {
                 max_bytecode,
                 max_evm_rows,
                 max_keccak_rows,
+                max_vertical_circuit_rows: 0,
             }
         };
         let mut cib = CircuitInputBuilder::<FixedCParams> {

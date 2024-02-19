@@ -37,6 +37,8 @@ pub(crate) mod keccak_table;
 pub mod mpt_table;
 /// rw table
 pub(crate) mod rw_table;
+/// signature table
+pub(crate) mod sig_table;
 /// tx table
 pub(crate) mod tx_table;
 /// ux table
@@ -53,6 +55,7 @@ pub(crate) use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
 pub(crate) use rw_table::RwTable;
+pub(crate) use sig_table::SigTable;
 pub(crate) use tx_table::{
     TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
 };

@@ -7,11 +7,13 @@ use crate::{
     util::{log2_ceil, word::WordLoHi, SubCircuit},
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, Withdrawal},
+    circuit_input_builder::{
+        self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, PrecompileEvents, Withdrawal,
+    },
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Address, Field, ToScalar, Word, H256};
+use eth_types::{sign_types::SignData, Address, Field, ToScalar, Word, H256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
@@ -51,6 +53,8 @@ pub struct Block<F> {
     pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
+    /// IO to/from the precompiled contract calls.
+    pub precompile_events: PrecompileEvents,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
@@ -71,6 +75,26 @@ impl<F: Field> Block<F> {
                 }
             }
         }
+    }
+
+    /// Get signature (witness) from the block for tx signatures and ecRecover calls.
+    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
+        let mut signatures: Vec<SignData> = self
+            .txs
+            .iter()
+            .map(|tx| tx.tx.sign_data(self.context.chain_id.as_u64()))
+            .filter_map(|res| res.ok())
+            .collect::<Vec<SignData>>();
+        signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
+        if padding && self.txs.len() < self.circuits_params.max_txs {
+            // padding tx's sign data
+            signatures.push(
+                Transaction::dummy()
+                    .sign_data(self.context.chain_id.as_u64())
+                    .unwrap(),
+            );
+        }
+        signatures
     }
 
     /// Get a read-write record
@@ -294,6 +318,7 @@ pub fn block_convert<F: Field>(
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        precompile_events: block.precompile_events.clone(),
         eth_block: block.eth_block.clone(),
     };
     let public_data = public_data_convert(&block);

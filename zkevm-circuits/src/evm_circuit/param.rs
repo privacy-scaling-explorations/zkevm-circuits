@@ -42,7 +42,8 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
-    + EXP_TABLE_LOOKUPS;
+    + EXP_TABLE_LOOKUPS
+    + SIG_TABLE_LOOKUPS;
 
 /// Lookups done per row.
 pub const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -54,6 +55,7 @@ pub const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Copy, COPY_TABLE_LOOKUPS),
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
+    (Table::Sig, SIG_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
@@ -79,6 +81,9 @@ pub const KECCAK_TABLE_LOOKUPS: usize = 1;
 
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;
+
+/// Sig Table lookups done in EVMCircuit
+pub const SIG_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.

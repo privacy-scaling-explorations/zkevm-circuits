@@ -21,8 +21,8 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
-        UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable,
+        SigTable, TxTable, UXTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
@@ -50,6 +50,7 @@ pub struct EvmCircuitConfig<F> {
     copy_table: CopyTable,
     keccak_table: KeccakTable,
     exp_table: ExpTable,
+    sig_table: SigTable,
 }
 
 /// Circuit configuration arguments
@@ -74,6 +75,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u8_table: UXTable<8>,
     /// U16Table
     pub u16_table: UXTable<16>,
+    /// SigTable
+    pub sig_table: SigTable,
     /// Feature config
     pub feature_config: FeatureConfig,
 }
@@ -95,6 +98,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             exp_table,
             u8_table,
             u16_table,
+            sig_table,
             feature_config,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -112,6 +116,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            &sig_table,
             feature_config,
         ));
 
@@ -129,6 +134,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         exp_table.annotate_columns(meta);
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
+        sig_table.annotate_columns(meta);
 
         Self {
             fixed_table,
@@ -142,6 +148,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            sig_table,
         }
     }
 }
@@ -389,6 +396,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let challenges = Challenges::construct(meta);
         let challenges_expr = challenges.exprs(meta);
 
+        let sig_table = SigTable::construct(meta);
         (
             EvmCircuitConfig::new(
                 meta,
@@ -403,6 +411,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     exp_table,
                     u8_table,
                     u16_table,
+                    sig_table,
                     feature_config: params,
                 },
             ),
@@ -448,6 +457,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
+        config.sig_table.dev_load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

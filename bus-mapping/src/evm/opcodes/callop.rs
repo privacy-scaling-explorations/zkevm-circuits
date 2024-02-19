@@ -362,7 +362,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // insert a copy event (input) for this step and generate memory op
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.call_data_length > 0 {
+                let input_bytes = if call.call_data_length > 0 {
                     let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
                         min(input_len, call.call_data_length as usize)
                     } else {
@@ -390,11 +390,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: input_bytes.iter().map(|s| (*s, false)).collect(),
                         },
                     );
-                }
+                    Some(input_bytes)
+                } else {
+                    None
+                };
 
                 // write the result in the callee's memory
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success && !result.is_empty() {
+                let output_bytes = if call.is_success && !result.is_empty() {
                     let (output_bytes, _prev_bytes) = state
                         .gen_copy_steps_for_precompile_callee_memory(&mut exec_step, &result)?;
 
@@ -413,11 +416,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: output_bytes.iter().map(|s| (*s, false)).collect(),
                         },
                     );
-                }
+                    Some(output_bytes)
+                } else {
+                    None
+                };
 
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success && length > 0 {
+                let return_bytes = if call.is_success && length > 0 {
                     let return_bytes = state.gen_copy_steps_for_precompile_returndata(
                         &mut exec_step,
                         call.return_data_offset,
@@ -439,7 +445,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             bytes: return_bytes.iter().map(|s| (*s, false)).collect(),
                         },
                     );
-                }
+                    Some(return_bytes)
+                } else {
+                    None
+                };
 
                 if has_oog_err {
                     let mut oog_step = ErrorOOGPrecompile::gen_associated_ops(
@@ -462,6 +471,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[1].clone(),
                         call.clone(),
                         precompile_call,
+                        &input_bytes.unwrap_or_default(),
+                        &output_bytes.unwrap_or_default(),
+                        &return_bytes.unwrap_or_default(),
                     )?;
 
                     // Set gas left and gas cost for precompile step.

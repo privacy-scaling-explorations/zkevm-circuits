@@ -2,7 +2,7 @@
 
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Address, Bytecode, Word,
+    Address, Bytecode, ToBigEndian, Word,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use revm_precompile::{Precompile, PrecompileError, Precompiles};
@@ -63,7 +63,7 @@ pub(crate) fn execute_precompiled(
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrecompileCalls {
     /// Elliptic Curve Recovery
-    ECRecover = 0x01,
+    Ecrecover = 0x01,
     /// SHA2-256 hash function
     Sha256 = 0x02,
     /// Ripemd-160 hash function
@@ -80,6 +80,12 @@ pub enum PrecompileCalls {
     Bn128Pairing = 0x08,
     /// Compression function
     Blake2F = 0x09,
+}
+
+impl Default for PrecompileCalls {
+    fn default() -> Self {
+        Self::Ecrecover
+    }
 }
 
 impl From<PrecompileCalls> for Address {
@@ -105,7 +111,7 @@ impl From<PrecompileCalls> for usize {
 impl From<u8> for PrecompileCalls {
     fn from(value: u8) -> Self {
         match value {
-            0x01 => Self::ECRecover,
+            0x01 => Self::Ecrecover,
             0x02 => Self::Sha256,
             0x03 => Self::Ripemd160,
             0x04 => Self::Identity,
@@ -123,7 +129,7 @@ impl PrecompileCalls {
     /// Get the base gas cost for the precompile call.
     pub fn base_gas_cost(&self) -> u64 {
         match self {
-            Self::ECRecover => GasCost::PRECOMPILE_ECRECOVER_BASE,
+            Self::Ecrecover => GasCost::PRECOMPILE_ECRECOVER_BASE,
             Self::Sha256 => GasCost::PRECOMPILE_SHA256_BASE,
             Self::Ripemd160 => GasCost::PRECOMPILE_RIPEMD160_BASE,
             Self::Identity => GasCost::PRECOMPILE_IDENTITY_BASE,
@@ -143,7 +149,7 @@ impl PrecompileCalls {
     /// Maximum length of input bytes considered for the precompile call.
     pub fn input_len(&self) -> Option<usize> {
         match self {
-            Self::ECRecover | Self::Bn128Add => Some(128),
+            Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
             _ => None,
         }
@@ -219,5 +225,84 @@ impl PrecompileCallArgs {
         }
 
         code
+    }
+}
+
+/// Auxiliary data for Ecrecover
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EcrecoverAuxData {
+    /// Keccak hash of the message being signed.
+    pub msg_hash: Word,
+    /// v-component of signature.
+    pub sig_v: Word,
+    /// r-component of signature.
+    pub sig_r: Word,
+    /// s-component of signature.
+    pub sig_s: Word,
+    /// Address that was recovered.
+    pub recovered_addr: Address,
+    /// Input bytes to the ecrecover call.
+    pub input_bytes: Vec<u8>,
+    /// Output bytes from the ecrecover call.
+    pub output_bytes: Vec<u8>,
+    /// Bytes returned to the caller from the ecrecover call.
+    pub return_bytes: Vec<u8>,
+}
+
+impl EcrecoverAuxData {
+    /// Create a new instance of ecrecover auxiliary data.
+    pub fn new(input: &[u8], output: &[u8], return_bytes: &[u8]) -> Self {
+        let mut resized_input = input.to_vec();
+        resized_input.resize(128, 0u8);
+        let mut resized_output = output.to_vec();
+        resized_output.resize(32, 0u8);
+
+        // assert that recovered address is 20 bytes.
+        assert!(resized_output[0x00..0x0c].iter().all(|&b| b == 0));
+        let recovered_addr = Address::from_slice(&resized_output[0x0c..0x20]);
+
+        Self {
+            msg_hash: Word::from_big_endian(&resized_input[0x00..0x20]),
+            sig_v: Word::from_big_endian(&resized_input[0x20..0x40]),
+            sig_r: Word::from_big_endian(&resized_input[0x40..0x60]),
+            sig_s: Word::from_big_endian(&resized_input[0x60..0x80]),
+            recovered_addr,
+            input_bytes: input.to_vec(),
+            output_bytes: output.to_vec(),
+            return_bytes: return_bytes.to_vec(),
+        }
+    }
+
+    /// Sanity check and returns recovery ID.
+    pub fn recovery_id(&self) -> Option<u8> {
+        let sig_v_bytes = self.sig_v.to_be_bytes();
+        let sig_v = sig_v_bytes[31];
+        if sig_v_bytes.iter().take(31).all(|&b| b == 0) && (sig_v == 27 || sig_v == 28) {
+            Some(sig_v - 27)
+        } else {
+            None
+        }
+    }
+}
+
+/// Auxiliary data attached to an internal state for precompile verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrecompileAuxData {
+    /// Base precompile (used for Identity, SHA256, RIPEMD-160 and BLAKE2F).
+    Base {
+        /// input bytes to the identity call.
+        input_bytes: Vec<u8>,
+        /// output bytes from the identity call.
+        output_bytes: Vec<u8>,
+        /// bytes returned back to the caller from the identity call.
+        return_bytes: Vec<u8>,
+    },
+    /// Ecrecover.
+    Ecrecover(EcrecoverAuxData),
+}
+
+impl Default for PrecompileAuxData {
+    fn default() -> Self {
+        Self::Ecrecover(EcrecoverAuxData::default())
     }
 }

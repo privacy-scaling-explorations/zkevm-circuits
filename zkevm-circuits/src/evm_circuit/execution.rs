@@ -2,7 +2,7 @@ use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_U16_LOOKUPS,
-        N_U8_LOOKUPS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        N_U8_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     step::HasExecutionState,
     util::{instrumentation::Instrument, CachedRegion, StoredExpression},
@@ -190,7 +190,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
-use precompiles::IdentityGadget;
+use precompiles::{EcrecoverGadget, IdentityGadget};
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -337,6 +337,8 @@ pub struct ExecutionConfig<F> {
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
+    // precompile calls
+    precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
     invalid_tx: Option<Box<InvalidTxGadget<F>>>,
 }
@@ -357,6 +359,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        sig_table: &dyn LookupTable<F>,
         feature_config: FeatureConfig,
     ) -> Self {
         let mut instrument = Instrument::default();
@@ -615,6 +618,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_return_data_out_of_bound: configure_gadget!(),
             // precompile calls
             precompile_identity_gadget: configure_gadget!(),
+            precompile_ecrecover_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -635,6 +639,7 @@ impl<F: Field> ExecutionConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            sig_table,
             &challenges,
             &cell_manager,
         );
@@ -880,6 +885,7 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        sig_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<CMFixedWidthStrategy>,
     ) {
@@ -899,6 +905,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
+                        Table::Sig => sig_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -1110,6 +1117,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_u8", N_U8_LOOKUPS),
@@ -1410,7 +1418,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
-            // precompile calls
+            ExecutionState::PrecompileEcrecover => {
+                assign_exec_step!(self.precompile_ecrecover_gadget)
+            }
             ExecutionState::PrecompileIdentity => {
                 assign_exec_step!(self.precompile_identity_gadget)
             }

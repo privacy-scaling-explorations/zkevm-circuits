@@ -1,13 +1,15 @@
 //! secp256k1 signature types and helper functions.
 
 use crate::{ToBigEndian, Word};
+use ethers_core::{
+    types::{Address, Bytes},
+    utils::keccak256,
+};
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
     halo2curves::{
-        group::{
-            ff::{FromUniformBytes, PrimeField},
-            Curve,
-        },
+        ff::FromUniformBytes,
+        group::{ff::PrimeField, prime::PrimeCurveAffine, Curve},
         secp256k1::{self, Secp256k1Affine},
         Coordinates,
     },
@@ -21,7 +23,7 @@ pub fn sign(
     randomness: secp256k1::Fq,
     sk: secp256k1::Fq,
     msg_hash: secp256k1::Fq,
-) -> (secp256k1::Fq, secp256k1::Fq) {
+) -> (secp256k1::Fq, secp256k1::Fq, u8) {
     let randomness_inv =
         Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
@@ -38,19 +40,34 @@ pub fn sign(
 
     let sig_r = secp256k1::Fq::from_uniform_bytes(&x_bytes); // get x coordinate (E::Base) on E::Scalar
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s)
+    let sig_v = sig_point.to_affine().y.is_odd().unwrap_u8();
+    (sig_r, sig_s, sig_v)
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
 /// signature.
 #[derive(Clone, Debug)]
 pub struct SignData {
-    /// Secp256k1 signature point
-    pub signature: (secp256k1::Fq, secp256k1::Fq),
+    /// Secp256k1 signature point (r, s, v)
+    /// v must be 0 or 1
+    pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
+    /// Message being hashed before signing.
+    pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
+}
+
+impl SignData {
+    /// Recover address of the signature
+    pub fn get_addr(&self) -> Address {
+        if self.pk == Secp256k1Affine::identity() {
+            return Address::zero();
+        }
+        let pk_hash = keccak256(pk_bytes_swap_endianness(&pk_bytes_le(&self.pk)));
+        Address::from_slice(&pk_hash[12..])
+    }
 }
 
 lazy_static! {
@@ -59,13 +76,15 @@ lazy_static! {
         let sk = secp256k1::Fq::ONE;
         let pk = generator * sk;
         let pk = pk.to_affine();
+        let msg = Bytes::new();
         let msg_hash = secp256k1::Fq::ONE;
         let randomness = secp256k1::Fq::ONE;
-        let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
+        let (sig_r, sig_s, sig_v) = sign(randomness, sk, msg_hash);
 
         SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, sig_v),
             pk,
+            msg,
             msg_hash,
         }
     };
