@@ -371,7 +371,7 @@ pub(crate) struct TransferToGadget<F> {
     receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
 impl<F: Field> TransferToGadget<F> {
@@ -475,7 +475,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
     sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
     sender_sub_value: UpdateBalanceGadget<F, 2, false>,
     receiver: TransferToGadget<F>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
