@@ -1,7 +1,5 @@
 # ZKEVM Bus-Mapping
 
-![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/appliedzkp/zkevm-circuits/CI%20checks/main?style=for-the-badge)
-
 `Bus-Mapping` is a crate designed to parse EVM execution traces and manipulate
 all of the data they provide in order to obtain structured witness inputs
 for the EVM Proof and the State Proof.
@@ -41,14 +39,20 @@ The goal of this crate is to serve as:
 ### Parsing
 Provided a JSON file or a JSON as a stream of bytes, which contains an
 execution trace from an EVM, you can parse it and construct an
-`ExecutionTrace` instance from it. That will automatically fill all of the
+[`GethExecTrace`](eth_types::GethExecTrace) instance from it. That will automatically fill all of the
 bus-mapping instances of each
-[`ExecutionStep`](crate::exec_trace::ExecutionStep) plus fill in an
+[`ExecStep`](crate::circuit_input_builder::ExecStep) plus fill in an
 [`OperationContainer`](crate::operation::container::OperationContainer) with
 all of the Memory, Stack and Storage ops performed by the provided trace.
 
 ```rust
-use bus_mapping::{ExecutionTrace, ExecutionStep, BlockConstants, Error, evm::EvmWord};
+use bus_mapping::{Error, mock::BlockData};
+use bus_mapping::state_db::{self, StateDB, CodeDB};
+use eth_types::{
+    self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
+};
+use mock::test_ctx::{TestContext, helpers::*};
+use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
 
 let input_trace = r#"
 [
@@ -98,28 +102,44 @@ let input_trace = r#"
 ]
 "#;
 
-let block_ctants = BlockConstants::new(
-    Word::from(0),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-    pasta_curves::Fp::zero(),
-);
-
-// Here we have the ExecutionTrace completely formed with all of the data to witness structured.
-let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
-    input_trace.as_bytes(),
-    block_ctants,
-).expect("Error on trace generation");
+// We use the [`TestContext`] struct to mock a block.
+let code = bytecode! {
+    // Write 0x6f to storage slot 0
+    PUSH1(0x6fu64)
+    PUSH1(0x00u64)
+    SSTORE
+    // Load storage slot 0
+    PUSH1(0x00u64)
+    SLOAD
+    STOP
+};
+// Get the execution steps from the external tracer
+let block: GethData = TestContext::<2, 1>::new(
+    None,
+    account_0_code_account_1_no_code(code),
+    tx_from_1_to_0,
+    |block, _tx| block.number(0xcafeu64),
+)
+.unwrap()
+.into();
+// Here we update the circuit input with the data from the transaction trace.
+let builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+let builder = builder
+    .handle_block(&block.eth_block, &block.geth_traces)
+    .unwrap();
+let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
+let geth_trace = GethExecTrace {
+    return_value: "".to_string(),
+    gas: block.eth_block.transactions[0].gas.as_u64(),
+    invalid: false,
+    failed: false,
+    struct_logs: geth_steps,
+};
 
 // Get an ordered vector with all of the Stack operations of this trace.
-let stack_ops = obtained_exec_trace.sorted_stack_ops();
-
+let stack_ops = builder.block.container.sorted_stack();
 // You can also iterate over the steps of the trace and witness the EVM Proof.
-obtained_exec_trace.steps().iter();
+builder.block.txs()[0].steps().iter();
 ```
 
 Assume we have the following trace:
@@ -156,7 +176,7 @@ basically:
 On that way, we would get something like this for the Memory ops:
 ```text,ignore
 | `key`  | `val`         | `rw`    | `gc` | Note                                     |
-|:------:| ------------- | ------- | ---- | ---------------------------------------- |
+| :----: | ------------- | ------- | ---- | ---------------------------------------- |
 | `0x40` | `0`           | `Write` |      | Init                                     |
 | `0x40` | `0x80`        | `Write` | 0    | Assume written at the beginning of `code`|
 | `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                               |
@@ -167,18 +187,13 @@ On that way, we would get something like this for the Memory ops:
 | `0x80` | `0x1d97c6efb` | `Write` | 24   | `73 MSTORE`                              |
 |   -    |               |         |      |                                          |
 | `0xa0` | `0`           | `Write` |      | Init                                     |
-| `0xa0` | `0xcafeb0ba`  | `Write` | 34   | `83 MSTORE`
+| `0xa0` | `0xcafeb0ba`  | `Write` | 34   | `83 MSTORE`                              |
 ```
 
 Where as you see, we group by `memory_address` and then order by
 `global_counter`.
 
-- Iterate over the `ExecutionTrace` itself over
-each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
+- Iterate over the [`GethExecTrace`](eth_types::GethExecTrace) itself over
+each [`ExecStep`](crate::circuit_input_builder::ExecStep)'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
 This is also automatically done via the
 [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
-
-### Documentation
-For extra documentation, check the book with the specs written for the
-entire ZK-EVM solution.
-See: <https://hackmd.io/@liangcc/zkvmbook/https%3A%2F%2Fhackmd.io%2FAmhZ2ryITxicmhYFyQ0DEw#Bus-Mapping>
