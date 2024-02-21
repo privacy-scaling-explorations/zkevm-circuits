@@ -63,7 +63,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     callee_nonce: Cell<F>,
     prev_code_hash: WordLoHiCell<F>,
     prev_code_hash_is_zero: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
-    transfer: TransferGadget<F>,
+    transfer: TransferGadget<F, false>,
     create: ContractCreateGadget<F, IS_CREATE2>,
 
     init_code: MemoryAddressGadget<F>,
@@ -334,9 +334,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     create.caller_address(),
                     contract_addr.to_word(),
                     0.expr(),
-                    true,
                     value.clone(),
                     &mut callee_reversion_info,
+                    None,
                 );
 
                 // EIP 161, the nonce of a newly created contract is 1
@@ -650,9 +650,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 self.transfer.assign(
                     region,
                     offset,
+                    (None, None),
                     caller_balance_pair,
                     callee_balance_pair,
                     value,
+                    None,
                 )?;
             }
 

@@ -17,7 +17,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell,
+            not, Cell,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
@@ -370,7 +370,6 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 pub(crate) struct TransferToGadget<F> {
     receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
-    must_create: Expression<F>,
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
@@ -380,16 +379,16 @@ impl<F: Field> TransferToGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        must_create: Expression<F>,
         value: Word32Cell<F>,
         mut reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         let value_is_zero = cb.is_zero_word(&value);
+
         // Create account
         cb.condition(
             and::expr([
                 not::expr(receiver_exists.expr()),
-                or::expr([not::expr(value_is_zero.expr()), must_create.clone()]),
+                not::expr(value_is_zero.expr()),
             ]),
             |cb| {
                 cb.account_write(
@@ -409,7 +408,6 @@ impl<F: Field> TransferToGadget<F> {
         Self {
             receiver,
             receiver_exists,
-            must_create,
             value_is_zero,
         }
     }
@@ -436,8 +434,7 @@ impl<F: Field> TransferToGadget<F> {
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         and::expr([
-                not::expr(self.receiver_exists.expr()),
-                or::expr([not::expr(self.value_is_zero.expr()), self.must_create.clone()]),
+                not::expr(self.receiver_exists.expr()),not::expr(self.value_is_zero.expr())
             ]) +
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr())
@@ -452,26 +449,29 @@ impl<F: Field> TransferToGadget<F> {
 /// setting it's code_hash = EMPTY_HASH.   The receiver account is also created
 /// unconditionally if must_create is true.  This gadget is used in BeginTx.
 #[derive(Clone, Debug)]
-pub(crate) struct TransferWithGasFeeGadget<F> {
-    sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
+pub(crate) struct TransferGadget<F, const WITH_FEE: bool> {
+    sender_sub_fee: Option<UpdateBalanceGadget<F, 2, false>>,
     sender_sub_value: UpdateBalanceGadget<F, 2, false>,
     receiver: TransferToGadget<F>,
-    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
-impl<F: Field> TransferWithGasFeeGadget<F> {
+impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         sender_address: WordLoHi<Expression<F>>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        must_create: Expression<F>,
         value: Word32Cell<F>,
-        gas_fee: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
+        gas_fee: Option<Word32Cell<F>>,
     ) -> Self {
-        let sender_sub_fee = cb.decrease_balance(sender_address.to_word(), gas_fee, None);
+        let sender_sub_fee = if WITH_FEE {
+            Some(cb.decrease_balance(sender_address.to_word(), gas_fee.expect("fee exists"), None))
+        } else {
+            None
+        };
         let value_is_zero = cb.is_zero_word(&value);
         // Skip transfer if value == 0
         let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
@@ -481,7 +481,6 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             cb,
             receiver_address,
             receiver_exists,
-            must_create,
             value,
             Some(reversion_info),
         );
@@ -496,12 +495,9 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
-        1.expr() +
+        WITH_FEE.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
-            not::expr(self.value_is_zero.expr()),
-            self.receiver.must_create.clone()]
-        )]) * 1.expr() +
+        self.receiver.rw_delta()+
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -510,10 +506,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
-            not::expr(self.value_is_zero.expr()),
-            self.receiver.must_create.clone()]
-        )]) +
+        self.receiver.rw_delta()+
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -524,19 +517,21 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (U256, U256),
+        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (Option<U256>, Option<U256>),
         (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
         (receiver_balance, prev_receiver_balance): (U256, U256),
         value: U256,
-        gas_fee: U256,
+        gas_fee: Option<U256>,
     ) -> Result<(), Error> {
-        self.sender_sub_fee.assign(
-            region,
-            offset,
-            prev_sender_balance_sub_fee,
-            vec![gas_fee],
-            sender_balance_sub_fee,
-        )?;
+        if WITH_FEE {
+            self.sender_sub_fee.as_ref().expect("Exists").assign(
+                region,
+                offset,
+                prev_sender_balance_sub_fee.expect("exists"),
+                vec![gas_fee.expect("exists")],
+                sender_balance_sub_fee.expect("exists"),
+            )?;
+        }
         self.sender_sub_value.assign(
             region,
             offset,
@@ -553,91 +548,6 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
         Ok(())
-    }
-}
-
-/// The TransferGadget handles a transfer of value from sender to receiver.  The
-/// transfer is only performed if the value is not zero.  If the transfer is
-/// performed and the receiver account doesn't exist, it will be created by
-/// setting it's code_hash = EMPTY_HASH. This gadget is used in callop.
-#[derive(Clone, Debug)]
-pub(crate) struct TransferGadget<F> {
-    sender: UpdateBalanceGadget<F, 2, false>,
-    receiver: TransferToGadget<F>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
-}
-
-impl<F: Field> TransferGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        sender_address: WordLoHi<Expression<F>>,
-        receiver_address: WordLoHi<Expression<F>>,
-        receiver_exists: Expression<F>,
-        must_create: bool,
-        value: Word32Cell<F>,
-        reversion_info: &mut ReversionInfo<F>,
-    ) -> Self {
-        let value_is_zero = cb.is_zero_word(&value);
-        // Skip transfer if value == 0
-        let sender = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            cb.decrease_balance(sender_address, value.clone(), Some(reversion_info))
-        });
-        let receiver = TransferToGadget::construct(
-            cb,
-            receiver_address,
-            receiver_exists,
-            must_create.expr(),
-            value,
-            Some(reversion_info),
-        );
-
-        Self {
-            sender,
-            receiver,
-            value_is_zero,
-        }
-    }
-
-    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-                        not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.clone()),
-                        self.receiver.must_create.clone()]
-                    ) * 1.expr() +
-        // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        (sender_balance, sender_balance_prev): (U256, U256),
-        (receiver_balance, receiver_balance_prev): (U256, U256),
-        value: U256,
-    ) -> Result<(), Error> {
-        self.sender.assign(
-            region,
-            offset,
-            sender_balance_prev,
-            vec![value],
-            sender_balance,
-        )?;
-        self.receiver.assign(
-            region,
-            offset,
-            (receiver_balance, receiver_balance_prev),
-            value,
-        )?;
-        self.value_is_zero
-            .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
-        Ok(())
-    }
-
-    pub(crate) fn rw_delta(&self) -> Expression<F> {
-        // +1 Write Account (sender) Balance
-        not::expr(self.value_is_zero.expr()) + self.receiver.rw_delta()
     }
 }
 

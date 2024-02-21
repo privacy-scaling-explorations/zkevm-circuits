@@ -60,7 +60,7 @@ pub(crate) struct CallOpGadget<F> {
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
-    transfer: TransferGadget<F>,
+    transfer: TransferGadget<F, false>,
     // current handling Call* opcode's caller balance
     caller_balance: WordLoHi<Cell<F>>,
     // check if insufficient balance case
@@ -242,9 +242,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 caller_address.to_word(),
                 callee_address.to_word(),
                 not::expr(call_gadget.callee_not_exists.expr()),
-                false,
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
+                None,
             )
         });
         // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
@@ -876,9 +876,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             self.transfer.assign(
                 region,
                 offset,
+                (None, None),
                 caller_balance_pair,
                 callee_balance_pair,
                 value,
+                None,
             )?;
         }
 
