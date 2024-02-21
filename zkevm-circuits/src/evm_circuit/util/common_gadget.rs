@@ -385,14 +385,21 @@ impl<F: Field> TransferToGadget<F> {
         mut reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         let value_is_zero = cb.is_zero_word(&value);
-
-        Self::create_account(
-            cb,
-            receiver_address.clone(),
-            receiver_exists.clone(),
-            must_create.clone(),
-            value_is_zero.expr(),
-            reversion_info.as_deref_mut(),
+        // Create account
+        cb.condition(
+            and::expr([
+                not::expr(receiver_exists.expr()),
+                or::expr([not::expr(value_is_zero.expr()), must_create.clone()]),
+            ]),
+            |cb| {
+                cb.account_write(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    cb.empty_code_hash(),
+                    WordLoHi::zero(),
+                    reversion_info.as_deref_mut(),
+                );
+            },
         );
 
         let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
@@ -405,31 +412,6 @@ impl<F: Field> TransferToGadget<F> {
             must_create,
             value_is_zero,
         }
-    }
-
-    pub(crate) fn create_account(
-        cb: &mut EVMConstraintBuilder<F>,
-        receiver_address: WordLoHi<Expression<F>>,
-        receiver_exists: Expression<F>,
-        must_create: Expression<F>,
-        value_is_zero: Expression<F>,
-        reversion_info: Option<&mut ReversionInfo<F>>,
-    ) {
-        cb.condition(
-            and::expr([
-                not::expr(receiver_exists.expr()),
-                or::expr([not::expr(value_is_zero.expr()), must_create]),
-            ]),
-            |cb| {
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    cb.empty_code_hash(),
-                    WordLoHi::zero(),
-                    reversion_info,
-                );
-            },
-        );
     }
 
     pub(crate) fn assign(
