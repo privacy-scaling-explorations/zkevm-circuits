@@ -383,19 +383,18 @@ impl<F: Field> TransferToGadget<F> {
         must_create: Expression<F>,
         value: Word32Cell<F>,
         mut reversion_info: Option<&mut ReversionInfo<F>>,
-        account_write: bool,
     ) -> Self {
         let value_is_zero = cb.is_zero_word(&value);
-        if account_write {
-            Self::create_account(
-                cb,
-                receiver_address.clone(),
-                receiver_exists.clone(),
-                must_create.clone(),
-                value_is_zero.expr(),
-                reversion_info.as_deref_mut(),
-            );
-        }
+
+        Self::create_account(
+            cb,
+            receiver_address.clone(),
+            receiver_exists.clone(),
+            must_create.clone(),
+            value_is_zero.expr(),
+            reversion_info.as_deref_mut(),
+        );
+
         let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
             cb.increase_balance(receiver_address, value.clone(), reversion_info)
         });
@@ -503,7 +502,6 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             must_create,
             value,
             Some(reversion_info),
-            true,
         );
 
         Self {
@@ -609,7 +607,6 @@ impl<F: Field> TransferGadget<F> {
             must_create.expr(),
             value,
             Some(reversion_info),
-            true,
         );
 
         Self {
