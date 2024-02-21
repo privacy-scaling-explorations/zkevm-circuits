@@ -116,7 +116,7 @@ impl Instrument {
 }
 
 /// Struct which contains a Cost/ColumnType report for a particular EVM
-/// `ExecutionStep`.
+/// [`ExecStep`](bus_mapping::circuit_input_builder::ExecStep).
 #[derive(Clone, Debug, Default)]
 pub struct ExecStateReport {
     pub state: ExecutionState,
