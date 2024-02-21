@@ -263,6 +263,22 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			// Needs to be after `specialTest == 1` preparation:
 			nodes = append(nodes, GetStartNode(proofType, sRoot, cRoot, specialTest))
 
+			/*
+			if tMod.Type == StorageDoesNotExist {
+				fmt.Println("===================");
+				fmt.Println(addr);
+				fmt.Println(tMod.Key);
+				fmt.Println("");
+
+				for i := 0; i < len(storageProof); i++ {
+					fmt.Println(storageProof[i])
+					fmt.Println("")
+				}
+				fmt.Println("========");
+				fmt.Println("");
+			}
+			*/
+
 			// In convertProofToWitness, we can't use account address in its original form (non-hashed), because
 			// of the "special" test for which we manually manipulate the "hashed" address and we don't have a preimage.
 			// TODO: addr is used for calling GetProof for modified extension node only, might be done in a different way
@@ -476,17 +492,44 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			node := prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, isAccountProof, false, false)
 			nodes = append(nodes, node)
 		}
-	} else if (len1 == 0 && len2 == 0) || isBranch(proof2[len(proof2)-1]) {
+	} else {
 		// Account proof has drifted leaf as the last row, storage proof has non-existing-storage row
 		// as the last row.
 		// When non existing proof and only the branches are returned, we add a placeholder leaf.
 		// This is to enable the lookup (in account leaf row), most constraints are disabled for these rows.
-		if isAccountProof {
-			node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
-			nodes = append(nodes, node)
-		} else {
-			node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
-			nodes = append(nodes, node)
+
+		isLastBranch := isBranch(proof2[len(proof2)-1])
+
+		if (len1 == 0 && len2 == 0) || isLastBranch {
+			// We need to add a placeholder leaf
+			if isAccountProof {
+				node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
+				nodes = append(nodes, node)
+			} else {
+				node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
+				nodes = append(nodes, node)
+			}
+		} else if len(extNibblesC) > len(proof2)-1 {
+			isLastExtNode := len(extNibblesC[len(proof2)-1]) != 0
+			if isLastExtNode {
+				// We need to add a placeholder branch and a placeholder leaf.
+				// We are in a non-existing-proof and an extension node is the last element of getProof.
+				// However, this extension node has not been added to the nodes yet (it's always added
+				// together with a branch).
+				// It's non-existing-proof and we have a "wrong" extension node, that means we have
+				// to obtain the underlying branch to be able to finally add (besides this branch)
+				// the placeholder leaf. So we need to query getProof again with one of the leaves that is
+				// actually in this extension node.
+				// TODO:
+				if isAccountProof {
+					node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
+					nodes = append(nodes, node)
+				} else {
+					node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
+
+					nodes = append(nodes, node)
+				}
+			}
 		}
 	}
 
