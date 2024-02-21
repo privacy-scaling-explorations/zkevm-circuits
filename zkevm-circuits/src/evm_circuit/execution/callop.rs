@@ -242,7 +242,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 caller_address.to_word(),
                 callee_address.to_word(),
                 not::expr(call_gadget.callee_not_exists.expr()),
-                0.expr(),
+                false,
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
             )
