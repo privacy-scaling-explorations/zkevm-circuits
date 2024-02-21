@@ -110,7 +110,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             false.expr(),
             mul_effective_tip_by_gas_used.product().clone(),
             None,
-            true,
         );
 
         let end_tx = EndTxHelperGadget::construct(
