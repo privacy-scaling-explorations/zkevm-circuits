@@ -209,6 +209,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             create.caller_nonce(),
         );
 
+        // TODO: add missing constraints:
+
         // 1. Handle contract creation transaction.
         cb.condition(tx.is_create.expr(), |cb| {
             cb.keccak_table_lookup(
