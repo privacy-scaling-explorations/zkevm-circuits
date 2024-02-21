@@ -492,15 +492,6 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     ) -> Self {
         let sender_sub_fee = cb.decrease_balance(sender_address.to_word(), gas_fee, None);
         let value_is_zero = cb.is_zero_word(&value);
-        // If receiver doesn't exist, create it
-        TransferToGadget::create_account(
-            cb,
-            receiver_address.clone(),
-            receiver_exists.clone(),
-            must_create.clone(),
-            value_is_zero.expr(),
-            Some(reversion_info),
-        );
         // Skip transfer if value == 0
         let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
             cb.decrease_balance(sender_address, value.clone(), Some(reversion_info))
@@ -512,7 +503,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             must_create,
             value,
             Some(reversion_info),
-            false,
+            true,
         );
 
         Self {
@@ -607,15 +598,6 @@ impl<F: Field> TransferGadget<F> {
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let value_is_zero = cb.is_zero_word(&value);
-        // If receiver doesn't exist, create it
-        TransferToGadget::create_account(
-            cb,
-            receiver_address.clone(),
-            receiver_exists.clone(),
-            must_create.expr(),
-            value_is_zero.expr(),
-            Some(reversion_info),
-        );
         // Skip transfer if value == 0
         let sender = cb.condition(not::expr(value_is_zero.expr()), |cb| {
             cb.decrease_balance(sender_address, value.clone(), Some(reversion_info))
@@ -627,7 +609,7 @@ impl<F: Field> TransferGadget<F> {
             must_create.expr(),
             value,
             Some(reversion_info),
-            false,
+            true,
         );
 
         Self {
