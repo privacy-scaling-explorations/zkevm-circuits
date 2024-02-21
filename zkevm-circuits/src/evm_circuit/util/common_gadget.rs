@@ -602,7 +602,7 @@ impl<F: Field> TransferGadget<F> {
         sender_address: WordLoHi<Expression<F>>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        must_create: Expression<F>,
+        must_create: bool,
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
@@ -612,7 +612,7 @@ impl<F: Field> TransferGadget<F> {
             cb,
             receiver_address.clone(),
             receiver_exists.clone(),
-            must_create.clone(),
+            must_create.expr(),
             value_is_zero.expr(),
             Some(reversion_info),
         );
@@ -624,7 +624,7 @@ impl<F: Field> TransferGadget<F> {
             cb,
             receiver_address,
             receiver_exists,
-            must_create,
+            must_create.expr(),
             value,
             Some(reversion_info),
             false,
