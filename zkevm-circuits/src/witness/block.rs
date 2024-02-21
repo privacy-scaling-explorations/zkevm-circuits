@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::{
     rw::{RwFingerprints, ToVec},
     ExecStep, Rw, RwMap, Transaction,
@@ -35,6 +37,8 @@ pub struct Block<F> {
     pub end_block: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
+    /// Read write events in the RwTable, sorted by address
+    pub by_address_rws: Vec<Rw>,
     /// Bytecode used in the block
     pub bytecodes: CodeDB,
     /// The block context
@@ -57,6 +61,8 @@ pub struct Block<F> {
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// rw_table padding meta data
+    pub rw_padding_meta: BTreeMap<usize, i32>,
 }
 
 impl<F: Field> Block<F> {
@@ -280,12 +286,29 @@ pub fn block_convert<F: Field>(
     let block = &builder.block;
     let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
+    let by_address_rws = rws.table_assignments(false);
     rws.check_value();
+
+    // get padding statistics data via BtreeMap
+    // TODO we can implement it in more efficient version via range sum
+    let rw_padding_meta = builder
+        .chunks
+        .iter()
+        .fold(BTreeMap::new(), |mut map, chunk| {
+            assert!(chunk.ctx.rwc.0.saturating_sub(1) <= builder.circuits_params.max_rws);
+            // [chunk.ctx.rwc.0, builder.circuits_params.max_rws + 1)
+            (chunk.ctx.rwc.0..builder.circuits_params.max_rws + 1).for_each(|padding_rw_counter| {
+                *map.entry(padding_rw_counter).or_insert(0) += 1;
+            });
+            map
+        });
+
     let mut block = Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
         rws,
+        by_address_rws,
         txs: block.txs().to_vec(),
         bytecodes: code_db.clone(),
         copy_events: block.copy_events.clone(),
@@ -298,6 +321,7 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
         end_block: block.end_block.clone(),
+        rw_padding_meta,
     };
     let public_data = public_data_convert(&block);
 

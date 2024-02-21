@@ -201,7 +201,7 @@ fn test_rw_table_commitment() {
     rw_table_commitment::<KZGCommitmentScheme<_>>(&params);
 }
 
-fn rw_table_commitment<'params, Scheme: CommitmentScheme>(params: &'params Scheme::ParamsProver)
+fn rw_table_commitment<Scheme: CommitmentScheme>(params: &Scheme::ParamsProver)
 where
     <Scheme as CommitmentScheme>::Scalar: WithSmallOrderMulGroup<3> + eth_types::Field,
 {

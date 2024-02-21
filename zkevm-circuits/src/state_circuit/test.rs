@@ -1012,7 +1012,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
     let rw_rows: Vec<witness::RwRow<Value<Fr>>> =
         rw_overrides_skip_first_padding(&rw_rows, &overrides);
     let rwtable_fingerprints =
-        get_permutation_fingerprint_of_rwrowvec(&rw_rows, N_ROWS, Fr::ONE, Fr::ONE, Fr::ONE);
+        get_permutation_fingerprint_of_rwrowvec(&rw_rows, N_ROWS, Fr::ONE, Fr::ONE, Fr::ONE, None);
     let row_padding_and_overridess = rw_rows.to2dvec();
 
     let updates = MptUpdates::mock_from(&rows);

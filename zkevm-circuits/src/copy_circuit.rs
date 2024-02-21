@@ -859,8 +859,8 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
                 max_calldata: chunk.fixed_param.max_calldata,
                 txs: block.txs.clone(),
                 max_rws: chunk.fixed_param.max_rws,
-                rws: chunk.rws.clone(),
-                prev_chunk_last_rw: chunk.prev_chunk_last_rw,
+                rws: chunk.chrono_rws.clone(),
+                prev_chunk_last_rw: chunk.prev_chunk_last_chrono_rw,
                 bytecodes: block.bytecodes.clone(),
             },
         )

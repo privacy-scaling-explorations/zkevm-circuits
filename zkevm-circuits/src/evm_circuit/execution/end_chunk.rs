@@ -29,7 +29,8 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndChunk;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        // State transition
+        // State transition on non-last evm step
+        // TODO/FIXME make EndChunk must be in last evm step and remove below constraint
         cb.not_step_last(|cb| {
             // Propagate all the way down.
             cb.require_step_state_transition(StepStateTransition::same());
@@ -102,7 +103,7 @@ mod test {
             // }
             println!(
                 "=> FIXME is fixed? {:?}",
-                chunk.rws.0.get_mut(&Target::Start)
+                chunk.chrono_rws.0.get_mut(&Target::Start)
             );
         }))
         .run_dynamic_chunk(4, 2);

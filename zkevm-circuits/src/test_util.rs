@@ -195,7 +195,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // Build a witness block from trace result.
         let mut block = crate::witness::block_convert(&builder)
             .map_err(|err| CircuitTestError::CannotConvertBlock(err.to_string()))?;
-        let mut chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
+        let mut chunk = crate::witness::chunk_convert(&block, &builder)
+            .unwrap()
+            .remove(chunk_index);
 
         for modifier_fn in &self.block_modifiers {
             modifier_fn.as_ref()(&mut block, &mut chunk);
@@ -217,10 +219,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // No cache for EVM circuit with customized features
         let prover = if block.feature_config.is_mainnet() {
             let circuit = EvmCircuitCached::get_test_circuit_from_block(block, chunk);
-            MockProver::<Fr>::run(k, &circuit, vec![])
+            let instance = circuit.instance();
+            MockProver::<Fr>::run(k, &circuit, instance)
         } else {
             let circuit = EvmCircuit::get_test_circuit_from_block(block, chunk);
-            MockProver::<Fr>::run(k, &circuit, vec![])
+            let instance = circuit.instance();
+            MockProver::<Fr>::run(k, &circuit, instance)
         };
 
         let prover = prover.map_err(|err| CircuitTestError::SynthesisFailure {
@@ -285,6 +289,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         }
     }
 
+    /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
+    /// into a [`Block`] and apply the default or provided block_modifiers or
+    /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run_with_result(self) -> Result<(), CircuitTestError> {
         let (block, chunk) = self.build_block(0, 1)?;
 
@@ -345,7 +352,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
-            let mut chunk = crate::witness::chunk_convert(&builder, chunk_index).unwrap();
+            let mut chunk = crate::witness::chunk_convert(&block, &builder)
+                .unwrap()
+                .remove(chunk_index);
 
             println!("fingerprints = {:?}", chunk.chrono_rw_fingerprints);
 

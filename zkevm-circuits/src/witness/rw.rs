@@ -190,19 +190,13 @@ impl RwMap {
         rows
     }
 
-    /// Get RwMap for a chunk specified by start and end
-    pub fn from_chunked(
-        container: &operation::OperationContainer,
-        start: usize,
-        end: usize,
-    ) -> Self {
-        let mut rws: Self = container.into();
-        for rw in rws.0.values_mut() {
+    /// take only rw_counter within range
+    pub fn take_rw_counter_range(mut self, start: usize, end: usize) -> Self {
+        for rw in self.0.values_mut() {
             rw.retain(|r| r.rw_counter() >= start && r.rw_counter() < end)
         }
-        rws
+        self
     }
-
     /// Get one Rw for a chunk specified by index
     pub fn get_rw(container: &operation::OperationContainer, counter: usize) -> Option<Rw> {
         let rws: Self = container.into();

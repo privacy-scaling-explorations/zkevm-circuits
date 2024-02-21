@@ -424,7 +424,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_tag,
         );
         let mut block = block_convert(&builder).unwrap();
-        let chunk = chunk_convert(&builder, 0).unwrap();
+        let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
         let circuit = C::new_from_block(&block, &chunk);
         let instance = circuit.instance();
@@ -441,7 +441,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             );
 
             // get chronological_rwtable and byaddr_rwtable columns index
-            let mut cs = ConstraintSystem::<<Bn256 as Engine>::Scalar>::default();
+            let mut cs = ConstraintSystem::<<Bn256 as Engine>::Fr>::default();
             let config = SuperCircuit::configure(&mut cs);
             let rwtable_columns = config.get_rwtable_columns();
 
@@ -515,10 +515,9 @@ fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
         .new_circuit_input_builder()
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    (
-        block_convert(&builder).unwrap(),
-        chunk_convert(&builder, 0).unwrap(),
-    )
+    let block = block_convert(&builder).unwrap();
+    let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
+    (block, chunk)
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {

@@ -334,9 +334,9 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             .assign_block(layouter, block, chunk, challenges)?;
 
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
-            &chunk.rws.table_assignments(true),
+            &chunk.chrono_rws.table_assignments(true),
             chunk.fixed_param.max_rws,
-            chunk.prev_chunk_last_rw,
+            chunk.prev_chunk_last_chrono_rw,
         );
         let (
             alpha_cell,
@@ -353,10 +353,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &mut region,
                     // pass non-padding rws to `load_with_region` since it will be padding
                     // inside
-                    &chunk.rws.table_assignments(true),
+                    &chunk.chrono_rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     chunk.fixed_param.max_rws,
-                    chunk.prev_chunk_last_rw,
+                    chunk.prev_chunk_last_chrono_rw,
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
@@ -565,7 +565,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             chunk.fixed_param.max_txs,
             chunk.fixed_param.max_calldata,
         )?;
-        chunk.rws.check_rw_counter_sanity();
+        chunk.chrono_rws.check_rw_counter_sanity();
         config
             .bytecode_table
             .load(&mut layouter, block.bytecodes.clone())?;
@@ -698,7 +698,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
         let k = block.get_test_degree(&chunk);
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
         let instance = circuit.instance_extend_chunk_ctx();
@@ -723,7 +723,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
         let k = block.get_test_degree(&chunk);
 
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
@@ -746,7 +746,7 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
         let k = block.get_test_degree(&chunk);
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
         let instance = circuit.instance_extend_chunk_ctx();

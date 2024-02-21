@@ -25,6 +25,7 @@ pub struct ChunkContext {
     /// Index of current chunk, start from 0
     pub idx: usize,
     /// Used to track the inner chunk counter in every operation in the chunk.
+    /// it will be reset for every new chunk.
     /// Contains the next available value.
     pub rwc: RWCounter,
     /// Number of chunks
@@ -41,7 +42,7 @@ pub struct ChunkContext {
     pub initial_copy_index: usize,
     ///
     pub end_copy_index: usize,
-    /// Druing dry run, chuncking is desabled
+    /// Druing dry run, chuncking is disabled
     pub enable: bool,
 }
 

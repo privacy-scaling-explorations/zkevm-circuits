@@ -16,13 +16,8 @@ use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
     super_circuit::SuperCircuit,
-<<<<<<< HEAD
-    test_util::CircuitTestBuilder,
-    witness::{Block, Chunk},
-=======
     test_util::{CircuitTestBuilder, CircuitTestError},
-    witness::Block,
->>>>>>> main
+    witness::{Block, Chunk},
 };
 
 #[derive(PartialEq, Eq, Error, Debug)]
@@ -354,12 +349,11 @@ pub fn run_test(
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
         let chunk: Chunk<Fr> =
-            zkevm_circuits::evm_circuit::witness::chunk_convert(&builder, 0).unwrap();
+            zkevm_circuits::evm_circuit::witness::chunk_convert(&block, &builder)
+                .unwrap()
+                .remove(0);
 
-<<<<<<< HEAD
-        CircuitTestBuilder::<1, 1>::new_from_block(block, chunk).run();
-=======
-        CircuitTestBuilder::<1, 1>::new_from_block(block)
+        CircuitTestBuilder::<1, 1>::new_from_block(block, chunk)
             .run_with_result()
             .map_err(|err| match err {
                 CircuitTestError::VerificationFailed { reasons, .. } => {
@@ -373,7 +367,6 @@ pub fn run_test(
                     found: err.to_string(),
                 },
             })?;
->>>>>>> main
     } else {
         geth_data.sign(&wallets);
 

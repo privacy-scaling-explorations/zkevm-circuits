@@ -54,7 +54,7 @@ mod evm_circ_benches {
                 .unwrap();
 
         let block = block_convert(&builder).unwrap();
-        let chunk = chunk_convert(&builder, 0).unwrap();
+        let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
 
         let circuit = TestEvmCircuit::<Fr>::new(block, chunk);
         let mut rng = XorShiftRng::from_seed([

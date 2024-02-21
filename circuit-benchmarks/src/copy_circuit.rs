@@ -156,7 +156,7 @@ mod tests {
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
         let block = block_convert(&builder).unwrap();
-        let chunk = chunk_convert(&builder, 0).unwrap();
+        let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
         assert_eq!(block.copy_events.len(), copy_event_num);
         (block, chunk)
     }

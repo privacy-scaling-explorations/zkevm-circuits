@@ -149,7 +149,7 @@ fn test_1tx_1maxtx() {
 
     block.sign(&wallets);
     let block = block_convert(&builder).unwrap();
-    let chunk = chunk_convert(&builder, 0).unwrap();
+    let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
     // MAX_TXS, MAX_TXS align with `CircuitsParams`
     let circuit = PiCircuit::<Fr>::new_from_block(&block, &chunk);
     let public_inputs = circuit.instance();
@@ -230,7 +230,7 @@ fn test_1wd_1wdmax() {
         .unwrap();
 
     let block = block_convert(&builder).unwrap();
-    let chunk = chunk_convert(&builder, 0).unwrap();
+    let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
     // MAX_TXS, MAX_TXS align with `CircuitsParams`
     let circuit = PiCircuit::<Fr>::new_from_block(&block, &chunk);
     let public_inputs = circuit.instance();

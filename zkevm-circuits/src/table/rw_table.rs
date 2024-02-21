@@ -5,14 +5,17 @@ use halo2_proofs::{
 };
 
 use halo2_proofs::{
-    halo2curves::{bn256::Fr, group::Curve, CurveAffine},
+    halo2curves::{
+        bn256::Fr,
+        group::{prime::PrimeCurveAffine, Curve},
+        CurveAffine,
+    },
     plonk::{Advice, Assigned, Assignment, Challenge, Fixed, FloorPlanner, Instance, Selector},
     poly::{
         commitment::{Blind, CommitmentScheme, Params},
         EvaluationDomain, LagrangeCoeff, Polynomial,
     },
 };
-use snark_verifier::util::arithmetic::PrimeCurveAffine;
 
 use super::*;
 
@@ -186,11 +189,12 @@ impl RwTable {
 
 /// get rw table column commitment
 /// implementation snippet from halo2 `create_proof` https://github.com/privacy-scaling-explorations/halo2/blob/9b33f9ce524dbb9133fc8b9638b2afd0571659a8/halo2_proofs/src/plonk/prover.rs#L37
-pub fn get_rwtable_cols_commitment<'params, Scheme: CommitmentScheme>(
+#[allow(unused)]
+pub fn get_rwtable_cols_commitment<Scheme: CommitmentScheme>(
     degree: usize,
     rws: &[Rw],
     n_rows: usize,
-    params_prover: &'params Scheme::ParamsProver,
+    params_prover: &Scheme::ParamsProver,
 ) -> Vec<<Scheme as CommitmentScheme>::Curve>
 where
     <Scheme as CommitmentScheme>::Scalar: WithSmallOrderMulGroup<3> + Field,
@@ -200,7 +204,7 @@ where
         _marker: std::marker::PhantomData<F>,
     }
 
-    impl<'a, F: Field> Assignment<F> for WitnessCollection<F> {
+    impl<F: Field> Assignment<F> for WitnessCollection<F> {
         fn enter_region<NR, N>(&mut self, _: N)
         where
             NR: Into<String>,
@@ -319,7 +323,7 @@ where
         }
     }
 
-    let rwtable_circuit = RwTableCircuit::new(&rws, n_rows, None);
+    let rwtable_circuit = RwTableCircuit::new(rws, n_rows, None);
 
     let domain = EvaluationDomain::<<Scheme as CommitmentScheme>::Scalar>::new(
         degree as u32,
@@ -392,7 +396,7 @@ struct RwTableCircuitConfig {
     pub rw_table: RwTable,
 }
 
-impl<'a> RwTableCircuitConfig {}
+impl RwTableCircuitConfig {}
 
 impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
     type Config = RwTableCircuitConfig;
@@ -432,6 +436,7 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
 }
 
 // migrate from halo2 library
+#[allow(unused)]
 fn batch_invert_assigned<F: Field + WithSmallOrderMulGroup<3>>(
     domain: EvaluationDomain<F>,
     assigned: Vec<Polynomial<Assigned<F>, LagrangeCoeff>>,

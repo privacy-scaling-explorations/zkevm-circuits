@@ -97,7 +97,9 @@ fn prover_error() {
         .expect("handle_block");
     let (block, chunk) = {
         let mut block = block_convert(&builder).expect("block_convert");
-        let chunk = chunk_convert(&builder, 0).expect("chunk_convert");
+        let chunk = chunk_convert(&block, &builder)
+            .expect("chunk_convert")
+            .remove(0);
 
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         (block, chunk)

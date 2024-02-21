@@ -67,7 +67,7 @@ fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
     let code = gen_code_single(base, exponent);
     let builder = gen_data(code, false);
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     test_exp_circuit(k.unwrap_or(18), block, chunk);
 }
 
@@ -75,7 +75,7 @@ fn test_ok_multiple(args: Vec<(Word, Word)>) {
     let code = gen_code_multiple(args);
     let builder = gen_data(code, false);
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     test_exp_circuit(20, block, chunk);
 }
 
@@ -125,7 +125,7 @@ fn variadic_size_check() {
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     let circuit = ExpCircuit::<Fr>::new(block.exp_events, chunk.fixed_param.max_exp_steps);
     let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
@@ -141,7 +141,7 @@ fn variadic_size_check() {
     };
     let builder = gen_data(code, true);
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     let circuit = ExpCircuit::<Fr>::new(block.exp_events, chunk.fixed_param.max_exp_steps);
     let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
