@@ -75,10 +75,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = UpdateBalanceGadget::construct(
-            cb,
+        let gas_fee_refund = cb.increase_balance(
             tx_caller_address.to_word(),
-            vec![mul_gas_price_by_refund.product().clone()],
+            mul_gas_price_by_refund.product().clone(),
             None,
         );
 

@@ -309,7 +309,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         address: WordLoHi<Expression<F>>,
-        updates: Vec<Word32Cell<F>>,
+        updates: &[Word32Cell<F>],
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
@@ -397,12 +397,7 @@ impl<F: Field> TransferToGadget<F> {
             );
         }
         let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(
-                cb,
-                receiver_address,
-                vec![value.clone()],
-                reversion_info,
-            )
+            cb.increase_balance(receiver_address, value.clone(), reversion_info)
         });
 
         Self {
@@ -495,8 +490,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let sender_sub_fee =
-            UpdateBalanceGadget::construct(cb, sender_address.to_word(), vec![gas_fee], None);
+        let sender_sub_fee = cb.decrease_balance(sender_address.to_word(), gas_fee, None);
         let value_is_zero = cb.is_zero_word(&value);
         // If receiver doesn't exist, create it
         TransferToGadget::create_account(
@@ -509,12 +503,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         );
         // Skip transfer if value == 0
         let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(
-                cb,
-                sender_address,
-                vec![value.clone()],
-                Some(reversion_info),
-            )
+            cb.decrease_balance(sender_address, value.clone(), Some(reversion_info))
         });
         let receiver = TransferToGadget::construct(
             cb,
@@ -630,12 +619,7 @@ impl<F: Field> TransferGadget<F> {
         );
         // Skip transfer if value == 0
         let sender = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(
-                cb,
-                sender_address,
-                vec![value.clone()],
-                Some(reversion_info),
-            )
+            cb.decrease_balance(sender_address, value.clone(), Some(reversion_info))
         });
         let receiver = TransferToGadget::construct(
             cb,
