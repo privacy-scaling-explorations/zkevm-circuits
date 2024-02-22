@@ -624,7 +624,14 @@ impl<'a> CircuitInputStateRef<'a> {
                 value_prev: sender_balance_prev,
             },
         )?;
-        self.transfer_to(step, receiver, receiver_exists, opcode_is_create, value, true)?;
+        self.transfer_to(
+            step,
+            receiver,
+            receiver_exists,
+            opcode_is_create,
+            value,
+            true,
+        )?;
 
         Ok(())
     }
