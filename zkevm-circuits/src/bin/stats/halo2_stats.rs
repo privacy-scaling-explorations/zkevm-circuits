@@ -23,7 +23,7 @@ pub(crate) struct CircuitStats {
     pub num_rotation: usize,
     pub min_rotation: i32,
     pub max_rotation: i32,
-    pub num_verification_ecmul: usize,
+    pub verification_msm_size: usize,
     // Aux data to diff between records
     num_advice_queries: usize,
     num_gates: usize,
@@ -236,9 +236,9 @@ impl CircuitStats {
         let c_i = self.num_instance_columns;
         let c_p = self.num_permutation_columns;
         let c_l = self.num_lookups;
-        let c_pg = (c_p + self.degree - 3) / (self.degree - 2);
+        let c_pg = c_p.div_ceil(self.degree - 2);
         let e = (self.degree - 1).next_power_of_two();
-        // The estimated peak memory formula comes from point 9 of the analysis, which is the step
+        // The estimated peak memory formula comes from step 9 of the analysis, which is the step
         // of proving that needs the most memory (after that step, allocations start getting freed)
 
         // number of "elliptic curve points"
@@ -254,7 +254,7 @@ impl CircuitStats {
 
 // Return the stats in `meta`, accounting only for the circuit delta from the last aggregated stats
 // in `agg`.
-// Adaptaed from Scroll https://github.com/scroll-tech/zkevm-circuits/blob/7d9bc181953cfc6e7baf82ff0ce651281fd70a8a/zkevm-circuits/src/util.rs#L294
+// Adapted from Scroll https://github.com/scroll-tech/zkevm-circuits/blob/7d9bc181953cfc6e7baf82ff0ce651281fd70a8a/zkevm-circuits/src/util.rs#L294
 pub(crate) fn circuit_stats<F: Field>(
     agg: &CircuitStats,
     meta: &ConstraintSystem<F>,
@@ -274,6 +274,7 @@ pub(crate) fn circuit_stats<F: Field>(
         .map(|(_, q)| q.0)
         .collect::<BTreeSet<i32>>();
 
+    let degree = meta.degree();
     let num_fixed_columns = meta.num_fixed_columns() - agg.num_fixed_columns;
     let num_lookups = meta.lookups().len() - agg.num_lookups;
     let num_shuffles = meta.shuffles().len() - agg.num_shuffles;
@@ -282,6 +283,25 @@ pub(crate) fn circuit_stats<F: Field>(
     let num_selectors = meta.num_selectors() - agg.num_selectors;
     let num_permutation_columns =
         meta.permutation().get_columns().len() - agg.num_permutation_columns;
+
+    // This calculation has some differences with the Scroll implementation at
+    // https://github.com/scroll-tech/zkevm-circuits/blob/7d9bc181953cfc6e7baf82ff0ce651281fd70a8a/zkevm-circuits/src/util.rs#L320-L326
+    // - Remove `num_instance_columns` because it doesn't contribute when using the KZG commitment
+    // scheme
+    // - Assume SHPLONK for batch opening scheme (replaces `rotations.len()` by `1`)
+    // - Add `degree -1` to account for quotients
+    // - Add `div_ceil(num_permutation_columns, degree - 2)` for permutation arguments grand
+    // products.
+    let verification_msm_size = num_advice_columns
+        + num_permutation_columns // Preprocessed permutation column
+        + num_permutation_columns.div_ceil(degree-2) // Grand product for permutations
+        + num_shuffles // Grand product of each shuffle
+        + num_selectors // Assume no selector compression (giving us an upper bound estimation)
+        + num_fixed_columns
+        // Grand product, permuted input expression and permuted table expression for each lookup
+        + 3 * num_lookups
+        + 2 // SHPLONK batch opening scheme
+        + (degree -1); // quotients
 
     CircuitStats {
         num_constraints: meta
@@ -297,21 +317,14 @@ pub(crate) fn circuit_stats<F: Field>(
         num_instance_columns,
         num_selectors,
         num_permutation_columns,
-        degree: meta.degree(),
+        degree,
         blinding_factors: meta.blinding_factors(),
         num_challenges: meta.num_challenges() - agg.num_challenges,
         max_phase,
         num_rotation: rotations.len(),
         min_rotation: rotations.first().cloned().unwrap_or_default(),
         max_rotation: rotations.last().cloned().unwrap_or_default(),
-        num_verification_ecmul: num_advice_columns
-            + num_instance_columns
-            + num_permutation_columns
-            + num_shuffles
-            + num_selectors
-            + num_fixed_columns
-            + 3 * num_lookups
-            + rotations.len(),
+        verification_msm_size,
         num_advice_queries: meta.advice_queries().len() - agg.num_advice_queries,
         num_gates: meta.gates().len() - agg.num_gates,
     }
