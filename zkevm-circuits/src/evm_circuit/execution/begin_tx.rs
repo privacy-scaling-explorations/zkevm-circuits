@@ -113,7 +113,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_id.expr(),
                 WordLoHi::new([addr.expr(), 0.expr()]),
                 1.expr(),
-                0.expr(),
+                0.expr(), // Here value_prev is 0
                 None,
             );
         } // rwc_delta += PRECOMPILE_COUNT
@@ -123,17 +123,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             tx.caller_address.to_word(),
             1.expr(),
-            0.expr(),
+            0.expr(), // Here too
             None,
         ); // rwc_delta += 1
-        let is_caller_callee_equal = cb.query_bool();
+        let is_caller_callee_equal = cb.query_bool(); // What does this variable mean?
         cb.account_access_list_write_unchecked(
             tx_id.expr(),
             tx.callee_address.to_word(),
             1.expr(),
             // No extra constraint being used here.
             // Correctness will be enforced in build_tx_access_list_account_constraints
-            is_caller_callee_equal.expr(),
+            is_caller_callee_equal.expr(), // And value_prev = is_caller_callee_equal
             None,
         ); // rwc_delta += 1
 
@@ -149,7 +149,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             coinbase.to_word(),
             1.expr(),
-            is_coinbase_warm.expr(),
+            is_coinbase_warm.expr(), // Why value_prev is = is_coinbase_warm?
             None,
         ); // rwc_delta += 1
 
@@ -160,6 +160,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).
+        // Why do we have summation here if any of the terms is enough?
         let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
         // TODO: And not precompile
@@ -183,7 +184,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
-        let caller_nonce_hash_bytes = cb.query_word32();
+        let caller_nonce_hash_bytes = cb.query_word32(); // What's this variable for?
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal_word(
             "tx caller address equivalence",
@@ -208,8 +209,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.nonce.expr(),
             create.caller_nonce(),
         );
-
-        // TODO: add missing constraints:
 
         // 1. Handle contract creation transaction.
         cb.condition(tx.is_create.expr(), |cb| {
