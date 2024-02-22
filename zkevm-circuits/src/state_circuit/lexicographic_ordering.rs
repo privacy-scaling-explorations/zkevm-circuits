@@ -1,7 +1,7 @@
 use super::{lookups, param::*, SortKeysConfig};
 use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
 use eth_types::{Field, ToBigEndian};
-use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
+use gadgets::binary_number::{AsBits, BinaryNumberBits, BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -108,7 +108,8 @@ impl Config {
         powers_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     ) -> Self {
         let selector = meta.fixed_column();
-        let first_different_limb = BinaryNumberChip::configure(meta, selector, None);
+        let bits = BinaryNumberBits::construct(meta);
+        let first_different_limb = BinaryNumberChip::configure(meta, bits, selector, None);
         let limb_difference = meta.advice_column();
         let limb_difference_inverse = meta.advice_column();
 

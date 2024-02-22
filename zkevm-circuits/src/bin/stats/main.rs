@@ -1,23 +1,43 @@
+//! Build with `--features="stats"`
+
+mod halo2_stats;
+mod helpers;
+
 use bus_mapping::circuit_input_builder::FeatureConfig;
 use cli_table::{print_stdout, Cell, Style, Table};
 use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
 use halo2_proofs::{
     halo2curves::bn256::Fr,
-    plonk::{Circuit, ConstraintSystem},
+    plonk::{Circuit, ConstraintSystem, Expression},
 };
-mod helpers;
+use halo2_stats::StatsCollection;
 use helpers::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
 use itertools::Itertools;
 use mock::MOCK_ACCOUNTS;
-use std::env;
-use zkevm_circuits::evm_circuit::{
-    param::{
-        LOOKUP_CONFIG, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS, N_U16_LOOKUPS,
-        N_U8_LOOKUPS,
+use std::{array, env, iter};
+use zkevm_circuits::{
+    bytecode_circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
+    copy_circuit::{CopyCircuitConfig, CopyCircuitConfigArgs},
+    evm_circuit::{
+        param::{
+            LOOKUP_CONFIG, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS, N_U16_LOOKUPS,
+            N_U8_LOOKUPS,
+        },
+        step::ExecutionState,
+        EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs,
     },
-    step::ExecutionState,
-    EvmCircuit,
+    exp_circuit::ExpCircuitConfig,
+    keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    pi_circuit::{PiCircuitConfig, PiCircuitConfigArgs},
+    state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
+    table::{
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, SigTable,
+        TxTable, UXTable, WdTable,
+    },
+    tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
+    util::{Challenges, SubCircuitConfig},
 };
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -26,6 +46,7 @@ fn main() {
         "state" => state_states_stats(),
         "copy" => copy_states_stats(),
         "exec" => get_exec_steps_occupancy(),
+        "general" => general_subcircuit_stats(),
         &_ => unreachable!("Unsupported arg"),
     }
 }
@@ -203,4 +224,197 @@ fn get_exec_steps_occupancy() {
         exp_table,
         LOOKUP_CONFIG[7].1
     );
+}
+
+#[allow(unused_variables)]
+fn record_stats<F: eth_types::Field>(
+    stats: &mut StatsCollection<F>,
+    meta: &mut ConstraintSystem<F>,
+) {
+    let max_txs = 1;
+    let max_withdrawals = 5;
+    let max_calldata = 32;
+    let mock_randomness = F::from(0x100);
+    let feature_config = FeatureConfig::default();
+
+    // Shared Tables
+    let tx_table = TxTable::construct(meta);
+    stats.record_shared("tx_table", meta);
+    let wd_table = WdTable::construct(meta);
+    stats.record_shared("wd_table", meta);
+    let rw_table = RwTable::construct(meta);
+    stats.record_shared("rw_table", meta);
+    let mpt_table = MptTable::construct(meta);
+    stats.record_shared("mpt_table", meta);
+    let bytecode_table = BytecodeTable::construct(meta);
+    stats.record_shared("bytecode_table", meta);
+    let block_table = BlockTable::construct(meta);
+    stats.record_shared("block_table", meta);
+    let q_copy_table = meta.fixed_column();
+    let copy_table = CopyTable::construct(meta, q_copy_table);
+    stats.record_shared("copy_table", meta);
+    let exp_table = ExpTable::construct(meta);
+    stats.record_shared("exp_table", meta);
+    let keccak_table = KeccakTable::construct(meta);
+    stats.record_shared("keccak_table", meta);
+    let sig_table = SigTable::construct(meta);
+    stats.record_shared("sig_table", meta);
+    let u8_table = UXTable::construct(meta);
+    stats.record_shared("u8_table", meta);
+    let u10_table = UXTable::construct(meta);
+    stats.record_shared("u10_table", meta);
+    let u16_table = UXTable::construct(meta);
+    stats.record_shared("u16_table", meta);
+
+    // Use a mock randomness instead of the randomness derived from the challenge
+    // (either from mock or real prover) to help debugging assignments.
+    let power_of_randomness: [Expression<F>; 31] =
+        array::from_fn(|i| Expression::Constant(mock_randomness.pow([1 + i as u64, 0, 0, 0])));
+
+    let challenges = Challenges::mock(
+        power_of_randomness[0].clone(),
+        power_of_randomness[0].clone(),
+    );
+
+    let keccak_circuit = KeccakCircuitConfig::new(
+        meta,
+        KeccakCircuitConfigArgs {
+            keccak_table: keccak_table.clone(),
+            challenges: challenges.clone(),
+        },
+    );
+    stats.record("keccak", meta);
+
+    let pi_circuit = PiCircuitConfig::new(
+        meta,
+        PiCircuitConfigArgs {
+            max_txs,
+            max_withdrawals,
+            max_calldata,
+            block_table: block_table.clone(),
+            tx_table: tx_table.clone(),
+            wd_table,
+            keccak_table: keccak_table.clone(),
+            challenges: challenges.clone(),
+        },
+    );
+    stats.record("pi", meta);
+    let tx_circuit = TxCircuitConfig::new(
+        meta,
+        TxCircuitConfigArgs {
+            tx_table: tx_table.clone(),
+            keccak_table: keccak_table.clone(),
+            challenges: challenges.clone(),
+        },
+    );
+    stats.record("tx", meta);
+    let bytecode_circuit = BytecodeCircuitConfig::new(
+        meta,
+        BytecodeCircuitConfigArgs {
+            bytecode_table: bytecode_table.clone(),
+            keccak_table: keccak_table.clone(),
+            challenges: challenges.clone(),
+        },
+    );
+    stats.record("bytecode", meta);
+    let copy_circuit = CopyCircuitConfig::new(
+        meta,
+        CopyCircuitConfigArgs {
+            tx_table: tx_table.clone(),
+            rw_table,
+            bytecode_table: bytecode_table.clone(),
+            copy_table,
+            q_enable: q_copy_table,
+            challenges: challenges.clone(),
+        },
+    );
+    stats.record("copy", meta);
+    let state_circuit = StateCircuitConfig::new(
+        meta,
+        StateCircuitConfigArgs {
+            rw_table,
+            mpt_table,
+            u8_table,
+            u10_table,
+            u16_table,
+            challenges: challenges.clone(),
+        },
+    );
+    stats.record("state", meta);
+    let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
+    stats.record("exp", meta);
+    let evm_circuit = EvmCircuitConfig::new(
+        meta,
+        EvmCircuitConfigArgs {
+            challenges,
+            tx_table,
+            rw_table,
+            bytecode_table,
+            block_table,
+            copy_table,
+            keccak_table,
+            exp_table,
+            u8_table,
+            u16_table,
+            sig_table,
+            feature_config,
+        },
+    );
+    stats.record("evm", meta);
+}
+
+fn general_subcircuit_stats() {
+    let mut stats_list = StatsCollection::<Fr>::new(false);
+    let mut meta = ConstraintSystem::<Fr>::default();
+    record_stats(&mut stats_list, &mut meta);
+    let mut stats_agg = StatsCollection::<Fr>::new(true);
+    let mut meta = ConstraintSystem::<Fr>::default();
+    record_stats(&mut stats_agg, &mut meta);
+
+    let mut table = Vec::new();
+    for (name, stats) in stats_list
+        .list
+        .iter()
+        .chain(iter::once(&("super".to_string(), stats_agg.agg)))
+    {
+        // At 0.0139 gas/row this gives us 2^26 * 0.0139 = ~900k gas.  For 30M gas we would need 33
+        // chunks.
+        let k = 26;
+        let peak_mem_gb = stats.estimate_peak_mem(k) / 1024 / 1024 / 1024;
+        table.push(vec![
+            name.cell(),
+            stats.num_constraints.cell(),
+            stats.num_rotation.cell(),
+            format!("{}/{}", stats.min_rotation, stats.max_rotation).cell(),
+            stats.num_fixed_columns.cell(),
+            stats.num_selectors.cell(),
+            stats.num_advice_columns.cell(),
+            stats.num_permutation_columns.cell(),
+            stats.num_lookups.cell(),
+            stats.degree.cell(),
+            peak_mem_gb.cell(),
+        ]);
+    }
+    let table = table
+        .table()
+        .title(
+            [
+                "circuit",
+                "constraints",
+                "rots",
+                "min/max(rots)",
+                "fix_cols",
+                "selectors",
+                "adv_cols",
+                "perm_cols",
+                "lookups",
+                "degree",
+                "mem_gb",
+            ]
+            .iter()
+            .map(|s| s.cell().bold(true)),
+        )
+        .bold(true);
+
+    assert!(print_stdout(table).is_ok());
 }

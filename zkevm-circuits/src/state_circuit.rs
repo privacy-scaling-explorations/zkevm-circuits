@@ -26,7 +26,7 @@ use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::{BinaryNumberBits, BinaryNumberChip, BinaryNumberConfig},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -107,7 +107,8 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let lookups = LookupsChip::configure(meta, u8_table, u10_table, u16_table);
 
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
-        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
+        let bits = BinaryNumberBits::construct(meta);
+        let tag = BinaryNumberChip::configure(meta, bits, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
 
         let address = MpiChip::configure(meta, selector, [rw_table.address], lookups);
