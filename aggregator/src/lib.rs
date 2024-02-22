@@ -1,3 +1,5 @@
+#![feature(lazy_cell)]
+
 /// proof aggregation
 mod aggregation;
 /// Barycentric evaluation circuit to check that blob contents are match random evaluation.
