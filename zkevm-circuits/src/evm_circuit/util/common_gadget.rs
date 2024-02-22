@@ -31,7 +31,7 @@ use bus_mapping::state_db::CodeDB;
 use eth_types::{
     evm_types::GasCost, Field, OpsIdentity, ToAddress, ToLittleEndian, ToScalar, ToWord, U256,
 };
-use gadgets::util::{select, sum};
+use gadgets::util::{or, select, sum};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -370,6 +370,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 pub(crate) struct TransferToGadget<F> {
     receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
+    opcode_is_create: Expression<F>,
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
@@ -379,6 +380,7 @@ impl<F: Field> TransferToGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
+        opcode_is_create: Expression<F>,
         value: Word32Cell<F>,
         mut reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
@@ -388,7 +390,7 @@ impl<F: Field> TransferToGadget<F> {
         cb.condition(
             and::expr([
                 not::expr(receiver_exists.expr()),
-                not::expr(value_is_zero.expr()),
+                or::expr([not::expr(value_is_zero.expr()), opcode_is_create.expr()]),
             ]),
             |cb| {
                 cb.account_write(
@@ -408,6 +410,7 @@ impl<F: Field> TransferToGadget<F> {
         Self {
             receiver,
             receiver_exists,
+            opcode_is_create,
             value_is_zero,
         }
     }
@@ -434,8 +437,9 @@ impl<F: Field> TransferToGadget<F> {
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         and::expr([
-                not::expr(self.receiver_exists.expr()),not::expr(self.value_is_zero.expr())
-            ]) +
+            not::expr(self.receiver_exists.expr()),
+            or::expr([not::expr(self.value_is_zero.expr()), self.opcode_is_create.expr()])
+        ])+
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr())
     }
@@ -463,6 +467,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
         sender_address: WordLoHi<Expression<F>>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
+        opcode_is_create: Expression<F>,
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
         gas_fee: Option<Word32Cell<F>>,
@@ -481,6 +486,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
             cb,
             receiver_address,
             receiver_exists,
+            opcode_is_create,
             value,
             Some(reversion_info),
         );
@@ -496,20 +502,18 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         WITH_FEE.expr() +
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        self.receiver.rw_delta()+
         // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
+        not::expr(self.value_is_zero.expr()) +
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        self.receiver.rw_delta()
     }
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        self.receiver.rw_delta()+
         // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
+        not::expr(self.value_is_zero.expr()) +
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        self.receiver.rw_delta()
     }
 
     #[allow(clippy::too_many_arguments)]

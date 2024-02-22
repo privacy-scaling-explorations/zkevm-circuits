@@ -170,17 +170,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        cb.require_equal(
-            "is create: callee_not_exists",
-            tx.is_create.expr(),
-            callee_not_exists.expr(),
-        );
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferGadget::construct(
             cb,
             tx.caller_address.to_word(),
             tx.callee_address.to_word(),
             not::expr(callee_not_exists.expr()),
+            tx.is_create.expr(),
             tx.value.clone(),
             &mut reversion_info,
             Some(tx.mul_gas_fee_by_gas.product().clone()),

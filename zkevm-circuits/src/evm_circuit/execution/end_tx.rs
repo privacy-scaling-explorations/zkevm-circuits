@@ -107,6 +107,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb,
             coinbase.to_word(),
             1.expr() - coinbase_code_hash_is_zero.expr(),
+            false.expr(),
             mul_effective_tip_by_gas_used.product().clone(),
             None,
         );
