@@ -467,14 +467,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let callee_exists =
             is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
         let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
-        let must_create = tx.is_create();
 
         let caller_balance_sub_value_pair = if !tx.value.is_zero() {
             rws.next().account_balance_pair()
         } else {
             (zero, zero)
         };
-        if !callee_exists && (!tx.value.is_zero() || must_create) {
+        if !callee_exists && (!tx.value.is_zero() || tx.is_create()) {
             callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let callee_balance_pair = if !tx.value.is_zero() {
