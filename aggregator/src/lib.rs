@@ -1,5 +1,7 @@
 /// proof aggregation
 mod aggregation;
+/// Barycentric evaluation circuit to check that blob contents are match random evaluation.
+mod barycentric;
 /// This module implements `Batch` related data types.
 /// A batch is a list of chunk.
 mod batch;
