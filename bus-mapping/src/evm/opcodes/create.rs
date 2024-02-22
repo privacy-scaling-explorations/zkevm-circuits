@@ -217,8 +217,9 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 caller.address,
                 callee.address,
                 callee_exists,
-                !callee_exists,
+                true,
                 callee.value,
+                None,
             )?;
 
             // EIP 161, increase callee's nonce
