@@ -609,18 +609,7 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance_prev,
             sender_balance
         );
-        // If receiver doesn't exist, create it
-        if !receiver_exists && (!value.is_zero() || must_create) {
-            self.push_op_reversible(
-                step,
-                AccountOp {
-                    address: receiver,
-                    field: AccountField::CodeHash,
-                    value: CodeDB::empty_code_hash().to_word(),
-                    value_prev: Word::zero(),
-                },
-            )?;
-        }
+
         if value.is_zero() {
             // Skip transfer if value == 0
             return Ok(());
@@ -635,19 +624,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 value_prev: sender_balance_prev,
             },
         )?;
-
-        let (_found, receiver_account) = self.sdb.get_account(&receiver);
-        let receiver_balance_prev = receiver_account.balance;
-        let receiver_balance = receiver_account.balance + value;
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_balance,
-                value_prev: receiver_balance_prev,
-            },
-        )?;
+        self.transfer_to(step, receiver, receiver_exists, must_create, value, true)?;
 
         Ok(())
     }
@@ -684,7 +661,7 @@ impl<'a> CircuitInputStateRef<'a> {
         reversible: bool,
     ) -> Result<(), Error> {
         // If receiver doesn't exist, create it
-        if (!receiver_exists && !value.is_zero()) || must_create {
+        if !receiver_exists && (!value.is_zero() || must_create) {
             self.account_write(
                 step,
                 receiver,
