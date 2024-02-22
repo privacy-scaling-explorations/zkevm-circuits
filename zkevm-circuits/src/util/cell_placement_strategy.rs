@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use eth_types::Field;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
@@ -8,7 +8,7 @@ use super::cell_manager::{
 };
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct CMFixedWidthStrategyDistribution(HashMap<CellType, Vec<Column<Advice>>>);
+pub(crate) struct CMFixedWidthStrategyDistribution(BTreeMap<CellType, Vec<Column<Advice>>>);
 
 impl CMFixedWidthStrategyDistribution {
     pub(crate) fn add(&mut self, cell_type: CellType, advice: Column<Advice>) {
@@ -34,7 +34,7 @@ pub(crate) struct CMFixedWidthStrategy {
     advices: CMFixedWidthStrategyDistribution,
     height_offset: usize,
 
-    next: HashMap<CellType, (usize, usize)>,
+    next: BTreeMap<CellType, (usize, usize)>,
 
     perm_substitution: bool,
     max_height: usize,
@@ -52,7 +52,7 @@ impl CMFixedWidthStrategy {
         CMFixedWidthStrategy {
             advices,
             height_offset,
-            next: HashMap::default(),
+            next: BTreeMap::default(),
             perm_substitution: false,
             max_height: usize::max_value(),
         }
