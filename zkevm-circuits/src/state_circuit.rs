@@ -530,8 +530,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) -> Queries<F> {
     let first_different_limb = c.lexicographic_ordering.first_different_limb;
-    let final_bits_sum = meta.query_advice(first_different_limb.bits.0[3], Rotation::cur())
-        + meta.query_advice(first_different_limb.bits.0[4], Rotation::cur());
+    let final_bits_sum = meta.query_advice(first_different_limb.bits[3], Rotation::cur())
+        + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
     let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
     assert_eq!(mpt_update_table_expressions.len(), 12);
 
@@ -593,7 +593,6 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             .sort_keys
             .tag
             .bits
-            .0
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
         id: MpiQueries::new(meta, c.sort_keys.id),
         // this isn't binary! only 0 if most significant 3 bits are all 0 and at most 1 of the two
@@ -601,9 +600,9 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         // TODO: this can mask off just the top 3 bits if you want, since the 4th limb index is
         // Address9, which is always 0 for Rw::Stack rows.
         is_tag_and_id_unchanged: 4.expr()
-            * (meta.query_advice(first_different_limb.bits.0[0], Rotation::cur())
-                + meta.query_advice(first_different_limb.bits.0[1], Rotation::cur())
-                + meta.query_advice(first_different_limb.bits.0[2], Rotation::cur()))
+            * (meta.query_advice(first_different_limb.bits[0], Rotation::cur())
+                + meta.query_advice(first_different_limb.bits[1], Rotation::cur())
+                + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         storage_key: MpiQueries::new(meta, c.sort_keys.storage_key),
@@ -613,7 +612,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         mpt_proof_type: meta.query_advice(c.mpt_proof_type, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         first_different_limb: [0, 1, 2, 3]
-            .map(|idx| meta.query_advice(first_different_limb.bits.0[idx], Rotation::cur())),
+            .map(|idx| meta.query_advice(first_different_limb.bits[idx], Rotation::cur())),
         not_first_access: meta.query_advice(c.not_first_access, Rotation::cur()),
         last_access: 1.expr() - meta.query_advice(c.not_first_access, Rotation::next()),
         state_root: meta_query_word(meta, c.state_root, Rotation::cur()),

@@ -9,7 +9,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::BTreeSet, marker::PhantomData};
+use std::{collections::BTreeSet, marker::PhantomData, ops::Deref};
 use strum::IntoEnumIterator;
 
 /// Helper trait that implements functionality to represent a generic type as
@@ -42,6 +42,14 @@ pub struct BinaryNumberBits<const N: usize>(
     pub [Column<Advice>; N],
 );
 
+impl<const N: usize> Deref for BinaryNumberBits<N> {
+    type Target = [Column<Advice>; N];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl<const N: usize> BinaryNumberBits<N> {
     /// Construct a new BinaryNumberBits without adding any constraints.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -56,7 +64,7 @@ impl<const N: usize> BinaryNumberBits<N> {
         offset: usize,
         value: &T,
     ) -> Result<(), Error> {
-        for (&bit, &column) in value.as_bits().iter().zip(&self.0) {
+        for (&bit, &column) in value.as_bits().iter().zip(self.iter()) {
             region.assign_advice(
                 || format!("binary number {:?}", column),
                 column,
@@ -119,9 +127,7 @@ where
         rotation: Rotation,
     ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
         let bits = self.bits;
-        move |meta| {
-            Self::value_equals_expr(value, bits.0.map(|bit| meta.query_advice(bit, rotation)))
-        }
+        move |meta| Self::value_equals_expr(value, bits.map(|bit| meta.query_advice(bit, rotation)))
     }
 
     /// Returns a binary expression that evaluates to 1 if expressions are equal
@@ -148,11 +154,10 @@ where
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
         let mut annotations = Vec::new();
-        for (i, _) in self.bits.0.iter().enumerate() {
+        for (i, _) in self.bits.iter().enumerate() {
             annotations.push(format!("GADGETS_binary_number_{}", i));
         }
         self.bits
-            .0
             .iter()
             .zip(annotations.iter())
             .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
@@ -189,7 +194,7 @@ where
         selector: Column<Fixed>,
         value: Option<Column<Advice>>,
     ) -> BinaryNumberConfig<T, N> {
-        bits.0.map(|bit| {
+        bits.map(|bit| {
             meta.create_gate("bit column is 0 or 1", |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let bit = meta.query_advice(bit, Rotation::cur());

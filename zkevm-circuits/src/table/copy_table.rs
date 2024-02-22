@@ -279,7 +279,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.rw_counter.into(),
             self.rwc_inc_left.into(),
         ];
-        columns.extend(self.tag.0.iter().map(|c| Into::<Column<Any>>::into(*c)));
+        columns.extend(self.tag.iter().map(|c| Into::<Column<Any>>::into(*c)));
         columns
     }
 
@@ -295,7 +295,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("rw_counter"),
             String::from("rwc_inc_left"),
         ];
-        names.extend((0..self.tag.0.len()).map(|i| format!("tag_bit{i}")));
+        names.extend((0..self.tag.len()).map(|i| format!("tag_bit{i}")));
         names
     }
 
