@@ -468,16 +468,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
         let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
         let must_create = tx.is_create();
+
+        let caller_balance_sub_value_pair = if !tx.value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (zero, zero)
+        };
         if !callee_exists && (!tx.value.is_zero() || must_create) {
             callee_code_hash = rws.next().account_codehash_pair().1;
         }
-        let mut caller_balance_sub_value_pair = (zero, zero);
-        let mut callee_balance_pair = (zero, zero);
-        if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_balance_pair();
-            callee_balance_pair = rws.next().account_balance_pair();
+        let callee_balance_pair = if !tx.value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (zero, zero)
         };
-
         self.begin_tx.assign(region, offset, tx)?;
         self.tx.assign(region, offset, tx)?;
 
