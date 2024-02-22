@@ -138,7 +138,7 @@ mod test {
     }
 
     #[test]
-    fn test_intermediate_single_chunk() {
+    fn test_all_chunks_ok() {
         let bytecode = bytecode! {
             PUSH1(0x0) // retLength
             PUSH1(0x0) // retOffset
@@ -168,29 +168,47 @@ mod test {
     }
 
     #[test]
-    fn test_intermediate_single_chunk_fixed() {
+    fn test_all_chunks_fixed() {
         let bytecode = bytecode! {
-            PUSH1(0x0) // retLength
-            PUSH1(0x0) // retOffset
-            PUSH1(0x0) // argsLength
-            PUSH1(0x0) // argsOffset
-            PUSH1(0x0) // value
-            PUSH32(0x10_0000) // addr
-            PUSH32(0x10_0000) // gas
-            CALL
-            PUSH2(0xaa)
+            GAS
+            STOP
         };
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        let addr_a = address!("0x000000000000000000000000000000000000AAAA");
+        let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+        let test_ctx = TestContext::<2, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(addr_b)
+                    .balance(Word::from(1u64 << 20))
+                    .code(bytecode);
+                accs[1].address(addr_a).balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .gas(Word::from(1_000_000u64));
+                txs[1]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .gas(Word::from(1_000_000u64));
+            },
+            |block, _tx| block.number(0xcafeu64),
         )
-        .params({
-            FixedCParams {
-                total_chunks: 2,
-                max_rws: 60,
-                ..Default::default()
-            }
-        })
-        .run_chunk(1);
+        .unwrap();
+        (0..6).for_each(|chunk_id| {
+            CircuitTestBuilder::new_from_test_ctx(test_ctx.clone())
+                .params({
+                    FixedCParams {
+                        total_chunks: 6,
+                        max_rws: 64,
+                        max_txs: 2,
+                        ..Default::default()
+                    }
+                })
+                .run_chunk(chunk_id);
+        });
     }
 
     #[test]

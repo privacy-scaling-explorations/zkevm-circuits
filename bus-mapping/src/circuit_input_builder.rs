@@ -546,7 +546,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         next_copy_index: usize,
         last_call: Option<Call>,
     ) {
-        println!("commit_chunk_ctx");
         self.chunk_ctx.end_rwc = self.block_ctx.rwc.0;
         self.chunk_ctx.end_tx_index = next_tx_index;
         self.chunk_ctx.end_copy_index = next_copy_index;
@@ -625,6 +624,11 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             }
         }
         self.chunks[self.chunk_ctx.idx].padding = Some(padding);
+    }
+
+    /// Get the i-th mutable chunk
+    pub fn get_chunk_mut(&mut self, i: usize) -> &mut Chunk {
+        self.chunks.get_mut(i).expect("Chunk does not exist")
     }
 
     /// Get the i-th chunk
@@ -707,21 +711,23 @@ impl CircuitInputBuilder<FixedCParams> {
 
         let last_copy = self.block.copy_events.len();
 
-        // We fill dummy virtual steps: BeginChunk,EndChunk for all lefted empty chunks
+        // TODO figure out and resolve generic param type and move fixed_param set inside
+        // commit_chunk_ctx After fixed, then we can set fixed_param on all chunks
+        (0..self.circuits_params.total_chunks()).for_each(|idx| {
+            self.get_chunk_mut(idx).fixed_param = self.circuits_params;
+        });
+
+        // We fill dummy virtual steps: BeginChunk,EndChunk for redundant chunks
         let last_process_chunk_id = self.chunk_ctx.idx;
         (last_process_chunk_id..self.circuits_params.total_chunks()).try_for_each(|idx| {
-            // TODO figure out and resolve generic param type and move fixed_param set inside
-            // commit_chunk_ctx After fixed, then we can set fixed_param on all chunks
-            self.cur_chunk_mut().fixed_param = self.circuits_params;
-
             if idx == self.circuits_params.total_chunks() - 1 {
+                self.set_end_block()?;
                 self.commit_chunk_ctx(
                     false,
                     eth_block.transactions.len(),
                     last_copy,
                     last_call.clone(),
                 );
-                self.set_end_block()?;
             } else {
                 // it doent matter what step was put to set_end_chunk/set_begin_chunk on no-used
                 // chunks before end_block. Just need to make sure it's step lookup is consistency.
