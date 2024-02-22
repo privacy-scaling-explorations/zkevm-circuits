@@ -445,13 +445,13 @@ impl<F: Field> TransferToGadget<F> {
     }
 }
 
-// TODO: Merge with TransferGadget
-/// The TransferWithGasFeeGadget handles an irreversible gas fee subtraction to
-/// the sender and a transfer of value from sender to receiver.  The value
-/// transfer is only performed if the value is not zero.  If the transfer is
-/// performed and the receiver account doesn't exist, it will be created by
-/// setting it's code_hash = EMPTY_HASH.   The receiver account is also created
-/// unconditionally if must_create is true.  This gadget is used in BeginTx.
+/// The [`TransferGadget`] handles
+/// - (optional) an irreversible gas fee subtraction to the sender, and
+/// - a transfer of value from sender to receiver.
+///
+/// The value transfer is only performed if the value is not zero.
+/// It also create the receiver account when the conditions in [`TransferToGadget`] is met.
+/// This gadget is used in BeginTx, Call ops, and Create.
 #[derive(Clone, Debug)]
 pub(crate) struct TransferGadget<F, const WITH_FEE: bool> {
     sender_sub_fee: Option<UpdateBalanceGadget<F, 2, false>>,
