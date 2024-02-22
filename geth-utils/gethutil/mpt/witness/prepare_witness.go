@@ -520,13 +520,46 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				// to obtain the underlying branch to be able to finally add (besides this branch)
 				// the placeholder leaf. So we need to query getProof again with one of the leaves that is
 				// actually in this extension node.
-				// TODO:
 				if isAccountProof {
+					// TODO
 					node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
 					nodes = append(nodes, node)
 				} else {
-					node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
+					nibbles := getNibbles(proof2[len(proof2)-1])
+					newKey := make([]byte, len(key))
+					copy(newKey, key)
 
+					for i := 0; i < len(nibbles); i++ {
+						n := nibbles[i]
+						if key[i] != n {
+							newKey[i] = n
+						}
+					}
+
+					// The last nibble should be the one that gets one of the leaves
+					// in the branch (not nil):
+					var proof [][]byte
+					var err error
+					for i := 0; i < 16; i++ {
+						newKey[keyIndex] = byte(i)
+						k := trie.HexToKeybytes(newKey)
+						ky := common.BytesToHash(k)
+						proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
+						check(err)
+						if !isBranch(proof[len(proof)-1]) {
+							break
+						}
+					}
+
+					branchRlp := proof[len(proof)-2] // the last element has to be a leaf
+					isExtension := true
+
+					extNode := proof2[len(proof2)-1]
+					bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
+						key[keyIndex], key[keyIndex], false, false, isExtension)
+					nodes = append(nodes, bNode)
+
+					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 					nodes = append(nodes, node)
 				}
 			}

@@ -149,9 +149,8 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	return node
 }
 
-// getDriftedPosition returns the position in branch to which the leaf drifted because another
-// leaf has been added to the same slot. This information is stored into a branch init row.
-func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
+// getNibbles returns the nibbles of the leaf or extension node.
+func getNibbles(leafKeyRow []byte) []byte {
 	var nibbles []byte
 	if leafKeyRow[0] != 248 {
 		var keyLen int
@@ -193,6 +192,13 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 		}
 	}
 
+	return nibbles
+}
+
+// getDriftedPosition returns the position in branch to which the leaf drifted because another
+// leaf has been added to the same slot. This information is stored into a branch init row.
+func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
+	nibbles := getNibbles(leafKeyRow)	
 	return nibbles[numberOfNibbles]
 }
 
