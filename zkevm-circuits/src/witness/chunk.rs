@@ -189,7 +189,7 @@ pub fn chunk_convert<F: Field>(
             // by_address_rws
             let start = min(
                 chunk.ctx.idx * builder.circuits_params.max_rws,
-                by_address_rws.len() - 1,
+                by_address_rws.len(),
             );
             let end = min(
                 (chunk.ctx.idx + 1) * builder.circuits_params.max_rws,

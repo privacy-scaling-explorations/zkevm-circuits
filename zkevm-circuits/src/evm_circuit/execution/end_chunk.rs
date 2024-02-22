@@ -74,10 +74,68 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::FixedCParams, operation::Target};
-    use eth_types::bytecode;
+    use crate::{
+        test_util::CircuitTestBuilder,
+        witness::{block_convert, chunk_convert},
+    };
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData, operation::Target};
+    use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
+
+    #[test]
+    fn test_chunking_rwmap_logic() {
+        let bytecode = bytecode! {
+            GAS
+            STOP
+        };
+        let addr_a = address!("0x000000000000000000000000000000000000AAAA");
+        let addr_b = address!("0x000000000000000000000000000000000000BBBB");
+        let test_ctx = TestContext::<2, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(addr_b)
+                    .balance(Word::from(1u64 << 20))
+                    .code(bytecode);
+                accs[1].address(addr_a).balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .gas(Word::from(1_000_000u64));
+                txs[1]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .gas(Word::from(1_000_000u64));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+        let block: GethData = test_ctx.into();
+        let builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            FixedCParams {
+                total_chunks: 6,
+                max_rws: 64,
+                max_txs: 2,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+        let block = block_convert::<Fr>(&builder).unwrap();
+        let chunks = chunk_convert(&block, &builder).unwrap();
+        println!("num of chunk {:?}", chunks.len());
+        chunks.iter().enumerate().for_each(|(idx, chunk)| {
+            println!(
+                "{}th chunk by_address_rw_fingerprints {:?}, chrono_rw_fingerprints {:?} ",
+                idx, chunk.by_address_rw_fingerprints, chunk.chrono_rw_fingerprints,
+            );
+        });
+    }
 
     #[test]
     fn test_intermediate_single_chunk() {
@@ -125,10 +183,12 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
         )
-        .params(FixedCParams {
-            total_chunks: 2,
-            max_rws: 60,
-            ..Default::default()
+        .params({
+            FixedCParams {
+                total_chunks: 2,
+                max_rws: 60,
+                ..Default::default()
+            }
         })
         .run_chunk(1);
     }

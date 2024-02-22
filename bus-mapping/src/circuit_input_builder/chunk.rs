@@ -42,8 +42,6 @@ pub struct ChunkContext {
     pub initial_copy_index: usize,
     ///
     pub end_copy_index: usize,
-    /// Druing dry run, chuncking is disabled
-    pub enable: bool,
 }
 
 impl Default for ChunkContext {
@@ -65,7 +63,6 @@ impl ChunkContext {
             end_tx_index: 0,
             initial_copy_index: 0,
             end_copy_index: 0,
-            enable: true,
         }
     }
 
@@ -81,7 +78,6 @@ impl ChunkContext {
             end_tx_index: 0,
             initial_copy_index: 0,
             end_copy_index: 0,
-            enable: true,
         }
     }
 
