@@ -466,21 +466,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
         let callee_exists =
             is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
-        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
-
-        let caller_balance_sub_value_pair = if !tx.value.is_zero() {
-            rws.next().account_balance_pair()
-        } else {
-            (zero, zero)
-        };
-        if !callee_exists && (!tx.value.is_zero() || tx.is_create()) {
-            callee_code_hash = rws.next().account_codehash_pair().1;
-        }
-        let callee_balance_pair = if !tx.value.is_zero() {
-            rws.next().account_balance_pair()
-        } else {
-            (zero, zero)
-        };
+        self.transfer_with_gas_fee.assign(
+            region,
+            offset,
+            &mut rws,
+            (callee_exists, tx.value, tx.is_create()),
+            Some(gas_fee),
+        )?;
         self.begin_tx.assign(region, offset, tx)?;
         self.tx.assign(region, offset, tx)?;
 
@@ -504,18 +496,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas() - step.gas_cost))?;
-        self.transfer_with_gas_fee.assign(
-            region,
-            offset,
-            (
-                Some(caller_balance_sub_fee_pair.0),
-                Some(caller_balance_sub_fee_pair.1),
-            ),
-            caller_balance_sub_value_pair,
-            callee_balance_pair,
-            tx.value,
-            Some(gas_fee),
-        )?;
         self.code_hash
             .assign_u256(region, offset, callee_code_hash)?;
         self.is_empty_code_hash.assign_u256(

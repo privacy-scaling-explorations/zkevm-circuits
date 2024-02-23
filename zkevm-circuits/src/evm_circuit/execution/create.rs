@@ -639,22 +639,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let code_hash = if is_precheck_ok {
             if !is_address_collision {
-                // transfer
-                if callee_prev_code_hash.is_zero() {
-                    rws.next(); // codehash update
-                }
-                let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                    [(); 2].map(|_| rws.next().account_balance_pair())
-                } else {
-                    [(0.into(), 0.into()), (0.into(), 0.into())]
-                };
                 self.transfer.assign(
                     region,
                     offset,
-                    (None, None),
-                    caller_balance_pair,
-                    callee_balance_pair,
-                    value,
+                    &mut rws,
+                    (!callee_prev_code_hash.is_zero(), value, true),
                     None,
                 )?;
             }

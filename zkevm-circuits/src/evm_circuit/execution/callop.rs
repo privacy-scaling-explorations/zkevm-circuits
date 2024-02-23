@@ -867,20 +867,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
         // conditionally assign
-        if is_call && is_precheck_ok && !value.is_zero() {
-            if !callee_exists {
-                rws.next().account_codehash_pair(); // callee hash
-            }
-
-            let caller_balance_pair = rws.next().account_balance_pair();
-            let callee_balance_pair = rws.next().account_balance_pair();
+        if is_call && is_precheck_ok {
             self.transfer.assign(
                 region,
                 offset,
-                (None, None),
-                caller_balance_pair,
-                callee_balance_pair,
-                value,
+                &mut rws,
+                (callee_exists, value, false),
                 None,
             )?;
         }
