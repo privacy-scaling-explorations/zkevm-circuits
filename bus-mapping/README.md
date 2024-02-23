@@ -1,28 +1,30 @@
 # ZKEVM Bus-Mapping
 
-`Bus-Mapping` is a crate designed to parse EVM execution traces and manipulate all of the data they provide in order to obtain structured witness inputs for the EVM Proof and the State Proof.
+The `Bus-Mapping` crate is designed to parse EVM execution traces and manipulate the data they provide to obtain structured witness inputs for the EVM Proof and the State Proof.
 
-### Introduction
-At the moment every node on ethereum has to validate every transaction in the ethereum virtual machine. This means that every transaction adds work that everyone needs to do to verify Ethereum’s history. Worse still is that each transaction needs to be verified by every new node. Which means the amount of work a new node needs to do the sync the network is growing constantly. We want to build a proof of validity for the Ethereum blocks to avoid this.
+## Introduction
 
-This means making a proof of validity for the EVM + state reads / writes + signatures.
+Currently, every node on Ethereum must validate every transaction in the Ethereum Virtual Machine (EVM). This means that each transaction adds work that everyone must do to verify Ethereum’s history. Furthermore, each transaction needs to be verified by every new node, leading to a growing amount of work for new nodes to sync the network. To address this, we aim to build a proof of validity for Ethereum blocks.
 
-To simplify we separate our proofs into two components.
+This involves creating a proof of validity for the EVM, including state reads/writes and signatures. To simplify, we divide our proofs into two components:
 
-- State proof: State/memory/stack ops have been performed correctly. This does not check if the correct location has been read/written. We allow our prover to pick any location here and in the EVM proof confirm it is correct.
+- State Proof: Validates that state/memory/stack operations have been performed correctly. However, it does not verify if the correct location has been read/written. Our prover can select any location here and in the EVM proof confirm its correctness.
+- EVM Proof: Validates that the correct opcode is called at the correct time, checking the validity of these opcodes. It also confirms that for each of these opcodes, the state proof performed the correct operation.
 
-- EVM proof: This checks that the correct opcode is called at the correct time. It checks the validity of these opcodes. It also confirms that for each of these opcodes the state proof performed the correct operation.
+Only after verifying both proofs can we be confident that the Ethereum block is executed correctly.
 
-Only after verifying both proofs are we confident that that Ethereum block is executed correctly.
+## Bus Mapping
 
-### Bus Mapping
 The goal of this crate is to serve as:
-- A parsing lib for EVM execution traces.
+
+- A parsing library for EVM execution traces.
 - A way to infer some witness data that can only be constructed once we've analyzed the full exec trace.
 - An easy interface to collect all of the data to witness into the circuits and witness it with few function calls.
 
-### Parsing
-Provided a JSON file or a JSON as a stream of bytes, which contains an execution trace from an EVM, you can parse it and construct an [`GethExecTrace`](eth_types::GethExecTrace) instance from it. That will automatically fill all of the bus-mapping instances of each [`ExecStep`](crate::circuit_input_builder::ExecStep) plus fill in an [`OperationContainer`](crate::operation::container::OperationContainer) with all of the Memory, Stack and Storage ops performed by the provided trace.
+## Parsing
+
+Given a JSON file or a JSON stream containing an execution trace from an EVM, you can parse it and construct a [`GethExecTrace`](eth_types::GethExecTrace) instance from it. This will automatically populate all of the bus-mapping instances of each [`ExecStep`](crate::circuit_input_builder::ExecStep) and fill an [`OperationContainer`](crate::operation::container::Op
+erationContainer) with all of the memory, stack, and storage operations performed by the provided trace.
 
 ```rust
 use bus_mapping::{Error, mock::BlockData};
@@ -121,7 +123,8 @@ let stack_ops = builder.block.container.sorted_stack();
 builder.block.txs()[0].steps().iter();
 ```
 
-Assume we have the following trace:
+Assuming we have the following trace:
+
 ```text,ignore
 pc  op              stack (top -> down)                  memory
 --  --------------  ----------------------------------   ---------------------------------------
@@ -147,27 +150,28 @@ pc  op              stack (top -> down)                  memory
 ...
 ```
 
-Once you have the trace built (following the code found above) you can basically:
-- Get an iterator/vector over the `Stack`, `Memory` or `Storage` operations ordered on the way the State Proof needs.
+Once you have built the trace (following the code above), you can:
 
-On that way, we would get something like this for the Memory ops:
+- Get an iterator/vector over the `Stack`, `Memory`, or `Storage` operations ordered in the way the State Proof needs.
+
+For the Memory operations, it might look like this:
+
 ```text,ignore
-| `key`  | `val`         | `rw`    | `gc` | Note                                     |
-| :----: | ------------- | ------- | ---- | ---------------------------------------- |
-| `0x40` | `0`           | `Write` |      | Init                                     |
-| `0x40` | `0x80`        | `Write` | 0    | Assume written at the beginning of `code`|
-| `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                               |
-|   -    |               |         |      |                                          |
-| `0x80` | `0`           | `Write` |      | Init                                     |
-| `0x80` | `0xdeadbeef`  | `Write` | 10   | `63 MSTORE`                              |
-| `0x80` | `0xdeadbeef`  | `Read`  | 16   | `70 MLOAD`                               |
-| `0x80` | `0x1d97c6efb` | `Write` | 24   | `73 MSTORE`                              |
-|   -    |               |         |      |                                          |
-| `0xa0` | `0`           | `Write` |      | Init                                     |
-| `0xa0` | `0xcafeb0ba`  | `Write` | 34   | `83 MSTORE`                              |
+| `key`  | `val`         | `rw`    | `gc` | Note                                      |
+| :----: | ------------- | ------- | ---- | ----------------------------------------- |
+| `0x40` | `0`           | `Write` |      | Init                                      |
+| `0x40` | `0x80`        | `Write` | 0    | Assume written at the beginning of `code` |
+| `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                                |
+|   -    |               |         |      |                                           |
+| `0x80` | `0`           | `Write` |      | Init                                      |
+| `0x80` | `0xdeadbeef`  | `Write` | 10   | `63 MSTORE`                               |
+| `0x80` | `0xdeadbeef`  | `Read`  | 16   | `70 MLOAD`                                |
+| `0x80` | `0x1d97c6efb` | `Write` | 24   | `73 MSTORE`                               |
+|   -    |               |         |      |                                           |
+| `0xa0` | `0`           | `Write` |      | Init                                      |
+| `0xa0` | `0xcafeb0ba`  | `Write` | 34   | `83 MSTORE`                               |
 ```
 
-Where as you see, we group by `memory_address` and then order by `global_counter`.
+Here, we group by `memory_address` and then order by `global_counter`.
 
-- Iterate over the [`GethExecTrace`](eth_types::GethExecTrace) itself over each [`ExecStep`](crate::circuit_input_builder::ExecStep)'s is formed by and check which Stack/Memory&Storage operations are linked to each step.
-This is also automatically done via the [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
+- Iterate over the [`GethExecTrace`](eth_types::GethExecTrace) itself, over each [`ExecStep`](crate::circuit_input_builder::ExecStep) formed by, and check which Stack/Memory&Storage operations are linked to each step. This is also automatically done via the [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
