@@ -609,20 +609,18 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance
         );
 
-        if value.is_zero() {
-            // Skip transfer if value == 0
-            return Ok(());
+        if !value.is_zero() {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            )?;
         }
 
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
         self.transfer_to(
             step,
             receiver,
