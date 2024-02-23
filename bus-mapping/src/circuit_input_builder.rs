@@ -666,7 +666,7 @@ impl CircuitInputBuilder<FixedCParams> {
         &mut self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<(ExecStep, Option<Call>), Error> {
+    ) -> Result<(Option<ExecStep>, Option<Call>), Error> {
         assert!(
             self.circuits_params.max_rws().unwrap_or_default() > self.rws_reserve(),
             "Fixed max_rws not enough for rws reserve"
@@ -687,13 +687,17 @@ impl CircuitInputBuilder<FixedCParams> {
                     tx_id == eth_block.transactions.len(),
                     tx_id as u64,
                 )
+                .map(|(exec_step, last_call)| (Some(exec_step), last_call))
             })
-            .collect::<Result<Vec<(ExecStep, Option<Call>)>, _>>()?;
-        let res = res.remove(res.len() - 1);
+            .collect::<Result<Vec<(Option<ExecStep>, Option<Call>)>, _>>()?;
         // set eth_block
         self.block.eth_block = eth_block.clone();
         self.set_value_ops_call_context_rwc_eor();
-        Ok(res)
+        if !res.is_empty() {
+            Ok(res.remove(res.len() - 1))
+        } else {
+            Ok((None, None))
+        }
     }
 
     /// Handle a block by handling each transaction to generate all the
@@ -706,6 +710,7 @@ impl CircuitInputBuilder<FixedCParams> {
         println!("--------------{:?}", self.circuits_params);
         // accumulates gas across all txs in the block
         let (last_step, last_call) = self.begin_handle_block(eth_block, geth_traces)?;
+        let last_step = last_step.unwrap_or_default();
 
         assert!(self.circuits_params.max_rws().is_some());
 
@@ -748,10 +753,6 @@ impl CircuitInputBuilder<FixedCParams> {
             used_chunks <= self.circuits_params.total_chunks(),
             "Used more chunks than given total_chunks"
         );
-
-        self.chunks.iter().enumerate().for_each(|(id, chunk)| {
-            println!("chunk {}th ctx {:?}", id, chunk.ctx);
-        });
         assert!(
             self.chunks.len() == self.chunk_ctx.idx + 1,
             "number of chunks {} mis-match with chunk_ctx id {}",

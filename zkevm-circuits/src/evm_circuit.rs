@@ -267,7 +267,7 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     /// Compute the public inputs for this circuit.
-    fn instance_extend_chunk_ctx(&self) -> Vec<Vec<F>> {
+    pub fn instance_extend_chunk_ctx(&self) -> Vec<Vec<F>> {
         let chunk = self.chunk.as_ref().unwrap();
 
         let (rw_table_chunked_index, rw_table_total_chunks) =

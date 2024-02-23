@@ -34,6 +34,26 @@ fn state_circuit_unusable_rows() {
     )
 }
 
+fn new_chunk_from_rw_map<F: Field>(rws: &RwMap, padding_start_rw: Option<Rw>) -> Chunk<F> {
+    let (alpha, gamma) = get_permutation_randomness();
+    let mut chunk = Chunk {
+        by_address_rws: rws.clone(),
+        ..Default::default()
+    };
+
+    let rw_fingerprints = get_permutation_fingerprint_of_rwmap(
+        &chunk.by_address_rws,
+        chunk.fixed_param.max_rws,
+        alpha,
+        gamma,
+        F::from(1),
+        false,
+        padding_start_rw,
+    );
+    chunk.by_address_rw_fingerprints = rw_fingerprints;
+    chunk
+}
+
 fn test_state_circuit_ok(
     memory_ops: Vec<Operation<MemoryOp>>,
     stack_ops: Vec<Operation<StackOp>>,
@@ -45,7 +65,7 @@ fn test_state_circuit_ok(
         storage: storage_ops,
         ..Default::default()
     });
-    let chunk = Chunk::new_from_rw_map(&rw_map, None, None);
+    let chunk = new_chunk_from_rw_map(&rw_map, None);
 
     let circuit = StateCircuit::<Fr>::new(&chunk);
     let instance = circuit.instance();
@@ -69,7 +89,7 @@ fn verifying_key_independent_of_rw_length() {
 
     let no_rows = StateCircuit::<Fr>::new(&chunk);
 
-    chunk = Chunk::new_from_rw_map(
+    chunk = new_chunk_from_rw_map(
         &RwMap::from(&OperationContainer {
             memory: vec![Operation::new(
                 RWCounter::from(1),
@@ -79,7 +99,6 @@ fn verifying_key_independent_of_rw_length() {
             )],
             ..Default::default()
         }),
-        None,
         None,
     );
     let one_row = StateCircuit::<Fr>::new(&chunk);
@@ -948,11 +967,7 @@ fn variadic_size_check() {
         },
     ];
     // let rw_map: RwMap = rows.clone().into();
-    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(
-        &RwMap::from(rows.clone()),
-        None,
-        None,
-    ));
+    let circuit = StateCircuit::new(&new_chunk_from_rw_map(&RwMap::from(rows.clone()), None));
     let power_of_randomness = circuit.instance();
     let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 
@@ -973,7 +988,7 @@ fn variadic_size_check() {
         },
     ]);
 
-    let circuit = StateCircuit::new(&Chunk::new_from_rw_map(&rows.into(), None, None));
+    let circuit = StateCircuit::new(&new_chunk_from_rw_map(&rows.into(), None));
     let power_of_randomness = circuit.instance();
     let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
 

@@ -1,4 +1,4 @@
-use std::{cmp::min, iter};
+use std::iter;
 
 ///
 use super::{
@@ -8,6 +8,7 @@ use super::{
 use crate::util::unwrap_value;
 use bus_mapping::{
     circuit_input_builder::{self, Call, ChunkContext, FixedCParams},
+    operation::Target,
     Error,
 };
 use eth_types::Field;
@@ -75,40 +76,6 @@ impl<F: Field> Default for Chunk<F> {
     }
 }
 
-impl<F: Field> Chunk<F> {
-    #[cfg(test)]
-    pub(crate) fn new_from_rw_map(
-        rws: &RwMap,
-        padding_start_rw: Option<Rw>,
-        chrono_padding_start_rw: Option<Rw>,
-    ) -> Self {
-        let (alpha, gamma) = get_permutation_randomness();
-        let mut chunk = Chunk::default();
-        let rw_fingerprints = get_permutation_fingerprint_of_rwmap(
-            rws,
-            chunk.fixed_param.max_rws,
-            alpha,
-            gamma,
-            F::from(1),
-            false,
-            padding_start_rw,
-        );
-        let chrono_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
-            rws,
-            chunk.fixed_param.max_rws,
-            alpha,
-            gamma,
-            F::from(1),
-            true,
-            chrono_padding_start_rw,
-        );
-        chunk.chrono_rws = rws.clone();
-        chunk.by_address_rw_fingerprints = rw_fingerprints;
-        chunk.chrono_rw_fingerprints = chrono_rw_fingerprints;
-        chunk
-    }
-}
-
 /// Convert the idx-th chunk struct in bus-mapping to a witness chunk used in circuits
 pub fn chunk_convert<F: Field>(
     block: &Block<F>,
@@ -127,52 +94,20 @@ pub fn chunk_convert<F: Field>(
         .enumerate()
     {
         let chunk = chunk.unwrap(); // current chunk always there
-        let (prev_chunk_last_chrono_rw, prev_chunk_last_by_address_rw) = prev_chunk
-            .map(|prev_chunk| {
-                let prev_chunk_last_chrono_rw = {
-                    assert!(builder.circuits_params.max_rws > 0);
-                    let chunk_inner_rwc = prev_chunk.ctx.rwc.0;
-                    if chunk_inner_rwc.saturating_sub(1) == builder.circuits_params.max_rws {
-                        // if prev chunk rws are full, then get the last rwc
-                        RwMap::get_rw(&builder.block.container, prev_chunk.ctx.end_rwc - 1)
-                            .expect("Rw does not exist")
-                    } else {
-                        // last is the padding row
-                        Rw::Padding {
-                            rw_counter: builder.circuits_params.max_rws,
-                        }
-                    }
-                };
-                // get prev_chunk last by_address sorted rw
-                let prev_chunk_by_address_last_rw = {
-                    let by_address_last_rwc_index =
-                        (prev_chunk.ctx.idx + 1) * builder.circuits_params.max_rws;
-                    let prev_chunk_by_address_last_rwc = by_address_rws
-                        .get(by_address_last_rwc_index - 1)
-                        .cloned()
-                        .or_else(|| {
-                            let target_padding_count =
-                                (by_address_last_rwc_index + 1) - by_address_rws.len();
-                            let mut accu_count = 0;
-                            padding_meta
-                                .iter()
-                                .find(|(_, count)| {
-                                    accu_count += **count;
-                                    target_padding_count <= accu_count.try_into().unwrap()
-                                })
-                                .map(|(padding_rwc, _)| Rw::Padding {
-                                    rw_counter: *padding_rwc,
-                                })
-                        });
-
-                    prev_chunk_by_address_last_rwc
-                };
-                (prev_chunk_last_chrono_rw, prev_chunk_by_address_last_rw)
-            })
-            .map(|(prev_chunk_last_rwc, prev_chunk_by_address_last_rwc)| {
-                (Some(prev_chunk_last_rwc), prev_chunk_by_address_last_rwc)
-            })
-            .unwrap_or_else(|| (None, None));
+        let prev_chunk_last_chrono_rw = prev_chunk.map(|prev_chunk| {
+            assert!(builder.circuits_params.max_rws > 0);
+            let chunk_inner_rwc = prev_chunk.ctx.rwc.0;
+            if chunk_inner_rwc.saturating_sub(1) == builder.circuits_params.max_rws {
+                // if prev chunk rws are full, then get the last rwc
+                RwMap::get_rw(&builder.block.container, prev_chunk.ctx.end_rwc - 1)
+                    .expect("Rw does not exist")
+            } else {
+                // last is the padding row
+                Rw::Padding {
+                    rw_counter: builder.circuits_params.max_rws - 1,
+                }
+            }
+        });
 
         println!(
             "| {:?} ... {:?} | @chunk_convert",
@@ -180,24 +115,47 @@ pub fn chunk_convert<F: Field>(
         );
 
         // Get the rws in the i-th chunk
-        let chrono_rws = RwMap::from(&builder.block.container)
-            .take_rw_counter_range(chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
+        let chrono_rws = {
+            let mut chrono_rws = RwMap::from(&builder.block.container);
+            // remove paading here since it will be attached later
+            if let Some(padding_vec) = chrono_rws.0.get_mut(&Target::Padding) {
+                padding_vec.clear()
+            }
+            chrono_rws.take_rw_counter_range(chunk.ctx.initial_rwc, chunk.ctx.end_rwc)
+        };
 
-        chrono_rws.check_value();
-
-        let by_address_rws = RwMap::from({
+        let (prev_chunk_last_by_address_rw, by_address_rws) = {
             // by_address_rws
-            let start = min(
-                chunk.ctx.idx * builder.circuits_params.max_rws,
-                by_address_rws.len(),
-            );
-            let end = min(
-                (chunk.ctx.idx + 1) * builder.circuits_params.max_rws,
-                by_address_rws.len(),
-            );
-            by_address_rws[start..end].to_vec()
-        })
-        .take_rw_counter_range(chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
+            let start = chunk.ctx.idx * builder.circuits_params.max_rws;
+            let size = builder.circuits_params.max_rws;
+            // by_address_rws[start..end].to_vec()
+
+            let skipped = by_address_rws
+                .iter()
+                // remove paading here since it will be attached later
+                .filter(|rw| rw.tag() != Target::Padding)
+                .cloned() // TODO avoid clone here
+                .chain(padding_meta.iter().flat_map(|(k, v)| {
+                    vec![
+                        Rw::Padding { rw_counter: *k };
+                        <i32 as TryInto<usize>>::try_into(*v).unwrap()
+                    ]
+                }));
+            // there is no previous chunk
+            if start == 0 {
+                (None, RwMap::from(skipped.take(size).collect::<Vec<_>>()))
+            } else {
+                // here have `chunk.ctx.idx - 1` because each chunk first row are probagated from
+                // prev chunk. giving idx>0 th chunk, there will be (idx-1) placeholders cant' count
+                // in real order
+                let mut skipped = skipped.skip(start - 1 - (chunk.ctx.idx - 1));
+                let prev_chunk_last_by_address_rw = skipped.next();
+                (
+                    prev_chunk_last_by_address_rw,
+                    RwMap::from(skipped.take(size).collect::<Vec<_>>()),
+                )
+            }
+        };
 
         // Comupute cur fingerprints from last fingerprints and current Rw rows
         let by_address_rw_fingerprints = get_permutation_fingerprint_of_rwmap(

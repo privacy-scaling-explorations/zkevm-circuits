@@ -484,7 +484,7 @@ impl<F: Field> StateCircuit<F> {
             permu_alpha: chunk.permu_alpha,
             permu_gamma: chunk.permu_gamma,
             rw_fingerprints: chunk.by_address_rw_fingerprints.clone(),
-            prev_chunk_last_rw: chunk.prev_chunk_last_chrono_rw,
+            prev_chunk_last_rw: chunk.prev_chunk_last_by_address_rw,
             _marker: PhantomData::default(),
         }
     }

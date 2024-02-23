@@ -117,7 +117,7 @@ mod test {
         let builder = BlockData::new_from_geth_data_with_params(
             block.clone(),
             FixedCParams {
-                total_chunks: 6,
+                total_chunks: 4,
                 max_rws: 64,
                 max_txs: 2,
                 ..Default::default()
@@ -128,43 +128,13 @@ mod test {
         .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
         let chunks = chunk_convert(&block, &builder).unwrap();
-        println!("num of chunk {:?}", chunks.len());
-        chunks.iter().enumerate().for_each(|(idx, chunk)| {
-            println!(
-                "{}th chunk by_address_rw_fingerprints {:?}, chrono_rw_fingerprints {:?} ",
-                idx, chunk.by_address_rw_fingerprints, chunk.chrono_rw_fingerprints,
-            );
-        });
-    }
-
-    #[test]
-    fn test_all_chunks_ok() {
-        let bytecode = bytecode! {
-            PUSH1(0x0) // retLength
-            PUSH1(0x0) // retOffset
-            PUSH1(0x0) // argsLength
-            PUSH1(0x0) // argsOffset
-            PUSH1(0x0) // value
-            PUSH32(0x10_0000) // addr
-            PUSH32(0x10_0000) // gas
-            CALL
-            PUSH2(0xaa)
-        };
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-        )
-        .block_modifier(Box::new(move |_block, chunk| {
-            // TODO FIXME padding start as a workaround. The practical should be last chunk last row
-            // rws
-            // if let Some(a) = chunk.rws.0.get_mut(&Target::Start) {
-            //     a.push(Rw::Start { rw_counter: 1 });
-            // }
-            println!(
-                "=> FIXME is fixed? {:?}",
-                chunk.chrono_rws.0.get_mut(&Target::Start)
-            );
-        }))
-        .run_dynamic_chunk(4, 2);
+        // assert last fingerprint acc are equal
+        if let Some(last_chunk) = chunks.last() {
+            assert_eq!(
+                last_chunk.by_address_rw_fingerprints.mul_acc,
+                last_chunk.chrono_rw_fingerprints.mul_acc
+            )
+        }
     }
 
     #[test]
@@ -202,7 +172,7 @@ mod test {
                 .params({
                     FixedCParams {
                         total_chunks: 6,
-                        max_rws: 64,
+                        max_rws: 90,
                         max_txs: 2,
                         ..Default::default()
                     }

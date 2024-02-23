@@ -1,5 +1,8 @@
 //! The Read-Write table related structs
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{HashMap, HashSet},
+    iter,
+};
 
 use bus_mapping::{
     exec_trace::OperationRef,
@@ -116,8 +119,9 @@ impl RwMap {
     }
     /// Calculates the number of Rw::Padding rows needed.
     /// `target_len` is allowed to be 0 as an "auto" mode,
+    /// return padding size also allow to be 0, means no padding
     pub(crate) fn padding_len(rows_len: usize, target_len: usize) -> usize {
-        if target_len > rows_len {
+        if target_len >= rows_len {
             target_len - rows_len
         } else {
             if target_len != 0 {
@@ -135,10 +139,17 @@ impl RwMap {
         target_len: usize,
         padding_start_rw: Option<Rw>,
     ) -> (Vec<Rw>, usize) {
+        let mut padding_exist = HashSet::new();
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed: Vec<Rw> = rows
             .iter()
-            .filter(|rw| !matches!(rw, Rw::Start { .. } | Rw::Padding { .. }))
+            .filter(|rw| {
+                if let Rw::Padding { rw_counter } = rw {
+                    padding_exist.insert(*rw_counter);
+                }
+
+                !matches!(rw, Rw::Start { .. })
+            })
             .cloned()
             .collect();
         let padding_length = {
@@ -146,25 +157,23 @@ impl RwMap {
             length.saturating_sub(1)
         };
 
-        // option 1: need to provide padding starting rw_counter at function parameters
-        // option 2: just padding after local max rw_counter + 1
-        // We adapt option 2 for now
-        // the side effect is it introduce malleable proof when append `Rw::Padding` rw_counter,
-        // because `Rw::Padding` is not global unique
-        let start_padding_rw_counter = rows_trimmed
-            .iter()
-            .map(|rw| rw.rw_counter())
-            .max()
-            .unwrap_or(1)
-            + 1;
+        // padding rw_counter starting from
+        // +1 for to including padding_start row
+        let start_padding_rw_counter = rows_trimmed.len() + 1;
 
-        let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length)
-            .map(|rw_counter| Rw::Padding { rw_counter });
+        let padding = (start_padding_rw_counter..).flat_map(|rw_counter| {
+            if padding_exist.contains(&rw_counter) {
+                None
+            } else {
+                Some(Rw::Padding { rw_counter })
+            }
+        });
         (
             iter::empty()
                 .chain([padding_start_rw.unwrap_or(Rw::Start { rw_counter: 1 })])
                 .chain(rows_trimmed.into_iter())
                 .chain(padding.into_iter())
+                .take(target_len)
                 .collect(),
             padding_length,
         )
@@ -191,9 +200,9 @@ impl RwMap {
     }
 
     /// take only rw_counter within range
-    pub fn take_rw_counter_range(mut self, start: usize, end: usize) -> Self {
+    pub fn take_rw_counter_range(mut self, start_rwc: usize, end_rwc: usize) -> Self {
         for rw in self.0.values_mut() {
-            rw.retain(|r| r.rw_counter() >= start && r.rw_counter() < end)
+            rw.retain(|r| r.rw_counter() >= start_rwc && r.rw_counter() < end_rwc)
         }
         self
     }
@@ -428,13 +437,22 @@ impl<F: Field> RwRow<Value<F>> {
         target_len: usize,
         padding_start_rwrow: Option<RwRow<Value<F>>>,
     ) -> (Vec<RwRow<Value<F>>>, usize) {
+        let mut padding_exist = HashSet::new();
         // Remove Start/Padding rows as we will add them from scratch.
         let rows_trimmed = rows
             .iter()
             .filter(|rw| {
                 let tag = unwrap_value(rw.tag);
-                !(tag == F::from(Target::Start as u64) || tag == F::from(Target::Padding as u64))
-                    && tag != F::ZERO // 0 is invalid tag
+
+                if tag == F::from(Target::Padding as u64) {
+                    let rw_counter = u64::from_le_bytes(
+                        unwrap_value(rw.rw_counter).to_repr()[..U64_BYTES]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    padding_exist.insert(rw_counter);
+                }
+                tag != F::from(Target::Start as u64) && tag != F::ZERO // 0 is invalid tag
             })
             .cloned()
             .collect::<Vec<RwRow<Value<F>>>>();
@@ -443,12 +461,7 @@ impl<F: Field> RwRow<Value<F>> {
             length.saturating_sub(1) // first row always got padding
         };
         let start_padding_rw_counter = {
-            let start_padding_rw_counter = rows_trimmed
-                .iter()
-                .map(|rw| unwrap_value(rw.rw_counter))
-                .max()
-                .unwrap_or(F::from(1u64))
-                + F::ONE;
+            let start_padding_rw_counter = F::from(rows_trimmed.len() as u64) + F::ONE;
             // Assume root of unity < 2**64
             assert!(
                 start_padding_rw_counter.to_repr()[U64_BYTES..]
@@ -465,13 +478,17 @@ impl<F: Field> RwRow<Value<F>> {
             )
         } as usize;
 
-        let padding = (start_padding_rw_counter..start_padding_rw_counter + padding_length).map(
-            |rw_counter| RwRow {
-                rw_counter: Value::known(F::from(rw_counter as u64)),
-                tag: Value::known(F::from(Target::Padding as u64)),
-                ..Default::default()
-            },
-        );
+        let padding = (start_padding_rw_counter..).flat_map(|rw_counter| {
+            if padding_exist.contains(&rw_counter.try_into().unwrap()) {
+                None
+            } else {
+                Some(RwRow {
+                    rw_counter: Value::known(F::from(rw_counter as u64)),
+                    tag: Value::known(F::from(Target::Padding as u64)),
+                    ..Default::default()
+                })
+            }
+        });
         (
             iter::once(padding_start_rwrow.unwrap_or(RwRow {
                 rw_counter: Value::known(F::ONE),
@@ -480,6 +497,7 @@ impl<F: Field> RwRow<Value<F>> {
             }))
             .chain(rows_trimmed.into_iter())
             .chain(padding.into_iter())
+            .take(target_len)
             .collect(),
             padding_length,
         )

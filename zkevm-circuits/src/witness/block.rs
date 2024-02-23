@@ -295,9 +295,14 @@ pub fn block_convert<F: Field>(
         .chunks
         .iter()
         .fold(BTreeMap::new(), |mut map, chunk| {
-            assert!(chunk.ctx.rwc.0.saturating_sub(1) <= builder.circuits_params.max_rws);
-            // [chunk.ctx.rwc.0, builder.circuits_params.max_rws + 1)
-            (chunk.ctx.rwc.0..builder.circuits_params.max_rws + 1).for_each(|padding_rw_counter| {
+            assert!(
+                chunk.ctx.rwc.0.saturating_sub(1) <= builder.circuits_params.max_rws,
+                "max_rws size {} must larger than chunk rws size {}",
+                builder.circuits_params.max_rws,
+                chunk.ctx.rwc.0.saturating_sub(1),
+            );
+            // [chunk.ctx.rwc.0, builder.circuits_params.max_rws)
+            (chunk.ctx.rwc.0..builder.circuits_params.max_rws).for_each(|padding_rw_counter| {
                 *map.entry(padding_rw_counter).or_insert(0) += 1;
             });
             map

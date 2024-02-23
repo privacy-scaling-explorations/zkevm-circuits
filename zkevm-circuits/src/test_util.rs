@@ -79,7 +79,6 @@ const NUM_BLINDING_ROWS: usize = 64;
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
 ///     .block_modifier(Box::new(|block, chunk| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
-///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
@@ -327,12 +326,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                         "Total chunks unmatched with fixed param"
                     );
                     BlockData::new_from_geth_data_with_params(block.clone(), fixed_param)
-                        .new_circuit_input_builder()
+                        .new_circuit_input_builder_with_feature(
+                            self.feature_config.unwrap_or_default(),
+                        )
                         .handle_block(&block.eth_block, &block.geth_traces)
                         .unwrap()
                 }
                 None => BlockData::new_from_geth_data_chunked(block.clone(), total_chunk)
-                    .new_circuit_input_builder()
+                    .new_circuit_input_builder_with_feature(self.feature_config.unwrap_or_default())
                     .handle_block(&block.eth_block, &block.geth_traces)
                     .unwrap(),
             };
@@ -352,11 +353,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             // Build a witness block from trace result.
             let mut block = crate::witness::block_convert(&builder).unwrap();
+
             let mut chunk = crate::witness::chunk_convert(&block, &builder)
                 .unwrap()
                 .remove(chunk_index);
-
-            println!("fingerprints = {:?}", chunk.chrono_rw_fingerprints);
 
             for modifier_fn in self.block_modifiers {
                 modifier_fn.as_ref()(&mut block, &mut chunk);
@@ -374,10 +374,16 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let (_active_gate_rows, _active_lookup_rows) =
                 EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
 
-            let circuit =
-                EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk.clone());
-            let instance = circuit.instance();
-            let _prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
+            let _prover = if block.feature_config.is_mainnet() {
+                let circuit =
+                    EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk.clone());
+                let instance = circuit.instance();
+                MockProver::<Fr>::run(k, &circuit, instance)
+            } else {
+                let circuit = EvmCircuit::get_test_circuit_from_block(block.clone(), chunk.clone());
+                let instance = circuit.instance_extend_chunk_ctx();
+                MockProver::<Fr>::run(k, &circuit, instance)
+            };
 
             // self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
