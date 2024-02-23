@@ -243,12 +243,11 @@ impl<F: Field> TxDataGadget<F> {
         let call_data_word_length = cb.div_by_const(call_data_length.expr() + 31.expr(), 32);
 
         let (cost_sum, gas_mul_gas_price_plus_value) = if calculate_total_cost {
-            let cost_sum = cb.query_word32();
             let gas_mul_gas_price_plus_value = AddWordsGadget::construct(
                 cb,
                 [mul_gas_fee_by_gas.product().clone(), value.clone()],
-                cost_sum.clone(),
             );
+            let cost_sum = gas_mul_gas_price_plus_value.sum().clone();
             (Some(cost_sum), Some(gas_mul_gas_price_plus_value))
         } else {
             (None, None)
@@ -329,19 +328,17 @@ impl<F: Field> TxDataGadget<F> {
         self.caller_address.assign_h160(region, offset, tx.from)?;
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas(), gas_fee)?;
-        let sum = gas_fee + tx.value;
 
         if self.cost_sum.is_some() && self.gas_mul_gas_price_plus_value.is_some() {
+            let (sum, _) = self.gas_mul_gas_price_plus_value.as_ref().unwrap().assign(
+                region,
+                offset,
+                [gas_fee, tx.value],
+            )?;
             self.cost_sum
                 .as_ref()
                 .unwrap()
                 .assign_u256(region, offset, sum)?;
-            self.gas_mul_gas_price_plus_value.as_ref().unwrap().assign(
-                region,
-                offset,
-                [gas_fee, tx.value],
-                sum,
-            )?;
         }
 
         Ok(())

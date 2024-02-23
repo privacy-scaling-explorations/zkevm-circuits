@@ -40,8 +40,8 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
 
         let a = cb.query_word32();
         let b = cb.query_word32();
-        let c = cb.query_word32();
-        let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()], c.clone());
+        let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()]);
+        let c = add_words.sum();
 
         // Swap a and c if opcode is SUB
         let is_sub = PairSelectGadget::construct(
@@ -92,8 +92,8 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         } else {
             [0, 1, 2]
         };
-        let [a, b, c] = indices.map(|index| block.get_rws(step, index).stack_value());
-        self.add_words.assign(region, offset, [a, b], c)?;
+        let [a, b, _c] = indices.map(|index| block.get_rws(step, index).stack_value());
+        self.add_words.assign(region, offset, [a, b])?;
         self.is_sub.assign(
             region,
             offset,

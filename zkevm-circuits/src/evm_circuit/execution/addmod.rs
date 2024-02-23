@@ -80,10 +80,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         );
 
         // 2. check d * N + r == a_reduced + b, only checking carry if n != 0
-        let sum_areduced_b = {
-            let sum = cb.query_word32();
-            AddWordsGadget::construct(cb, [a_reduced.clone(), b.clone()], sum)
-        };
+        let sum_areduced_b = AddWordsGadget::construct(cb, [a_reduced.clone(), b.clone()]);
         let sum_areduced_b_overflow = cb.query_word32();
         let muladd_d_n_r = MulAddWords512Gadget::construct(
             cb,
@@ -204,8 +201,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.muladd_k_n_areduced
             .assign(region, offset, [k, n, a_reduced, a])?;
 
-        self.sum_areduced_b
-            .assign(region, offset, [a_reduced, b], a_reduced_plus_b)?;
+        self.sum_areduced_b.assign(region, offset, [a_reduced, b])?;
 
         self.sum_areduced_b_overflow
             .assign_u256(region, offset, a_reduced_plus_b_overflow)?;

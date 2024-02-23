@@ -35,7 +35,7 @@ impl<F: Field> AbsWordGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let x = cb.query_word32();
         let x_abs = cb.query_word32();
-        let sum = cb.query_word32();
+
         let (x_lo, x_hi) = x.to_word().to_lo_hi();
         let (x_abs_lo, x_abs_hi) = x_abs.to_word().to_lo_hi();
         let is_neg = cb.is_lt(127.expr(), x.limbs[31].expr());
@@ -51,7 +51,8 @@ impl<F: Field> AbsWordGadget<F> {
 
         // When `is_neg`, constrain `sum == 0` and `carry == 1`. Since the final
         // result is `1 << 256`.
-        let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
+        let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()]);
+        let sum = add_words.sum().clone();
         cb.add_constraint(
             "sum == 0 when x < 0",
             is_neg.expr() * sum::expr(add_words.sum().to_word_n::<N_BYTES_WORD>().limbs),
@@ -85,9 +86,9 @@ impl<F: Field> AbsWordGadget<F> {
             127.into(),
             u64::from(x.to_le_bytes()[31]).into(),
         )?;
-        let sum = x.overflowing_add(x_abs).0;
+        let (sum, _) = self.add_words.assign(region, offset, [x, x_abs])?;
         self.sum.assign_u256(region, offset, sum)?;
-        self.add_words.assign(region, offset, [x, x_abs], sum)
+        Ok(())
     }
 
     pub(crate) fn is_neg(&self) -> &LtGadget<F, 1> {

@@ -299,39 +299,27 @@ impl<F: Field> RestoreContextGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct UpdateBalanceGadget<F, const N_ADDENDS: usize, const INCREASE: bool> {
-    add_words: AddWordsGadget<F, N_ADDENDS, true>,
+pub(crate) struct UpdateBalanceGadget<F, const INCREASE: bool> {
+    add_words: AddWordsGadget<F, 2, true>,
 }
 
-impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
-    UpdateBalanceGadget<F, N_ADDENDS, INCREASE>
-{
+impl<F: Field, const INCREASE: bool> UpdateBalanceGadget<F, INCREASE> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         address: WordLoHi<Expression<F>>,
-        updates: &[Word32Cell<F>],
+        update: Word32Cell<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
-        debug_assert!(updates.len() == N_ADDENDS - 1);
-
         let balance_addend = cb.query_word32();
-        let balance_sum = cb.query_word32();
+
+        let add_words = AddWordsGadget::construct(cb, [balance_addend.clone(), update]);
+        let balance_sum = add_words.sum();
 
         let [value, value_prev]: [Word32<Expression<F>>; 2] = if INCREASE {
             [balance_sum.to_word_n(), balance_addend.to_word_n()]
         } else {
             [balance_addend.to_word_n(), balance_sum.to_word_n()]
         };
-
-        let add_words = AddWordsGadget::construct(
-            cb,
-            std::iter::once(balance_addend)
-                .chain(updates.to_vec())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-            balance_sum,
-        );
 
         cb.account_write(
             address,
@@ -349,26 +337,24 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value_prev: U256,
-        updates: Vec<U256>,
+        update: U256,
         value: U256,
     ) -> Result<(), Error> {
-        debug_assert!(updates.len() + 1 == N_ADDENDS);
-
-        let [value, value_prev] = if INCREASE {
+        let [_value, value_prev] = if INCREASE {
             [value, value_prev]
         } else {
             [value_prev, value]
         };
-        let mut addends = vec![value_prev];
-        addends.extend(updates);
-        self.add_words
-            .assign(region, offset, addends.try_into().unwrap(), value)
+        let (_value, _) = self
+            .add_words
+            .assign(region, offset, [value_prev, update])?;
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferToGadget<F> {
-    receiver: UpdateBalanceGadget<F, 2, true>,
+    receiver: UpdateBalanceGadget<F, true>,
     receiver_exists: Expression<F>,
     opcode_is_create: Expression<F>,
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
@@ -435,7 +421,7 @@ impl<F: Field> TransferToGadget<F> {
             region,
             offset,
             receiver_balance_pair.1,
-            vec![value],
+            value,
             receiver_balance_pair.0,
         )?;
         self.value_is_zero
@@ -463,8 +449,8 @@ impl<F: Field> TransferToGadget<F> {
 /// This gadget is used in BeginTx, Call ops, and Create.
 #[derive(Clone, Debug)]
 pub(crate) struct TransferGadget<F, const WITH_FEE: bool> {
-    sender_sub_fee: Option<UpdateBalanceGadget<F, 2, false>>,
-    sender_sub_value: UpdateBalanceGadget<F, 2, false>,
+    sender_sub_fee: Option<UpdateBalanceGadget<F, false>>,
+    sender_sub_value: UpdateBalanceGadget<F, false>,
     receiver: TransferToGadget<F>,
     pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
@@ -540,7 +526,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
                 region,
                 offset,
                 sender_balance_sub_fee.1,
-                vec![gas_fee.expect("exists")],
+                gas_fee.expect("exists"),
                 sender_balance_sub_fee.0,
             )?;
         }
@@ -553,7 +539,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
             region,
             offset,
             sender_balance_sub_value.1,
-            vec![value],
+            value,
             sender_balance_sub_value.0,
         )?;
         self.receiver.assign(

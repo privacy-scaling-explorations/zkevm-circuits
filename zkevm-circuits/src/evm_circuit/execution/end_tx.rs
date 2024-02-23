@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::{TransferToGadget, UpdateBalanceGadget},
-            constraint_builder::EVMConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsZeroWordGadget, MinMaxGadget,
                 MulWordByU64Gadget,
@@ -33,7 +33,7 @@ pub(crate) struct EndTxGadget<F> {
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
     mul_gas_price_by_refund: MulWordByU64Gadget<F>,
     tx_caller_address: WordLoHiCell<F>,
-    gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
+    gas_fee_refund: UpdateBalanceGadget<F, true>,
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
     coinbase: WordLoHiCell<F>,
@@ -100,7 +100,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         }
         let effective_tip = cb.query_word32();
         let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
+            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee]);
+        cb.require_equal_word(
+            "tx_gas_price",
+            tx_gas_price.to_word(),
+            sub_gas_price_by_base_fee.sum().to_word(),
+        );
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let coinbase_reward = TransferToGadget::construct(
@@ -184,7 +189,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             caller_balance_prev,
-            vec![gas_fee_refund],
+            gas_fee_refund,
             caller_balance,
         )?;
         let effective_tip = tx.gas_price - block.context.base_fee;
@@ -193,7 +198,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             [effective_tip, block.context.base_fee],
-            tx.gas_price,
         )?;
         self.mul_effective_tip_by_gas_used.assign(
             region,

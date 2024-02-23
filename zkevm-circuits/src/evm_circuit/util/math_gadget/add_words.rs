@@ -28,9 +28,9 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         addends: [Word32Cell<F>; N_ADDENDS],
-        sum: Word32Cell<F>,
     ) -> Self {
         let carry_lo = cb.query_cell();
+        let sum = cb.query_word32();
         let carry_hi = if CHECK_OVERFLOW {
             None
         } else {
@@ -91,8 +91,12 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         addends: [Word; N_ADDENDS],
-        sum: Word,
-    ) -> Result<(), Error> {
+    ) -> Result<(Word, bool), Error> {
+        let (sum, sum_overflow): (Word, bool) =
+            addends.iter().fold((0.into(), false), |(a, overflow), b| {
+                let (sum, new_overflow) = a.overflowing_add(*b);
+                (sum, overflow || new_overflow)
+            });
         for (word, value) in self.addends.iter().zip(addends.iter()) {
             word.assign_u256(region, offset, *value)?;
         }
@@ -132,7 +136,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
             )?;
         }
 
-        Ok(())
+        Ok((sum, sum_overflow))
     }
 
     #[allow(

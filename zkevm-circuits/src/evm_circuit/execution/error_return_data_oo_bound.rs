@@ -46,7 +46,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         let memory_offset = cb.query_u64();
         let data_offset = cb.query_word32();
         let size = cb.query_word32();
-        let remainder_end = cb.query_word32();
         let return_data_length = cb.query_cell();
 
         cb.require_equal(
@@ -72,7 +71,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         let is_data_offset_within_u64 = cb.is_zero(data_offset_larger_u64);
 
         // Check if `remainder_end` is Uint64 overflow.
-        let sum = AddWordsGadget::construct(cb, [data_offset, size], remainder_end.clone());
+        let sum = AddWordsGadget::construct(cb, [data_offset, size]);
+        let remainder_end = sum.sum().clone();
         let is_end_u256_overflow = sum.carry().as_ref().unwrap();
 
         let remainder_end_larger_u64 = sum::expr(&remainder_end.limbs[N_BYTES_U64..]);
@@ -136,9 +136,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.memory_offset
             .assign(region, offset, Some(dest_offset.as_u64().to_le_bytes()))?;
 
-        let remainder_end = data_offset.overflowing_add(size).0;
-        self.sum
-            .assign(region, offset, [data_offset, size], remainder_end)?;
+        let (remainder_end, _) = self.sum.assign(region, offset, [data_offset, size])?;
 
         let return_data_length = block.get_rws(step, 3).call_context_value();
         self.return_data_length.assign(

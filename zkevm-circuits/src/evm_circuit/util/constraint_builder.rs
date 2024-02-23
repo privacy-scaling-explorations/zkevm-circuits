@@ -647,8 +647,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         address: WordLoHi<Expression<F>>,
         value: Word32Cell<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
-    ) -> UpdateBalanceGadget<F, 2, true> {
-        UpdateBalanceGadget::construct(self, address, &[value], reversion_info)
+    ) -> UpdateBalanceGadget<F, true> {
+        UpdateBalanceGadget::construct(self, address, value, reversion_info)
     }
 
     pub(crate) fn decrease_balance(
@@ -656,8 +656,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         address: WordLoHi<Expression<F>>,
         value: Word32Cell<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
-    ) -> UpdateBalanceGadget<F, 2, false> {
-        UpdateBalanceGadget::construct(self, address, &[value], reversion_info)
+    ) -> UpdateBalanceGadget<F, false> {
+        UpdateBalanceGadget::construct(self, address, value, reversion_info)
     }
 
     // Fixed

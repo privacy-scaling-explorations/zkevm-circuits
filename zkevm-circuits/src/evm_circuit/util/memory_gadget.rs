@@ -194,8 +194,8 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
     fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let offset = cb.query_word32();
         let length = cb.query_word32();
-        let sum = cb.query_word32();
-
+        let offset_length_sum = AddWordsGadget::construct(cb, [offset, length.clone()]);
+        let sum = offset_length_sum.sum();
         let sum_lt_cap = cb.is_lt(
             from_bytes::expr(&sum.limbs[..N_BYTES_U64]),
             (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr(),
@@ -205,7 +205,6 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         let sum_within_u64 = cb.is_zero(sum_overflow_hi);
 
         let length_is_zero = cb.is_zero(sum::expr(&length.limbs));
-        let offset_length_sum = AddWordsGadget::construct(cb, [offset, length], sum);
 
         Self {
             length_is_zero,
@@ -229,9 +228,9 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         self.length_is_zero
             .assign(region, offset, F::from(length_bytes))?;
 
-        let (sum, sum_word_overflow) = memory_offset.overflowing_add(memory_length);
-        self.offset_length_sum
-            .assign(region, offset, [memory_offset, memory_length], sum)?;
+        let (sum, sum_word_overflow) =
+            self.offset_length_sum
+                .assign(region, offset, [memory_offset, memory_length])?;
 
         self.sum_lt_cap.assign(
             region,
