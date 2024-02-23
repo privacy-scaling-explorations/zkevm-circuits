@@ -329,16 +329,14 @@ impl<F: Field> TxDataGadget<F> {
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas(), gas_fee)?;
 
-        if self.cost_sum.is_some() && self.gas_mul_gas_price_plus_value.is_some() {
-            let (sum, _) = self.gas_mul_gas_price_plus_value.as_ref().unwrap().assign(
-                region,
-                offset,
-                [gas_fee, tx.value],
-            )?;
-            self.cost_sum
-                .as_ref()
-                .unwrap()
-                .assign_u256(region, offset, sum)?;
+        if let Some((cost_sum, gas_mul_gas_price_plus_value)) = self
+            .cost_sum
+            .as_ref()
+            .zip(self.gas_mul_gas_price_plus_value.as_ref())
+        {
+            let (sum, _) =
+                gas_mul_gas_price_plus_value.assign(region, offset, [gas_fee, tx.value])?;
+            cost_sum.assign_u256(region, offset, sum)?;
         }
 
         Ok(())
