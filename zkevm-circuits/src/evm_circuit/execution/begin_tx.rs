@@ -160,7 +160,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).
-        // Why do we have summation here if any of the terms is enough?
         let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
         // TODO: And not precompile
