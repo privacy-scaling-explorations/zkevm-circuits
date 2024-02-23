@@ -23,8 +23,7 @@ The goal of this crate is to serve as:
 
 ## Parsing
 
-Given a JSON file or a JSON stream containing an execution trace from an EVM, you can parse it and construct a [`GethExecTrace`](eth_types::GethExecTrace) instance from it. This will automatically populate all of the bus-mapping instances of each [`ExecStep`](crate::circuit_input_builder::ExecStep) and fill an [`OperationContainer`](crate::operation::container::Op
-erationContainer) with all of the memory, stack, and storage operations performed by the provided trace.
+Given a JSON file or a JSON stream containing an execution trace from an EVM, you can parse it and construct a [`GethExecTrace`](eth_types::GethExecTrace) instance from it. This will automatically populate all of the bus-mapping instances of each [`ExecStep`](crate::circuit_input_builder::ExecStep) and fill an [`OperationContainer`](crate::operation::OperationContainer) with all of the memory, stack, and storage operations performed by the provided trace.
 
 ```rust
 use bus_mapping::{Error, mock::BlockData};
