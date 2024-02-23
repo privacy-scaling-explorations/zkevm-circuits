@@ -3,7 +3,7 @@ use super::{
     from_bytes,
     math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
     memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
-    AccountAddress, CachedRegion,
+    AccountAddress, CachedRegion, StepRws,
 };
 use crate::{
     evm_circuit::{
@@ -419,15 +419,24 @@ impl<F: Field> TransferToGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (receiver_balance, prev_receiver_balance): (U256, U256),
-        value: U256,
+        rws: &mut StepRws,
+        (receiver_exists, value, opcode_is_create): (bool, U256, bool),
     ) -> Result<(), Error> {
+        if !receiver_exists && (!value.is_zero() || opcode_is_create) {
+            let _receiver_code_hash = rws.next().account_codehash_pair();
+        }
+
+        let receiver_balance_pair = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
         self.receiver.assign(
             region,
             offset,
-            prev_receiver_balance,
+            receiver_balance_pair.1,
             vec![value],
-            receiver_balance,
+            receiver_balance_pair.0,
         )?;
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
@@ -521,33 +530,37 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (Option<U256>, Option<U256>),
-        (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
-        (receiver_balance, prev_receiver_balance): (U256, U256),
-        value: U256,
+        rws: &mut StepRws,
+        (receiver_exists, value, opcode_is_create): (bool, U256, bool),
         gas_fee: Option<U256>,
     ) -> Result<(), Error> {
         if WITH_FEE {
+            let sender_balance_sub_fee = rws.next().account_balance_pair();
             self.sender_sub_fee.as_ref().expect("Exists").assign(
                 region,
                 offset,
-                prev_sender_balance_sub_fee.expect("exists"),
+                sender_balance_sub_fee.1,
                 vec![gas_fee.expect("exists")],
-                sender_balance_sub_fee.expect("exists"),
+                sender_balance_sub_fee.0,
             )?;
         }
+        let sender_balance_sub_value = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
         self.sender_sub_value.assign(
             region,
             offset,
-            prev_sender_balance_sub_value,
+            sender_balance_sub_value.1,
             vec![value],
-            sender_balance_sub_value,
+            sender_balance_sub_value.0,
         )?;
         self.receiver.assign(
             region,
             offset,
-            (receiver_balance, prev_receiver_balance),
-            value,
+            rws,
+            (receiver_exists, value, opcode_is_create),
         )?;
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
