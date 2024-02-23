@@ -113,7 +113,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_id.expr(),
                 WordLoHi::new([addr.expr(), 0.expr()]),
                 1.expr(),
-                0.expr(), // Here value_prev is 0
+                0.expr(),
                 None,
             );
         } // rwc_delta += PRECOMPILE_COUNT
@@ -123,10 +123,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             tx.caller_address.to_word(),
             1.expr(),
-            0.expr(), // Here too
+            0.expr(),
             None,
         ); // rwc_delta += 1
-        let is_caller_callee_equal = cb.query_bool(); // What does this variable mean?
+        let is_caller_callee_equal = cb.query_bool();
         cb.account_access_list_write_unchecked(
             tx_id.expr(),
             tx.callee_address.to_word(),
@@ -149,7 +149,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             coinbase.to_word(),
             1.expr(),
-            is_coinbase_warm.expr(), // Why value_prev is = is_coinbase_warm?
+            is_coinbase_warm.expr(),
             None,
         ); // rwc_delta += 1
 
@@ -184,7 +184,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
-        let caller_nonce_hash_bytes = cb.query_word32(); // What's this variable for?
+        let caller_nonce_hash_bytes = cb.query_word32();
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal_word(
             "tx caller address equivalence",
