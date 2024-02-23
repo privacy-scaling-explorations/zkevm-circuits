@@ -85,8 +85,10 @@ func TestTransactions(t *testing.T) {
 }
 
 // No update for each step, just final proof.
+// This test uses hashed trie - no children are available in the stacktrie, we need
+// to get the by querying the database using hash values as keys.
 func TestGetProof(t *testing.T) {
-	txs := make([]*types.Transaction, 70)
+	txs := make([]*types.Transaction, 2)
 	key, _ := crypto.GenerateKey()
 	signer := types.LatestSigner(params.TestChainConfig)
 
@@ -94,6 +96,11 @@ func TestGetProof(t *testing.T) {
 		amount := math.BigPow(2, int64(i))
 		price := big.NewInt(300000)
 		data := make([]byte, 100)
+		data[3] = 3
+		data[4] = 3
+		data[5] = 3
+		data[6] = 3
+		data[7] = 3
 		tx := types.NewTransaction(uint64(i), common.Address{}, amount, 123457, price, data)
 		signedTx, err := types.SignTx(tx, signer, key)
 		if err != nil {

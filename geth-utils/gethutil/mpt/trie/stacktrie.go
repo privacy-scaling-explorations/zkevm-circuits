@@ -695,32 +695,17 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			isHashed = true
 			c_rlp, error := db.Get(c.val)
 			if error != nil {
-				fmt.Println(error)
 				panic(error)
 			}
-			fmt.Println(c_rlp)
 
 			proof = append(proof, c_rlp)
+			branchChild := st.getNodeFromBranchRLP(c_rlp, k[i])
 
-			for i := 0; i < len(k) - 1; i++ {
-				node := st.getNodeFromBranchRLP(c_rlp, k[i])
-				fmt.Println(node)
-
-				if len(node) == 1 && node[0] == 128 { // no child at this position
-					break
-				}
-
-				c_rlp, error = db.Get(node)
-				if error != nil {
-					fmt.Println(error)
-					panic(error)
-				}
-				fmt.Println(c_rlp)
-
-				proof = append(proof, c_rlp)
+			if len(branchChild) == 1 {
+				// no child at this position - 128 is RLP encoding for nil object
+				break
 			}
-
-			break
+			c.val = branchChild
 		}
 	}
 
@@ -752,14 +737,15 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			}
 
 		}
-	}
+		// The proof is now reversed (only for non-hashed),
+		// let's reverse it back to have the leaf at the bottom:
+		l := len(proof)
+		var proof_sorted [][]byte;
+		for i := 0; i < l; i++ {
+			proof_sorted = append(proof_sorted, proof[l-i-1])
+		}
+		proof = proof_sorted
+	}	
 
-	// The proof is now reversed, let's reverse it back to have the leaf at the bottom:
-	l := len(proof)
-	var proof_sorted [][]byte;
-    for i := 0; i < l; i++ {
-        proof_sorted = append(proof_sorted, proof[l-i-1])
-    }	
-
-	return proof_sorted, nil
+	return proof, nil
 }
