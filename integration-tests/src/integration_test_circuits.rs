@@ -25,6 +25,7 @@ use halo2_proofs::{
         },
     },
 };
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use mock::TestContext;
 use rand_chacha::rand_core::SeedableRng;
@@ -358,10 +359,26 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         let fixed = mock_prover.fixed();
 
         if let Some(prev_fixed) = self.fixed.clone() {
-            assert!(
-                fixed.eq(&prev_fixed),
-                "circuit fixed columns are not constant for different witnesses"
-            );
+            fixed
+                .iter()
+                .enumerate()
+                .zip_eq(prev_fixed.iter())
+                .for_each(|((index, col1), col2)| {
+                    if !col1.eq(col2) {
+                        println!("on column index {} not equal", index);
+                        col1.iter().enumerate().zip_eq(col2.iter()).for_each(
+                            |((index, cellv1), cellv2)| {
+                                assert!(
+                                    cellv1.eq(&cellv2),
+                                    "cellv1 {:?} != cellv2 {:?} on index {}",
+                                    cellv1,
+                                    cellv2,
+                                    index
+                                );
+                            },
+                        );
+                    }
+                });
         } else {
             self.fixed = Some(fixed.clone());
         }
@@ -383,6 +400,24 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
 
         match self.root_fixed.clone() {
             Some(prev_fixed) => {
+                fixed.iter().enumerate().zip_eq(prev_fixed.iter()).for_each(
+                    |((index, col1), col2)| {
+                        if !col1.eq(col2) {
+                            println!("on column index {} not equal", index);
+                            col1.iter().enumerate().zip_eq(col2.iter()).for_each(
+                                |((index, cellv1), cellv2)| {
+                                    assert!(
+                                        cellv1.eq(&cellv2),
+                                        "cellv1 {:?} != cellv2 {:?} on index {}",
+                                        cellv1,
+                                        cellv2,
+                                        index
+                                    );
+                                },
+                            );
+                        }
+                    },
+                );
                 assert!(
                     fixed.eq(&prev_fixed),
                     "root circuit fixed columns are not constant for different witnesses"

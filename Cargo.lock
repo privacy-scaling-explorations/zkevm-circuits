@@ -2179,6 +2179,7 @@ dependencies = [
  "ethers-contract-abigen",
  "glob",
  "halo2_proofs",
+ "itertools 0.10.5",
  "lazy_static",
  "log",
  "mock",
