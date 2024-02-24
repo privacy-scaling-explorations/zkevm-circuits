@@ -381,7 +381,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 MockProver::<Fr>::run(k, &circuit, instance)
             } else {
                 let circuit = EvmCircuit::get_test_circuit_from_block(block.clone(), chunk.clone());
-                let instance = circuit.instance_extend_chunk_ctx();
+                let instance = circuit.instance();
                 MockProver::<Fr>::run(k, &circuit, instance)
             };
 

@@ -426,7 +426,9 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         instance.extend_from_slice(&self.copy_circuit.instance());
         instance.extend_from_slice(&self.state_circuit.instance());
         instance.extend_from_slice(&self.exp_circuit.instance());
-        instance.extend_from_slice(&self.evm_circuit.instance());
+        // remove first vector which is chunk_ctx
+        // which supercircuit already supply globally on top
+        instance.extend_from_slice(&self.evm_circuit.instance()[1..]);
 
         instance
     }

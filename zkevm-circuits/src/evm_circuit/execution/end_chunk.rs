@@ -78,7 +78,7 @@ mod test {
         test_util::CircuitTestBuilder,
         witness::{block_convert, chunk_convert},
     };
-    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData, operation::Target};
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
     use eth_types::{address, bytecode, geth_types::GethData, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
