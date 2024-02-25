@@ -32,7 +32,7 @@ fn get_condition_expr<F: Field>(conditions: &Vec<Expression<F>>) -> Expression<F
 /// Table data
 #[derive(Clone, Debug)]
 pub struct TableData<F> {
-    /// Desciption
+    /// Description
     pub description: &'static str,
     /// Condition under which the lookup needs to be done
     pub regional_condition: Expression<F>,
@@ -47,7 +47,7 @@ pub struct TableData<F> {
 /// Lookup data
 #[derive(Clone, Debug)]
 pub struct LookupData<F> {
-    /// Desciption
+    /// Description
     pub description: String,
     /// Condition under which the lookup needs to be done
     pub regional_condition: Expression<F>,
@@ -130,7 +130,7 @@ pub struct ConstraintBuilder<F, C: CellType> {
     max_degree: usize,
     /// conditions for constraints
     conditions: Vec<Expression<F>>,
-    /// Columns whoes equality constraints needed to be enable
+    /// Columns whose equality constraints needed to be enable
     equalities: Vec<Column<Advice>>,
     /// The tables
     pub tables: HashMap<C::TableType, Vec<TableData<F>>>,
@@ -147,7 +147,7 @@ pub struct ConstraintBuilder<F, C: CellType> {
     pub region_id: usize,
     /// lookup input challenge
     pub lookup_challenge: Option<Expression<F>>,
-    /// state contect
+    /// state context
     pub state_context: Vec<Expression<F>>,
     /// state constraints start
     pub region_constraints_start: usize,
@@ -213,7 +213,7 @@ impl<F: Field, C: CellType> ConstraintBuilder<F, C> {
     }
 
     pub(crate) fn pop_region(&mut self) {
-        // Apply the region condition to all contraints added in this region
+        // Apply the region condition to all constraints added in this region
         let condition = get_condition_expr(&self.state_context);
         for idx in self.region_constraints_start..self.constraints.len() {
             self.constraints[idx].1 = condition.expr() * self.constraints[idx].1.clone();
@@ -810,7 +810,7 @@ impl<F: Field> ExprResult<F> for Expression<F> {
     }
 }
 
-/// Implement `ExprResult` for tupples
+/// Implement `ExprResult` for tuples
 #[macro_export]
 macro_rules! impl_expr_result {
     ($($type:ty),*) => {

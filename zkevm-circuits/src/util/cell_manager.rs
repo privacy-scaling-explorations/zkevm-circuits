@@ -277,7 +277,7 @@ impl CellManagerColumns {
         }
     }
 
-    /// Returns a column of a given cell type and index amoung all columns of that cell type.
+    /// Returns a column of a given cell type and index among all columns of that cell type.
     pub fn get_column(&self, cell_type: CellType, column_idx: usize) -> Option<&CellColumn> {
         if let Some(columns) = self.columns.get(&cell_type) {
             columns.get(column_idx)

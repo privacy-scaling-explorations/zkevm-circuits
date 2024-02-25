@@ -140,7 +140,7 @@ pub fn recover_pk(
 }
 
 lazy_static! {
-    /// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
+    /// Secp256k1 Curve Scalar.  Reference: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
     /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
     pub static ref SECP256K1_Q: BigUint = BigUint::from_bytes_le(&(secp256k1::Fq::ZERO - secp256k1::Fq::ONE).to_repr()) + 1u64;
 }

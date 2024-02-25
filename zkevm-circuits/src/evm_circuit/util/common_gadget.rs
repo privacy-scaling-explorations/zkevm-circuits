@@ -748,7 +748,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         let cd_address = MemAddrGadget::construct_self(cb);
         let rd_address = MemAddrGadget::construct_self(cb);
         // Lookup values from stack
-        // `callee_address` is poped from stack and used to check if it exists in
+        // `callee_address` is popped from stack and used to check if it exists in
         // access list and get code hash.
         // For CALLCODE, both caller and callee addresses are `current_callee_address`.
         // For DELEGATECALL, caller address is `current_caller_address` and

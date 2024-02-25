@@ -96,7 +96,7 @@ pub fn get_witness(block_no: u64, mods: &[TrieModification], node_url: &str) -> 
     unsafe { go::FreeString(c_str.as_ptr()) };
 
     // Note: previously this function returned a Vec of Nodes, but now returning a JSON string
-    // to avoid imporing zkEVM circuit here (that will create a circular dependency).
+    // to avoid importing zkEVM circuit here (that will create a circular dependency).
     // TODO: consider defining Node types in another crate.
 
     json

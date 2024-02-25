@@ -431,7 +431,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        meta.create_gate("id_hi === 0 when Momory", |meta| {
+        meta.create_gate("id_hi === 0 when Memory", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             let cond = tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)

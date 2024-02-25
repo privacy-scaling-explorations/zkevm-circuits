@@ -285,7 +285,7 @@ impl<F: Field> SuperCircuit<F> {
     }
 }
 
-// Eventhough the SuperCircuit is not a subcircuit we implement the SubCircuit
+// Even though the SuperCircuit is not a subcircuit we implement the SubCircuit
 // trait for it in order to get the `new_from_block` and `instance` methods that
 // allow us to generalize integration tests.
 impl<F: Field> SubCircuit<F> for SuperCircuit<F> {

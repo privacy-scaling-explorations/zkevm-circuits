@@ -119,7 +119,7 @@ impl CopyTable {
                 number_or_hash_to_word(&copy_event.dst_id)
             };
 
-            // tag binary bumber chip
+            // tag binary number chip
             let tag = if is_read_step {
                 copy_event.src_type
             } else {

@@ -16,7 +16,7 @@ use crate::{
 
 use super::MptUpdates;
 
-/// Rw constainer for a witness block
+/// Rw container for a witness block
 #[derive(Debug, Default, Clone)]
 pub struct RwMap(pub HashMap<Target, Vec<Rw>>);
 

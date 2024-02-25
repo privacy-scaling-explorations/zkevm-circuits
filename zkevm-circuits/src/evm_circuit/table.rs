@@ -47,7 +47,7 @@ pub enum FixedTableTag {
     Pow2,
     /// Lookup constant gas cost for opcodes
     ConstantGasCost,
-    /// Preocmpile information
+    /// Precompile information
     PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
@@ -253,7 +253,7 @@ impl<F: Field> RwValues<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
-    /// Lookup to fixed table, which contains serveral pre-built tables such as
+    /// Lookup to fixed table, which contains several pre-built tables such as
     /// range tables or bitwise tables.
     Fixed {
         /// Tag to specify which table to lookup.
