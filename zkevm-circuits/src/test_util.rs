@@ -269,13 +269,13 @@ pub enum Circuit {
 #[derive(Debug, Error)]
 /// Errors for Circuit test
 pub enum CircuitTestError {
-    /// We didn't specify enough attibutes to define a block for the circuit test
+    /// We didn't specify enough attributes to define a block for the circuit test
     #[error("NotEnoughAttributes")]
     NotEnoughAttributes,
     /// Something wrong in the handle_block
     #[error("CannotHandleBlock({0})")]
     CannotHandleBlock(String),
-    /// Something worng in the block_convert
+    /// Something wrong in the block_convert
     #[error("CannotConvertBlock({0})")]
     CannotConvertBlock(String),
     /// Problem constructing MockProver
@@ -299,7 +299,7 @@ pub enum CircuitTestError {
 impl CircuitTestError {
     /// Filter out EVM circuit failures
     ///
-    /// Errors must come from EVM circuit and must be unsatisifed constraints or lookup failure
+    /// Errors must come from EVM circuit and must be unsatisfied constraints or lookup failure
     pub fn assert_evm_failure(&self) {
         match self {
             Self::VerificationFailed { circuit, reasons } => {

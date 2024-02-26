@@ -109,7 +109,7 @@ fn go() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("Using suite '{}'", args.suite);
-    log::info!("Parsing and compliling tests...");
+    log::info!("Parsing and compiling tests...");
     let compiler = Compiler::new(true, Some(PathBuf::from(CODEHASH_FILE)))?;
     let suite = config.suite(&args.suite)?.clone();
     let state_tests = load_statetests_suite(&suite.path, config, compiler)?;

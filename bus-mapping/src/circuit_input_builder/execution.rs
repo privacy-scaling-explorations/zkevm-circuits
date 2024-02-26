@@ -337,7 +337,7 @@ impl From<(Word, Word, Word)> for ExpStep {
     }
 }
 
-/// Event representating an exponentiation `a ^ b == d (mod 2^256)`.
+/// Event representing an exponentiation `a ^ b == d (mod 2^256)`.
 #[derive(Clone, Debug)]
 pub struct ExpEvent {
     /// Identifier for the exponentiation trace.

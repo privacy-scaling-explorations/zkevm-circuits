@@ -187,7 +187,7 @@
 //! | `key`  | `val`         | `rw`    | `gc` | Note                                     |
 //! |:------:| ------------- | ------- | ---- | ---------------------------------------- |
 //! | `0x40` | `0`           | `Write` |      | Init                                     |
-//! | `0x40` | `0x80`        | `Write` | 0    | Assume written at the begining of `code` |
+//! | `0x40` | `0x80`        | `Write` | 0    | Assume written at the beginning of `code`|
 //! | `0x40` | `0x80`        | `Read`  | 4    | `56 MLOAD`                               |
 //! |   -    |               |         |      |                                          |
 //! | `0x80` | `0`           | `Write` |      | Init                                     |
@@ -213,7 +213,7 @@
 //! See: <https://hackmd.io/@liangcc/zkvmbook/https%3A%2F%2Fhackmd.io%2FAmhZ2ryITxicmhYFyQ0DEw#Bus-Mapping>
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// We want to have UPPERCASE idents sometimes.
+// We want to have UPPERCASE indents sometimes.
 #![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]

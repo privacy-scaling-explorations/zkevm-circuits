@@ -390,9 +390,9 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 4. Verify the ECDSA signature
         ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
 
-        // TODO: Update once halo2wrong suports the following methods:
+        // TODO: Update once halo2wrong supports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
-        // - `GeneralEccChip::assing_point_from_bytes_le`
+        // - `GeneralEccChip::assign_point_from_bytes_le`
 
         Ok(AssignedECDSA {
             pk_x_le,

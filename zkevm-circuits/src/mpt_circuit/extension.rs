@@ -61,7 +61,7 @@ impl<F: Field> ExtensionGadget<F> {
         circuit!([meta, cb], {
             // Data
             let key_items = [
-                // Special case, requring string fail tests
+                // Special case, requiring string fail tests
                 ctx.rlp_item(
                     meta,
                     cb,

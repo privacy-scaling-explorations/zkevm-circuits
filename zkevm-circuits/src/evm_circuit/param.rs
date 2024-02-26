@@ -180,7 +180,7 @@ lazy_static::lazy_static! {
     };
     // Step slot height in evm circuit
     // We enable the invalid_tx feature to get invalid tx's ExecutionState height
-    // We garentee the heights of other ExecutionStates remains unchanged in the following test
+    // We guarantee the heights of other ExecutionStates remains unchanged in the following test
     pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map(*INVALID_TX_CONFIG);
 }
 fn get_step_height_map(feature_config: FeatureConfig) -> HashMap<ExecutionState, usize> {

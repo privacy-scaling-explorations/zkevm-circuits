@@ -124,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             lt
         });
 
-        // Merge contraints
+        // Merge constraints
         let shf_lo_div64_eq0 = cb.is_zero(shf_div64.expr());
         let shf_lo_div64_eq1 = cb.is_eq(shf_div64.expr(), 1.expr());
         let shf_lo_div64_eq2 = cb.is_eq(shf_div64.expr(), 2.expr());

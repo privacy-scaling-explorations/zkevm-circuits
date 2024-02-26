@@ -164,7 +164,7 @@ fn test_actual_circuit<C: Circuit<Fr>>(
 
     let mut transcript = PoseidonTranscript::new(Vec::new());
 
-    // change instace to slice
+    // change instance to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen circuit proof");
@@ -214,7 +214,7 @@ fn test_actual_root_circuit<C: Circuit<Fr>>(
 
     let mut transcript = EvmTranscript::<_, NativeLoader, _, _>::new(vec![]);
 
-    // change instace to slice
+    // change instance to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen root circuit proof");

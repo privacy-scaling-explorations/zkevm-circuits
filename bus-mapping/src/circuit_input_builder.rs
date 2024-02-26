@@ -84,7 +84,7 @@ impl FeatureConfig {
 #[derive(Debug, Clone, Copy)]
 pub struct FixedCParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
-    /// nummber of rows). This must be at least the number of rw operations
+    /// number of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
     pub max_rws: usize,
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
@@ -190,7 +190,7 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub code_db: CodeDB,
     /// Block
     pub block: Block,
-    /// Circuits Setup Paramteres
+    /// Circuits Setup Parameters
     pub circuits_params: C,
     /// Block Context
     pub block_ctx: BlockContext,
@@ -544,7 +544,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
 }
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
-/// signature datas.
+/// signature data.
 pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
     for sig in sigs {

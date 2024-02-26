@@ -201,7 +201,7 @@ pub enum FixedTableTag {
     RangeKeyLen256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen16,
-    /// Extesion key odd key
+    /// Extension key odd key
     ExtOddKey,
     /// RLP decoding
     RLP,
