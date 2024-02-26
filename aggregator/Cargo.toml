@@ -25,6 +25,9 @@ halo2_proofs.workspace = true
 snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
+reth-primitives.workspace = true
+c-kzg.workspace = true
+
 
 [features]
 default = [ ]
