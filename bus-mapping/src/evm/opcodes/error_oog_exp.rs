@@ -7,7 +7,7 @@ use crate::{
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OogError::Exp`](crate::error::OogError::Exp).
+/// corresponding to the [`OogError::Exp`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OOGExp;
 

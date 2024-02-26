@@ -476,14 +476,14 @@ impl<'de> Deserialize<'de> for GethExecStep {
 }
 
 /// Helper type built to deal with the weird `result` field added between
-/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// [`GethExecTrace`]s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct ResultGethExecTraces(pub Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
-/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// [`GethExecTrace`]s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]

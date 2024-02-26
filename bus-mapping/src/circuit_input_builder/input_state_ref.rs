@@ -121,7 +121,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) into the
+    /// Push an [`Operation`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
     /// reference to the stored operation ([`OperationRef`]) inside the
@@ -196,8 +196,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(step, RW::WRITE, op)
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) with reversible to be
-    /// true into the
+    /// Push an [`Operation`] with reversible to be true into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
     /// reference to the stored operation
