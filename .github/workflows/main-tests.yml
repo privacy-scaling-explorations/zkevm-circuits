@@ -46,19 +46,9 @@ jobs:
         with:
           override: false
       - name: Setup golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: ~1.21
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -104,19 +94,9 @@ jobs:
         with:
           override: false
       - name: Setup golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: ~1.21
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
       - name: Cargo cache
         uses: actions/cache@v3
         with:
