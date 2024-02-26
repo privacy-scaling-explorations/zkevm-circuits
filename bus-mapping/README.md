@@ -26,13 +26,11 @@ The goal of this crate is to serve as:
 Given a JSON file or a JSON stream containing an execution trace from an EVM, you can parse it and construct a [`GethExecTrace`](eth_types::GethExecTrace) instance from it. This will automatically populate all of the bus-mapping instances of each [`ExecStep`](crate::circuit_input_builder::ExecStep) and fill an [`OperationContainer`](crate::operation::OperationContainer) with all of the memory, stack, and storage operations performed by the provided trace.
 
 ```rust
-use bus_mapping::{Error, mock::BlockData};
-use bus_mapping::state_db::{self, StateDB, CodeDB};
+use bus_mapping::mock::BlockData;
 use eth_types::{
-    self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
+    GethExecTrace, GethExecStep, geth_types::GethData, bytecode
 };
 use mock::test_ctx::{TestContext, helpers::*};
-use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
 
 let input_trace = r#"
 [
@@ -108,7 +106,7 @@ let builder = builder
     .handle_block(&block.eth_block, &block.geth_traces)
     .unwrap();
 let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
-let geth_trace = GethExecTrace {
+let _geth_trace = GethExecTrace {
     return_value: "".to_string(),
     gas: block.eth_block.transactions[0].gas.as_u64(),
     invalid: false,
@@ -117,9 +115,9 @@ let geth_trace = GethExecTrace {
 };
 
 // Get an ordered vector with all of the Stack operations of this trace.
-let stack_ops = builder.block.container.sorted_stack();
+let _stack_ops = builder.block.container.sorted_stack();
 // You can also iterate over the steps of the trace and witness the EVM Proof.
-builder.block.txs()[0].steps().iter();
+let _ = builder.block.txs()[0].steps().iter();
 ```
 
 Assuming we have the following trace:
