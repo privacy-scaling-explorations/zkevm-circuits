@@ -1,4 +1,6 @@
 #![doc = include_str!("../README.md")]
+// doc test attr
+#![doc(test(attr(deny(warnings))))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // We want to have UPPERCASE indents sometimes.
 #![allow(non_snake_case)]
