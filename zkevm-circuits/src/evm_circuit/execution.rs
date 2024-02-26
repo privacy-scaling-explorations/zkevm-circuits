@@ -224,6 +224,8 @@ pub(crate) trait ExecutionGadget<F: Field> {
     ) -> Result<(), Error>;
 }
 
+// verify integration test on main branch
+
 #[derive(Clone, Debug)]
 pub struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
