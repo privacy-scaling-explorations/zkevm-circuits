@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"main/gethutil/mpt/types"
+	"slices"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -230,9 +231,6 @@ func (st *StackTrie) getDiffIndex(key []byte) int {
 // Helper function to that inserts a (key, value) pair into
 // the trie.
 func (st *StackTrie) insert(key, value []byte) {
-	if key[0] == 1 && key[1] == 0 {
-		fmt.Println("d")
-	}
 	switch st.nodeType {
 	case branchNode: /* Branch */
 		idx := int(key[st.keyOffset])
@@ -659,7 +657,6 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 
 func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, error) {
 	k := KeybytesToHex(key)
-	i := 0
 
 	if st.nodeType == emptyNode {
 		return [][]byte{}, nil
@@ -678,13 +675,11 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 	}
 
 	var proof [][]byte
-
 	var nodes []*StackTrie
-
 	c := st
 	isHashed := false
 
-	for i < len(k) {
+	for i := 0; i < len(k); i++ {
 		if c.nodeType == extNode {
 			nodes = append(nodes, c)
 			c = st.children[0]
@@ -701,33 +696,19 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			isHashed = true
 			c_rlp, error := db.Get(c.val)
 			if error != nil {
-				fmt.Println(error)
 				panic(error)
 			}
-			fmt.Println(c_rlp)
 
 			proof = append(proof, c_rlp)
+			branchChild := st.getNodeFromBranchRLP(c_rlp, k[i])
 
-			for i < len(k)-1 {
-				node := st.getNodeFromBranchRLP(c_rlp, k[i])
-				i += 1
-				fmt.Println(node)
-
-				if len(node) == 1 && node[0] == 128 { // no child at this position
-					break
-				}
-
-				c_rlp, error = db.Get(node)
-				if error != nil {
-					fmt.Println(error)
-					panic(error)
-				}
-				fmt.Println(c_rlp)
-
-				proof = append(proof, c_rlp)
+			// branchChild is of length 1 when there is no child at this position in the branch
+			// (`branchChild = [128]` in this case), but it is also of length 1 when `c_rlp` is a leaf.
+			if len(branchChild) == 1 {
+				// no child at this position - 128 is RLP encoding for nil object
+				break
 			}
-
-			break
+			c.val = branchChild
 		}
 	}
 
@@ -740,7 +721,6 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 		lNodes := len(nodes)
 		for i := lNodes - 1; i >= 0; i-- {
 			node := nodes[i]
-			fmt.Println(node)
 
 			if node.nodeType == leafNode {
 				rlp, error := db.Get(node.val)
@@ -760,11 +740,9 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			}
 
 		}
-	}
-
-	fmt.Println("----------")
-	for i := 0; i < len(proof); i++ {
-		fmt.Println(proof[i])
+		// The proof is now reversed (only for non-hashed),
+		// let's reverse it back to have the leaf at the bottom:
+		slices.Reverse(proof)
 	}
 
 	return proof, nil
