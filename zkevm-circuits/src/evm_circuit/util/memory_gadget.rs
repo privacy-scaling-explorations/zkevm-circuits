@@ -568,7 +568,7 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
 {
     /// The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
-    /// The selectors that indicate if the corrsponding byte contains real data
+    /// The selectors that indicate if the corresponding byte contains real data
     /// or is padded
     selectors: [Cell<F>; MAX_BYTES],
     /// The min gadget to take the minimum of addr_start and addr_end

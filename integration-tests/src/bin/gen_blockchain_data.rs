@@ -63,7 +63,7 @@ async fn dump_tx_trace(prov: Provider<Http>, receipt: TransactionReceipt, name: 
         .expect("Failed to get transaction debug trace");
     let filename = format!("{}_trace.json", name);
     serde_json::to_writer(&File::create(filename).expect("cannot create file"), &trace)
-        .expect("Could not seralize trace as json data");
+        .expect("Could not serialize trace as json data");
 }
 
 fn erc20_transfer<M>(

@@ -170,7 +170,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
         // indeed larger than transfer value. for call opcode, it does in
-        // tranfer gadget implicitly.
+        // transfer gadget implicitly.
         state.account_read(
             &mut exec_step,
             call.caller_address,

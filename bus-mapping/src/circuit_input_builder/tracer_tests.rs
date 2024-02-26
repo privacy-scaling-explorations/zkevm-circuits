@@ -146,7 +146,7 @@ fn check_err_depth(step: &GethExecStep, next_step: Option<&GethExecStep>) -> boo
 
 #[test]
 fn tracer_err_depth() {
-    // Recursive CALL will exaust the call depth
+    // Recursive CALL will exhaust the call depth
     let code = bytecode! {
              PUSH1(0x0) // retLength
              PUSH1(0x0) // retOffset

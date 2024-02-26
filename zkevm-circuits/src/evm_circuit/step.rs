@@ -596,7 +596,7 @@ impl ExecutionState {
         .collect()
     }
 
-    /// Get the state hight
+    /// Get the state height
     pub fn get_step_height_option(&self) -> Option<usize> {
         EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
     }

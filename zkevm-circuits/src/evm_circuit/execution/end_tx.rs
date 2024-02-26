@@ -467,7 +467,7 @@ mod test {
             .sorted_by_key(|a| a.rw_counter())
             .tuple_windows()
             .for_each(|(a, b)| {
-                // chech there is no consecutive write with same txid value
+                // check there is no consecutive write with same txid value
                 assert!(a.rw_counter() != b.rw_counter());
                 assert!(a.value_assignment() != b.value_assignment());
             })
