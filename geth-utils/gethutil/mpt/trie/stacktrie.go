@@ -702,6 +702,8 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			proof = append(proof, c_rlp)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, k[i])
 
+			// branchChild is of length 1 when there is no child at this position in the branch
+			// (`branchChild = [128]` in this case), but it is also of length 1 when `c_rlp` is a leaf.
 			if len(branchChild) == 1 {
 				// no child at this position - 128 is RLP encoding for nil object
 				break
