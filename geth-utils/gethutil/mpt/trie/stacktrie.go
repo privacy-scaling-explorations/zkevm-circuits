@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"main/gethutil/mpt/types"
+	"slices"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -739,12 +740,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 		}
 		// The proof is now reversed (only for non-hashed),
 		// let's reverse it back to have the leaf at the bottom:
-		l := len(proof)
-		var proof_sorted [][]byte
-		for i := 0; i < l; i++ {
-			proof_sorted = append(proof_sorted, proof[l-i-1])
-		}
-		proof = proof_sorted
+		slices.Reverse(proof)
 	}
 
 	return proof, nil
