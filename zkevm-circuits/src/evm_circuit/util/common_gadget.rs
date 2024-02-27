@@ -423,10 +423,11 @@ impl<F: Field> TransferToGadget<F> {
         (receiver_exists, value, opcode_is_create): (bool, U256, bool),
     ) -> Result<(), Error> {
         if !receiver_exists && (!value.is_zero() || opcode_is_create) {
-            let _receiver_code_hash = rws.next().account_codehash_pair();
+            // receiver's code_hash
+            rws.next().account_codehash_pair();
         }
 
-        let receiver_balance_pair = if !value.is_zero() {
+        let (receiver_balance, receiver_balance_prev) = if !value.is_zero() {
             rws.next().account_balance_pair()
         } else {
             (0.into(), 0.into())
@@ -434,9 +435,9 @@ impl<F: Field> TransferToGadget<F> {
         self.receiver.assign(
             region,
             offset,
-            receiver_balance_pair.1,
+            receiver_balance_prev,
             vec![value],
-            receiver_balance_pair.0,
+            receiver_balance,
         )?;
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
