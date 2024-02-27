@@ -215,7 +215,6 @@ pub struct TxCircuitConfig<F: Field> {
     // chunk_txbytes_rlc is the rlc of all signed rlp bytes in the chunk
     // used for calculating hash of all chunk bytes
     chunk_txbytes_rlc: Column<Advice>,
-    tx_txbytes_len: Column<Advice>,
     chunk_txbytes_len_acc: Column<Advice>,
     pow_of_rand: Column<Advice>,
 
@@ -339,7 +338,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // Chunk bytes accumulator
         let chunk_txbytes_rlc = meta.advice_column_in(SecondPhase);
-        let tx_txbytes_len = meta.advice_column();
         let chunk_txbytes_len_acc = meta.advice_column();
         let pow_of_rand = meta.advice_column_in(SecondPhase);
 
@@ -1758,7 +1756,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_access_list_storage_key,
             field_rlc,
             chunk_txbytes_rlc,
-            tx_txbytes_len,
             chunk_txbytes_len_acc,
             pow_of_rand,
             _marker: PhantomData,
@@ -2738,11 +2735,6 @@ impl<F: Field> TxCircuitConfig<F> {
                     "is_tag_caller_addr",
                     self.is_caller_address,
                     F::from((tx_tag == CallerAddress) as u64),
-                ),
-                (
-                    "tx_txbytes_len",
-                    self.tx_txbytes_len,
-                    F::from(hash_len as u64),
                 ),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
