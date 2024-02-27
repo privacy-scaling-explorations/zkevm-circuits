@@ -551,50 +551,49 @@ func (st *StackTrie) Commit() (common.Hash, error) {
 	return common.BytesToHash(st.val), nil
 }
 
-func (st *StackTrie) getNodeFromBranchRLP(branch []byte, ind byte) []byte {
-	start := 2 // when branch[0] == 248
-	if branch[0] == 249 {
-		start = 3
+const RLP_SHORT_STR_FLAG = 128
+const RLP_LONG_LIST_FLAG = 248
+const LEN_OF_HASH = 32
+
+// Note:
+// In RLP encoding, if the value is between [0x80, 0xb7] ([128, 183]),
+// it means following data is a short string (0 - 55bytes).
+// Which implies if the value is 128, it's an empty string.
+func (st *StackTrie) getNodeFromBranchRLP(branch []byte, idx int) []byte {
+	// (branch[0] - RLP_LONG_LIST_FLAG) means the length in bytes of the length of the payload
+	// and the payload is right after the length.
+	// That's why we add `2` here
+	// e.g. [248 81 128 160 ...]
+	// `81` is the length of the payload and payload starts from `128`
+	start := int(branch[0]) - RLP_LONG_LIST_FLAG + 2
+
+	// If 1st node is not 128(empty node) or 160, it should be a leaf
+	b := int(branch[start])
+	if b != RLP_SHORT_STR_FLAG || b != (RLP_SHORT_STR_FLAG+LEN_OF_HASH) {
+		return []byte{0}
 	}
 
-	i := 0
-	insideInd := -1
-	cInd := byte(0)
-	for {
-		if start+i == len(branch)-1 { // -1 because of the last 128 (branch value)
-			return []byte{0}
-		}
-		b := branch[start+i]
-		if insideInd == -1 && b == 128 {
-			if cInd == ind {
+	current_idx := 0
+	for i := start; i < len(branch); i++ {
+		b = int(branch[i])
+		switch b {
+		case RLP_SHORT_STR_FLAG: // 128
+			// if the current index is we're looking for, return an empty node directly
+			if current_idx == idx {
 				return []byte{128}
-			} else {
-				cInd += 1
 			}
-		} else if insideInd == -1 && b != 128 {
-			if b == 160 {
-				if cInd == ind {
-					return branch[start+i+1 : start+i+1+32]
-				}
-				insideInd = 32
-			} else {
-				// non-hashed node
-				if cInd == ind {
-					return branch[start+i+1 : start+i+1+int(b)-192]
-				}
-				insideInd = int(b) - 192
+			current_idx++
+		case RLP_SHORT_STR_FLAG + LEN_OF_HASH: // 160
+			if current_idx == idx {
+				return branch[i+1 : i+1+LEN_OF_HASH]
 			}
-			cInd += 1
-		} else {
-			if insideInd == 1 {
-				insideInd = -1
-			} else {
-				insideInd--
-			}
+			// jump to next encoded element
+			i += LEN_OF_HASH
+			current_idx++
 		}
 
-		i++
 	}
+	return []byte{0}
 }
 
 type StackProof struct {
@@ -700,7 +699,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			}
 
 			proof = append(proof, c_rlp)
-			branchChild := st.getNodeFromBranchRLP(c_rlp, k[i])
+			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
 
 			// branchChild is of length 1 when there is no child at this position in the branch
 			// (`branchChild = [128]` in this case), but it is also of length 1 when `c_rlp` is a leaf.
