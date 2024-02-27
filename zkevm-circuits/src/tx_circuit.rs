@@ -71,7 +71,7 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
     iter,
-    marker::PhantomData,
+    marker::PhantomData, ops::{Add, Mul},
 };
 
 use crate::{util::Challenges, witness::rlp_fsm::get_rlp_len_tag_length};
@@ -211,6 +211,13 @@ pub struct TxCircuitConfig<F: Field> {
     // works together with section_rlc to ensure
     // no ommittance in access list dynamic section
     field_rlc: Column<Advice>,
+    // 4844_debug
+    // chunk_txbytes_rlc is the rlc of all signed rlp bytes in the chunk
+    // used for calculating hash of all chunk bytes
+    chunk_txbytes_rlc: Column<Advice>,
+    tx_txbytes_len: Column<Advice>,
+    chunk_txbytes_len_acc: Column<Advice>,
+    pow_of_rand: Column<Advice>,
 
     _marker: PhantomData<F>,
 }
@@ -329,6 +336,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let is_access_list_address = meta.advice_column();
         let is_access_list_storage_key = meta.advice_column();
         let field_rlc = meta.advice_column();
+
+        // Chunk bytes accumulator
+        let chunk_txbytes_rlc = meta.advice_column_in(SecondPhase);
+        let tx_txbytes_len = meta.advice_column();
+        let chunk_txbytes_len_acc = meta.advice_column();
+        let pow_of_rand = meta.advice_column_in(SecondPhase);
 
         // TODO: add lookup to SignVerify table for sv_address
         let sv_address = meta.advice_column();
@@ -1744,6 +1757,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_access_list_address,
             is_access_list_storage_key,
             field_rlc,
+            chunk_txbytes_rlc,
+            tx_txbytes_len,
+            chunk_txbytes_len_acc,
+            pow_of_rand,
             _marker: PhantomData,
             num_txs,
         }
@@ -2348,8 +2365,11 @@ impl<F: Field> TxCircuitConfig<F> {
         num_all_txs_acc: u64,
         num_txs: u64,
         cum_num_txs: u64,
+        chunk_txbytes_rlc_acc: Value<F>,
+        chunk_txbytes_len_acc: Value<F>,
+        pows_of_rand: &mut Vec<Value<F>>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+    ) -> Result<(Vec<AssignedCell<F, F>>, Vec<Value<F>>), Error> {
         let keccak_input = challenges.keccak_input();
         let evm_word = challenges.evm_word();
         let zero_rlc = keccak_input.map(|_| F::zero());
@@ -2357,6 +2377,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let hash = keccak256(tx.rlp_signed.as_slice());
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         let hash_rlc = rlc_be_bytes(&hash, evm_word);
+        let mut supplemental_data: Vec<Value<F>> = vec![];
         let mut tx_value_cells = vec![];
         let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
             // l1 msg does not have sign data
@@ -2366,6 +2387,34 @@ impl<F: Field> TxCircuitConfig<F> {
         };
         let (access_list_address_size, access_list_storage_key_size) =
             access_list_size(&tx.access_list);
+
+        // Only bytes from L2 txs are accumulated for chunk bytes hash
+        let hash_len = if tx.tx_type != TxType::L1Msg { tx.rlp_signed.len() } else { 0 };
+        let tx_hash_rlc = rlc_be_bytes(&tx.rlp_signed, keccak_input);
+        if hash_len >= pows_of_rand.len() {
+            for _ in 0..(tx.rlp_signed.len() - pows_of_rand.len() + 1) {
+                pows_of_rand.push(pows_of_rand.last().unwrap().mul(keccak_input));
+            }
+        }
+        let pow_of_rand = pows_of_rand[hash_len];
+
+        // 4844_debug
+        // log::trace!("=> starting hash rlc: {:?}", chunk_txbytes_rlc_acc);
+
+        let chunk_txbytes_rlc = if tx.tx_type != TxType::L1Msg {
+            chunk_txbytes_rlc_acc.mul(pow_of_rand).add(tx_hash_rlc)
+        } else {
+            chunk_txbytes_rlc_acc.clone()
+        };
+        let chunk_txbytes_len = chunk_txbytes_len_acc.add(Value::known(F::from(hash_len as u64)));
+        supplemental_data.push(chunk_txbytes_rlc);
+        supplemental_data.push(chunk_txbytes_len);
+
+        // 4844_debug
+        // log::trace!("=> hash_len: {:?}", hash_len);
+        // log::trace!("=> pow_of_rand: {:?}", pow_of_rand);
+        // log::trace!("=> chunk_txbytes_rlc: {:?}", chunk_txbytes_rlc);
+        // log::trace!("=> chunk_txbytes_len: {:?}", chunk_txbytes_len);
 
         // fixed_rows of a tx
         let fixed_rows = vec![
@@ -2550,7 +2599,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     be_bytes_len: 0,
                     be_bytes_rlc: zero_rlc,
                 }),
-                rlc_be_bytes(&tx.rlp_signed, keccak_input),
+                tx_hash_rlc,
             ),
             (TxFieldTag::TxHash, None, hash_rlc),
             (
@@ -2690,14 +2739,22 @@ impl<F: Field> TxCircuitConfig<F> {
                     self.is_caller_address,
                     F::from((tx_tag == CallerAddress) as u64),
                 ),
+                (
+                    "tx_txbytes_len",
+                    self.tx_txbytes_len,
+                    F::from(hash_len as u64),
+                ),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
             }
+            region.assign_advice(|| "chunk_txbytes_len_acc", self.chunk_txbytes_len_acc, *offset, || chunk_txbytes_len)?;
 
             // 2nd phase columns
-            {
-                let (col_anno, col, col_val) =
-                    ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc);
+            for (col_anno, col, col_val) in [
+                ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc),
+                ("chunk_txbytes_rlc", self.chunk_txbytes_rlc, chunk_txbytes_rlc),
+                ("pow_of_rand", self.pow_of_rand, pow_of_rand),
+            ] {
                 region.assign_advice(|| col_anno, col, *offset, || col_val)?;
             }
 
@@ -2824,7 +2881,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
             *offset += 1;
         }
-        Ok(tx_value_cells)
+        Ok((tx_value_cells, supplemental_data))
     }
 
     /// Assign calldata byte rows of each tx
@@ -3445,6 +3502,9 @@ impl<F: Field> TxCircuit<F> {
                 };
 
                 let mut tx_value_cells = vec![];
+                let mut chunk_txbytes_rlc_acc = Value::known(F::zero());
+                let mut chunk_txbytes_len_acc = Value::known(F::zero());
+                let mut pows_of_rand: Vec<Value<F>> = vec![Value::known(F::one())];
                 for (i, sign_data) in sigs.iter().enumerate() {
                     let tx = get_tx(i);
                     let block_num = tx.block_number;
@@ -3505,20 +3565,32 @@ impl<F: Field> TxCircuit<F> {
                         i,
                         num_all_txs_acc,
                     );
+                    let (assigned_cells, supplemental_data) = config.assign_fixed_rows(
+                        &mut region,
+                        &mut offset,
+                        tx,
+                        sign_data,
+                        next_tx,
+                        total_l1_popped_before,
+                        num_all_txs_acc,
+                        num_txs,
+                        cum_num_txs,
+                        chunk_txbytes_rlc_acc,
+                        chunk_txbytes_len_acc,
+                        &mut pows_of_rand,
+                        challenges,
+                    )?;
+
                     tx_value_cells.extend_from_slice(
-                        config.assign_fixed_rows(
-                            &mut region,
-                            &mut offset,
-                            tx,
-                            sign_data,
-                            next_tx,
-                            total_l1_popped_before,
-                            num_all_txs_acc,
-                            num_txs,
-                            cum_num_txs,
-                            challenges,
-                        )?.as_slice()
+                        assigned_cells.as_slice()
                     );
+
+                    // 4844_debug
+                    // log::trace!("=> supplemental 0: {:?}", supplemental_data[0]);
+                    // log::trace!("=> supplemental 1: {:?}", supplemental_data[1]);
+
+                    chunk_txbytes_rlc_acc = supplemental_data[0];
+                    chunk_txbytes_len_acc = supplemental_data[1];
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
                 }

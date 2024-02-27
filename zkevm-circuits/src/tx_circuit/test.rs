@@ -187,7 +187,8 @@ fn run<F: Field>(
 }
 
 #[test]
-#[cfg(feature = "scroll")]
+// 4844_debug
+// #[cfg(feature = "scroll")]
 fn tx_circuit_1tx_2max_eip1559() {
     const MAX_TXS: usize = 2;
     const MAX_CALLDATA: usize = 3200;
