@@ -554,12 +554,42 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					branchRlp := proof[len(proof)-2] // the last element has to be a leaf
 					isExtension := true
 
-					extNode := proof2[len(proof2)-1]
+					extNode := proof2[len(proof2)-1] // Let's name it E1
 					bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
 						key[keyIndex], key[keyIndex], false, false, isExtension)
 					nodes = append(nodes, bNode)
 
-					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					/*
+					Let's say we have an extension node E1 at the following path [3, 5, 8].
+					Let's say E1 has nibbles [1, 2, 3]. Let's say we want to prove there does not exist
+					a leaf at [3, 5, 8, 1, 2] (because there is E1 there).
+
+					We need to construct a leaf L1 that will have the key equal to the queried key.
+					This means the nibbles are the same as in the path to E1 (without extension nibbles).
+
+					In the circuit, the leaf L1 will have the same key as the queried key once
+					the KeyData will be queried with offset 1 (to get the accumulated key RLC up until E1).
+					The nibbles stored in L1 will be added to the RLC and compared with the queried
+					key (has to be the same).
+					*/
+
+					l := keyIndex - len(nibbles)
+					path := make([]byte, l) // Up to the E1 nibbles (without them)
+					copy(path, key[:l])
+					// The remaining `key` nibbles are to be stored in the constructed leaf.
+
+					compact := trie.HexToCompact(key[l:])
+					// Add RLP:
+					compactLen := byte(len(compact))
+					rlp2 := 128 + compactLen
+					rlp1 := 192 + compactLen + 1
+					// Constructed leaf L1:
+					constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
+
+					// Add dummy value:
+					constructedLeaf = append(constructedLeaf, 1)
+
+					node := prepareStorageLeafNode(proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 					nodes = append(nodes, node)
 				}
 			}
