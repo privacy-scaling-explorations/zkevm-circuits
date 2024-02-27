@@ -333,7 +333,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb,
                     create.caller_address(),
                     contract_addr.to_word(),
-                    0.expr(),
+                    false.expr(),
                     true.expr(),
                     value.clone(),
                     &mut callee_reversion_info,
