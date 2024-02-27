@@ -2752,11 +2752,13 @@ impl<F: Field> TxCircuitConfig<F> {
             // 2nd phase columns
             for (col_anno, col, col_val) in [
                 ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc),
-                ("chunk_txbytes_rlc", self.chunk_txbytes_rlc, chunk_txbytes_rlc),
                 ("pow_of_rand", self.pow_of_rand, pow_of_rand),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || col_val)?;
             }
+            tx_value_cells.push(
+                region.assign_advice(|| "chunk_txbytes_rlc", self.chunk_txbytes_rlc, *offset, || chunk_txbytes_rlc)?
+            );
 
             // lookup conditions
             let mut conditions = HashMap::<LookupCondition, F>::new();
