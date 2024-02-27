@@ -12,7 +12,6 @@ pub(crate) const DIGEST_LEN: usize = 32;
 pub(crate) const INPUT_LEN_PER_ROUND: usize = 136;
 
 // TODO(ZZ): update to the right degree
-#[allow(dead_code)]
 pub(crate) const LOG_DEGREE: u32 = 19;
 
 // ================================

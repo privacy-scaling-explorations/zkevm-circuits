@@ -1,12 +1,33 @@
+mod scalar_field_element;
+use scalar_field_element::ScalarFieldElement;
+
+use crate::constants::{BITS, LIMBS, LOG_DEGREE};
 use eth_types::U256;
-use halo2_proofs::halo2curves::{bls12_381::Scalar, ff::PrimeField};
+use halo2_base::utils::{fe_to_biguint, modulus};
+use halo2_ecc::{
+    bigint::CRTInteger,
+    fields::{
+        fp::{FpConfig, FpStrategy},
+        FieldChip,
+    },
+    halo2_base::{AssignedValue, Context},
+};
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter, Region, Value},
+    halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField, pairing::Engine},
+    plonk::ConstraintSystem,
+    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+};
+use itertools::Itertools;
 use std::{iter, sync::LazyLock};
 
-static ROOTS_OF_UNITY: LazyLock<[Scalar; 4096]> = LazyLock::new(|| {
+const BLOB_WIDTH: usize = 4096;
+const LOG_BLOG_WIDTH: usize = 12;
+static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
     let primitive_root_of_unity = Scalar::ROOT_OF_UNITY.pow(&[2u64.pow(20), 0, 0, 0]);
-    (0..4096)
+    (0..BLOB_WIDTH)
         .scan(Scalar::one(), |root_of_unity, _| {
-            *root_of_unity = *root_of_unity * primitive_root_of_unity;
+            *root_of_unity *= primitive_root_of_unity;
             Some(*root_of_unity)
         })
         .collect::<Vec<_>>()
@@ -14,10 +35,62 @@ static ROOTS_OF_UNITY: LazyLock<[Scalar; 4096]> = LazyLock::new(|| {
         .unwrap()
 });
 
+struct BarycentricEvaluationConfig {
+    scalar: FpConfig<Fr, Scalar>,
+}
+
+impl BarycentricEvaluationConfig {
+    pub fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+        let scalar = FpConfig::configure(
+            meta,
+            FpStrategy::Simple,
+            &[35],
+            &[17],
+            1,
+            13,
+            BITS,
+            LIMBS,
+            modulus::<Scalar>(),
+            0,
+            LOG_DEGREE.try_into().unwrap(),
+        );
+
+        Self { scalar }
+    }
+
+    pub fn assign(
+        &self,
+        ctx: &mut Context<Fr>,
+        blob: [Scalar; BLOB_WIDTH],
+        z: Scalar,
+    ) -> CRTInteger<Fr> {
+        let one = ScalarFieldElement::constant(Scalar::one());
+        let blob_width = ScalarFieldElement::constant(u64::try_from(BLOB_WIDTH).unwrap().into());
+
+        let z = ScalarFieldElement::private(z);
+        let p = ((0..LOG_BLOG_WIDTH).fold(z.clone(), |square, _| square.clone() * square) - one)
+            * ROOTS_OF_UNITY
+                .map(ScalarFieldElement::constant)
+                .iter()
+                .zip_eq(blob.map(ScalarFieldElement::private))
+                .map(|(root, f)| (root.clone() / (z.clone() - root.clone())).carry())
+                .reduce(|a, b| a + b) // TODO: can 4096 additions happen without overflow?
+                .unwrap()
+                .carry()
+            / blob_width;
+        p.resolve(ctx, &self.scalar)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn log_blob_width() {
+        assert_eq!(2_usize.pow(LOG_BLOG_WIDTH.try_into().unwrap()), BLOB_WIDTH);
+    }
 
     #[test]
     fn scalar_field_modulus() {
@@ -34,8 +107,14 @@ mod tests {
     #[test]
     fn roots_of_unity() {
         for root_of_unity in ROOTS_OF_UNITY.iter() {
-            assert_eq!(root_of_unity.pow(&[4096, 0, 0, 0]), Scalar::one());
+            assert_eq!(
+                root_of_unity.pow(&[BLOB_WIDTH.try_into().unwrap(), 0, 0, 0]),
+                Scalar::one()
+            );
         }
-        assert_eq!(ROOTS_OF_UNITY.iter().collect::<BTreeSet<_>>().len(), 4096);
+        assert_eq!(
+            ROOTS_OF_UNITY.iter().collect::<BTreeSet<_>>().len(),
+            BLOB_WIDTH
+        );
     }
 }
