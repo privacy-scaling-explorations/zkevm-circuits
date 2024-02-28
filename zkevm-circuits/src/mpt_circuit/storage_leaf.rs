@@ -250,6 +250,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     0.expr(),
                     true.expr(),
                     false.expr(),
+                    false.expr(),
                     WordLoHi::zero(),
                 );
             }
@@ -291,6 +292,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &key_rlc[true.idx()],
                 &expected_item,
                 config.is_placeholder_leaf[true.idx()].expr(),
+                config.parent_data[true.idx()].is_extension.expr(),
                 config.key_data[true.idx()].clone(),
                 &cb.key_r.expr(),
             );
@@ -516,6 +518,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 WordLoHi::<F>::new([F::ZERO, F::ZERO]),
                 F::ZERO,
                 true,
+                false,
                 false,
                 WordLoHi::<F>::new([F::ZERO, F::ZERO]),
             )?;

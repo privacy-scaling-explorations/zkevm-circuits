@@ -457,7 +457,7 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 			}
 
 			/*
-				When an account that does not exist is tried to be fetched by PrefetchAccount and when the some other account
+				When an account that does not exist is being fetched by PrefetchAccount and when some other account
 				exist at the overlapping address (the beginning of it), this (wrong) account is obtained by PrefetchAccount
 				and needs to be ignored.
 			*/

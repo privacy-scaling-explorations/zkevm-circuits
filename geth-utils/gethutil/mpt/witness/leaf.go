@@ -341,7 +341,7 @@ func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, pr
 			isSPlaceholder = true
 		}
 
-		return prepareStorageLeafNode(leaf, leaf, nil, storage_key, key, false, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension)
+		return prepareStorageLeafNode(leaf, leaf, nil, nil, storage_key, key, false, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension)
 	}
 }
 
@@ -416,7 +416,7 @@ func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyI
 	keyLen := getLeafKeyLen(keyIndex)
 	leaf[0] = 192 + 1 + byte(keyLen) + 1
 
-	return prepareStorageLeafNode(leaf, leaf, nil, storage_key, key, false, true, true, false, false)
+	return prepareStorageLeafNode(leaf, leaf, nil, nil, storage_key, key, false, true, true, false, false)
 }
 
 func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
@@ -502,7 +502,7 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 	return key, value, keyRlp, valueRlp
 }
 
-func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key common.Hash, key []byte, nonExistingStorageProof, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension bool) Node {
+func prepareStorageLeafNode(leafS, leafC, constructedLeaf, neighbourNode []byte, storage_key common.Hash, key []byte, nonExistingStorageProof, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension bool) Node {
 	var rows [][]byte
 
 	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareStorageLeafInfo(leafS, false, isSPlaceholder)
@@ -533,7 +533,11 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	var nonExistingStorageRow []byte
 	var wrongRlpBytes []byte
 	if nonExistingStorageProof {
-		wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key)
+		if constructedLeaf != nil {
+			wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(constructedLeaf, key)
+		} else {
+			wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key)
+		}
 	} else {
 		nonExistingStorageRow = prepareEmptyNonExistingStorageRow()
 	}
@@ -555,6 +559,7 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 		ValueRlpBytes:   valueRlpBytes,
 		IsModExtension:  [2]bool{isSModExtension, isCModExtension},
 	}
+
 	keccakData := [][]byte{leafS, leafC, storage_key.Bytes()}
 	if neighbourNode != nil {
 		keccakData = append(keccakData, neighbourNode)

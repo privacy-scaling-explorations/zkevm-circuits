@@ -412,7 +412,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if isAccountProof {
 				node = prepareAccountLeafNode(addr, addrh, proof1[l-1], proof2[l-1], nil, key, false, false, false)
 			} else {
-				node = prepareStorageLeafNode(proof1[l-1], proof2[l-1], nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+				node = prepareStorageLeafNode(proof1[l-1], proof2[l-1], nil, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 			}
 
 			nodes = append(nodes, node)
@@ -466,7 +466,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			} else {
 				// Add storage leaf after branch placeholder
 				if !isModifiedExtNode {
-					leafNode = prepareStorageLeafNode(proof1[len1-1], proof2[len2-1], neighbourNode, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					leafNode = prepareStorageLeafNode(proof1[len1-1], proof2[len2-1], nil, neighbourNode, storage_key, key, nonExistingStorageProof, false, false, false, false)
 				} else {
 					isSModExtension := false
 					isCModExtension := false
@@ -589,7 +589,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					// Add dummy value:
 					constructedLeaf = append(constructedLeaf, 1)
 
-					node := prepareStorageLeafNode(proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 					nodes = append(nodes, node)
 				}
 			}
