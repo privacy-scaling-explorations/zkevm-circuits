@@ -264,6 +264,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 sig_table,
                 u8_table,
                 u16_table,
+                pow_of_rand_table,
                 challenges: challenges_expr.clone(),
             },
         );

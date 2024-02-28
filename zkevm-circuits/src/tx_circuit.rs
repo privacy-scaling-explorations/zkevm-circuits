@@ -13,11 +13,11 @@ mod test;
 pub use dev::TxCircuitTester as TestTxCircuit;
 
 use crate::{
-    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, EVMConstraintBuilder, ConstrainBuilderCommon},
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
     table::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
-        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
+        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag, PowOfRandTable,
         TxFieldTag::{
             AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
             CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress, ChainID,
@@ -241,6 +241,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub u8_table: U8Table,
     /// Reusable u16 lookup table,
     pub u16_table: U16Table,
+    /// Reusable power of rand table,
+    pub pow_of_rand_table: PowOfRandTable,
     /// Challenges
     pub challenges: crate::util::Challenges<Expression<F>>,
 }
@@ -259,6 +261,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sig_table,
             u8_table,
             u16_table,
+            pow_of_rand_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -3460,6 +3463,16 @@ impl<F: Field> TxCircuit<F> {
         // Keccak inputs from SignVerify Chip
         let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
         inputs.extend_from_slice(&sign_verify_inputs);
+
+        // Keccak input for chunk bytes (only L2 txs are included)
+        let chunk_hash_bytes = self
+            .txs
+            .iter()
+            .filter(|&tx| tx.tx_type != TxType::L1Msg)
+            .map(|tx| tx.rlp_signed.clone())
+            .flatten()
+            .collect::<Vec<u8>>();
+        inputs.extend_from_slice(&[chunk_hash_bytes]);
 
         Ok(inputs)
     }
