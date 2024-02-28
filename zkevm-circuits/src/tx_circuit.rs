@@ -13,7 +13,7 @@ mod test;
 pub use dev::TxCircuitTester as TestTxCircuit;
 
 use crate::{
-    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, EVMConstraintBuilder, ConstrainBuilderCommon},
     // sig_circuit::SigCircuit,
     table::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
@@ -88,6 +88,10 @@ pub const TX_LEN: usize = 28;
 pub const TX_HASH_OFFSET: usize = 21;
 /// Offset of ChainID tag in the tx table
 pub const CHAIN_ID_OFFSET: usize = 12;
+/// Offset of HashLength in the tx table
+pub const HASH_LENGTH_OFFSET: usize = 19;
+/// Offset of HashRLC in the tx table
+pub const HASH_RLC_OFFSET: usize = 20;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -1701,7 +1705,104 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             },
         );
 
+        //////////////////////////////////////////////////////////
+        //// EIP4844: Accumulation and Hashing of Chunk Bytes  ///
+        //////////////////////////////////////////////////////////
+        meta.create_gate("Chunk Bytes RLC", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // Accumulate hash length
+            cb.require_equal(
+                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev + HashLength",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_len_acc, Rotation((-1) * (HASH_RLC_OFFSET as i32)))
+                        // the previous row in fixed tx_table is the signed RLP length of current tx
+                        + meta.query_advice(tx_table.value, Rotation::prev()), 
+            );
+
+            // Accumulate chunk bytes RLC
+            cb.require_equal(
+                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev * pow_of_rand(HashLength) + HashRLC",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_rlc, Rotation((-1) * (HASH_RLC_OFFSET as i32)))
+                        * meta.query_advice(pow_of_rand, Rotation::cur())
+                        + meta.query_advice(tx_table.value, Rotation::cur()), 
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                // Only l2 signed bytes are accumulated
+                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())), 
+                is_hash_rlc(meta)
+            ]))
+        });
+
+        meta.create_gate("One chunk_txbytes_len_acc, chunk_txbytes_rlc value and pow_of_rand for each tx (in fixed section)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // chunk_txbytes_len_acc, chunk_txbytes_rlc and pow_of_rand stay the same for the same tx
+            cb.require_equal(
+                "chunk_txbytes_len_acc' == chunk_txbytes_len_acc",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::prev()),
+            );
+            cb.require_equal(
+                "chunk_txbytes_rlc' == chunk_txbytes_rlc",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_rlc, Rotation::prev()),
+            );
+            cb.require_equal(
+                "pow_of_rand' == pow_of_rand",
+                meta.query_advice(pow_of_rand, Rotation::cur()),
+                meta.query_advice(pow_of_rand, Rotation::prev()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                not::expr(is_nonce(meta)),
+                not::expr(meta.query_advice(is_calldata, Rotation::cur()))
+            ]))
+        });
+
+        meta.create_gate("Chunk bytes accumulation only happens in the fixed section of tx_table", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "chunk_txbytes_len_acc = 0",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+            );
+            cb.require_zero(
+                "chunk_txbytes_rlc = 0",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+            );
+            cb.require_zero(
+                "pow_of_rand = 0",
+                meta.query_advice(pow_of_rand, Rotation::cur()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                sum::expr([
+                    meta.query_advice(is_calldata, Rotation::cur()),
+                    meta.query_advice(is_access_list, Rotation::cur()),
+                ]),
+            ]))
+        });
+
+
+        // 4844_debug_current
+
+
+
         log_deg("tx_circuit", meta);
+
+
+
+
+
+
+
 
         Self {
             minimum_rows: meta.minimum_rows(),
