@@ -215,7 +215,6 @@ pub struct TxCircuitConfig<F: Field> {
     // works together with section_rlc to ensure
     // no ommittance in access list dynamic section
     field_rlc: Column<Advice>,
-    // 4844_debug
     // chunk_txbytes_rlc is the rlc of all signed rlp bytes in the chunk
     // used for calculating hash of all chunk bytes
     chunk_txbytes_rlc: Column<Advice>,
@@ -1793,19 +1792,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-
         // 4844_debug_current
 
-
-
         log_deg("tx_circuit", meta);
-
-
-
-
-
-
-
 
         Self {
             minimum_rows: meta.minimum_rows(),
@@ -2498,10 +2487,6 @@ impl<F: Field> TxCircuitConfig<F> {
             }
         }
         let pow_of_rand = pows_of_rand[hash_len];
-
-        // 4844_debug
-        // log::trace!("=> starting hash rlc: {:?}", chunk_txbytes_rlc_acc);
-
         let chunk_txbytes_rlc = if tx.tx_type != TxType::L1Msg {
             chunk_txbytes_rlc_acc.mul(pow_of_rand).add(tx_hash_rlc)
         } else {
@@ -2511,13 +2496,6 @@ impl<F: Field> TxCircuitConfig<F> {
         supplemental_data.push(chunk_txbytes_rlc);
         supplemental_data.push(chunk_txbytes_len);
 
-        // 4844_debug
-        // log::trace!("=> hash_len: {:?}", hash_len);
-        // log::trace!("=> pow_of_rand: {:?}", pow_of_rand);
-        // log::trace!("=> chunk_txbytes_rlc: {:?}", chunk_txbytes_rlc);
-        // log::trace!("=> chunk_txbytes_len: {:?}", chunk_txbytes_len);
-
-        // fixed_rows of a tx
         let fixed_rows = vec![
             // need to be in same order as that tx table load function uses
             (
@@ -3692,11 +3670,7 @@ impl<F: Field> TxCircuit<F> {
                     tx_value_cells.extend_from_slice(
                         assigned_cells.as_slice()
                     );
-
-                    // 4844_debug
-                    // log::trace!("=> supplemental 0: {:?}", supplemental_data[0]);
-                    // log::trace!("=> supplemental 1: {:?}", supplemental_data[1]);
-
+                    
                     chunk_txbytes_rlc_acc = supplemental_data[0];
                     chunk_txbytes_len_acc = supplemental_data[1];
                     // set next tx's total_l1_popped_before
