@@ -567,9 +567,9 @@ func (st *StackTrie) getNodeFromBranchRLP(branch []byte, idx int) []byte {
 	// `81` is the length of the payload and payload starts from `128`
 	start := int(branch[0]) - RLP_LONG_LIST_FLAG + 2
 
-	// If 1st node is not 128(empty node) or 160, it should be a leaf
+	// If 1st node is neither 128(empty node) nor 160, it should be a leaf
 	b := int(branch[start])
-	if b != RLP_SHORT_STR_FLAG || b != (RLP_SHORT_STR_FLAG+LEN_OF_HASH) {
+	if b != RLP_SHORT_STR_FLAG && b != (RLP_SHORT_STR_FLAG+LEN_OF_HASH) {
 		return []byte{0}
 	}
 
@@ -601,6 +601,14 @@ type StackProof struct {
 	proofC [][]byte
 }
 
+func (sp *StackProof) GetProofS() [][]byte {
+	return sp.proofS
+}
+
+func (sp *StackProof) GetProofC() [][]byte {
+	return sp.proofC
+}
+
 func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value []byte) (StackProof, error) {
 	proofS, err := st.GetProof(db, indexBuf)
 	if err != nil {
@@ -627,7 +635,7 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	// order that `list` provides hashes in. This insertion sequence ensures that the
 	// order is correct.
 	var indexBuf []byte
-	for i := 1; i < list.Len() && i <= 0x7f; i++ {
+	for i := 0; i < list.Len() && i <= 0x7f; i++ {
 		indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(i))
 		value := types.EncodeForDerive(list, i, valueBuf)
 
@@ -638,12 +646,12 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 
 		proofs = append(proofs, proof)
 	}
-	if list.Len() > 0 {
-		indexBuf = rlp.AppendUint64(indexBuf[:0], 0)
-		value := types.EncodeForDerive(list, 0, valueBuf)
-		// TODO: get proof
-		st.Update(indexBuf, value)
-	}
+	// if list.Len() > 0 {
+	// 	indexBuf = rlp.AppendUint64(indexBuf[:0], 0)
+	// 	value := types.EncodeForDerive(list, 0, valueBuf)
+	// 	// TODO: get proof
+	// 	st.Update(indexBuf, value)
+	// }
 	for i := 0x80; i < list.Len(); i++ {
 		indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(i))
 		value := types.EncodeForDerive(list, i, valueBuf)

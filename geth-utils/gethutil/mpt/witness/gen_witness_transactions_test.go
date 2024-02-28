@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"bytes"
 	"fmt"
 	"main/gethutil/mpt/trie"
 	"main/gethutil/mpt/types"
@@ -87,39 +88,47 @@ The second element is the 16-th transaction. For example, the third byte (16) re
 the transaction index.
 */
 
-func transactionsStackTrieInsertionTemplate(n int) {
+func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 	txs := makeTransactions(n)
 	db := rawdb.NewMemoryDatabase()
 	stackTrie := trie.NewStackTrie(db)
 
-	stackTrie.UpdateAndGetProofs(db, types.Transactions(txs))
+	proofs, _ := stackTrie.UpdateAndGetProofs(db, types.Transactions(txs))
 
-	fmt.Println("===")
+	rlp_last_tx, _ := txs[n-1].MarshalBinary()
+	last_proofC := proofs[len(proofs)-1].GetProofC()
+	last_leaf_proof := last_proofC[len(last_proofC)-1]
+
+	if !bytes.Equal(last_leaf_proof, rlp_last_tx) {
+		fmt.Println("- last_tx ", rlp_last_tx)
+		fmt.Println("- last_proof ", last_leaf_proof)
+		t.Fail()
+	}
 }
 
 func TestStackTrieInsertion_1Tx(t *testing.T) {
 	// Only one leaf
-	transactionsStackTrieInsertionTemplate(1)
+	transactionsStackTrieInsertionTemplate(t, 1)
 }
 
 func TestStackTrieInsertion_2Txs(t *testing.T) {
 	// One ext. node and one leaf
-	transactionsStackTrieInsertionTemplate(2)
+	transactionsStackTrieInsertionTemplate(t, 2)
 }
 
 func TestStackTrieInsertion_3Txs(t *testing.T) {
 	// One ext. node, one branch and one leaf
-	transactionsStackTrieInsertionTemplate(3)
+	transactionsStackTrieInsertionTemplate(t, 3)
 }
 
 func TestStackTrieInsertion_4Txs(t *testing.T) {
 	// One ext. node, one branch and two leaves
-	transactionsStackTrieInsertionTemplate(4)
+	transactionsStackTrieInsertionTemplate(t, 4)
 }
 
 func TestStackTrieInsertion_16Txs(t *testing.T) {
 	// One ext. node and one branch with full leaves (16 leaves)
-	transactionsStackTrieInsertionTemplate(16)
+	transactionsStackTrieInsertionTemplate(t, 16)
 }
 
 func TestStackTrieInsertion_17Txs(t *testing.T) {
@@ -127,19 +136,19 @@ func TestStackTrieInsertion_17Txs(t *testing.T) {
 	// The original ext. node turns into a branch (B1) which has children at position 0 and 1.
 	// At position 0 of B1, it has a branch with full leaves
 	// At position 1 of B1, it has a newly leaf
-	transactionsStackTrieInsertionTemplate(17)
+	transactionsStackTrieInsertionTemplate(t, 17)
 }
 
 func TestStackTrieInsertion_33Txs(t *testing.T) {
 	// Follow above test and have one more branch generated
-	transactionsStackTrieInsertionTemplate(33)
+	transactionsStackTrieInsertionTemplate(t, 33)
 }
 
 func TestStackTrieInsertion_ManyTxs(t *testing.T) {
 	// Just randomly picking a large number.
 	// The cap of block gas limit is 30M, the minimum gas cost of a tx is 21k
 	// 30M / 21k ~= 1429
-	transactionsStackTrieInsertionTemplate(2000)
+	transactionsStackTrieInsertionTemplate(t, 2000)
 }
 
 /*
