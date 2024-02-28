@@ -17,7 +17,8 @@ use crate::{
     // sig_circuit::SigCircuit,
     table::{
         BlockContextFieldTag::{CumNumTxs, NumAllTxs, NumTxs},
-        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag, PowOfRandTable,
+        BlockTable, KeccakTable, LookupTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, SigTable,
+        TxFieldTag,
         TxFieldTag::{
             AccessListAddressesLen, AccessListRLC, AccessListStorageKeysLen, BlockNumber, CallData,
             CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress, CallerAddress, ChainID,
@@ -71,7 +72,8 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
     iter,
-    marker::PhantomData, ops::{Add, Mul},
+    marker::PhantomData,
+    ops::{Add, Mul},
 };
 
 use crate::{util::Challenges, witness::rlp_fsm::get_rlp_len_tag_length};
@@ -260,7 +262,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sig_table,
             u8_table,
             u16_table,
-            pow_of_rand_table,
+            pow_of_rand_table: _,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -1717,24 +1719,24 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.require_equal(
                 "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev + HashLength",
                 meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_len_acc, Rotation((-1) * (HASH_RLC_OFFSET as i32)))
+                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32)))
                         // the previous row in fixed tx_table is the signed RLP length of current tx
-                        + meta.query_advice(tx_table.value, Rotation::prev()), 
+                        + meta.query_advice(tx_table.value, Rotation::prev()),
             );
 
             // Accumulate chunk bytes RLC
             cb.require_equal(
                 "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev * pow_of_rand(HashLength) + HashRLC",
                 meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_rlc, Rotation((-1) * (HASH_RLC_OFFSET as i32)))
+                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32)))
                         * meta.query_advice(pow_of_rand, Rotation::cur())
-                        + meta.query_advice(tx_table.value, Rotation::cur()), 
+                        + meta.query_advice(tx_table.value, Rotation::cur()),
             );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 // Only l2 signed bytes are accumulated
-                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())), 
+                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
                 is_hash_rlc(meta)
             ]))
         });
@@ -1767,30 +1769,33 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("Chunk bytes accumulation only happens in the fixed section of tx_table", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "Chunk bytes accumulation only happens in the fixed section of tx_table",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            cb.require_zero(
-                "chunk_txbytes_len_acc = 0",
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-            );
-            cb.require_zero(
-                "chunk_txbytes_rlc = 0",
-                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-            );
-            cb.require_zero(
-                "pow_of_rand = 0",
-                meta.query_advice(pow_of_rand, Rotation::cur()),
-            );
+                cb.require_zero(
+                    "chunk_txbytes_len_acc = 0",
+                    meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "chunk_txbytes_rlc = 0",
+                    meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "pow_of_rand = 0",
+                    meta.query_advice(pow_of_rand, Rotation::cur()),
+                );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                sum::expr([
-                    meta.query_advice(is_calldata, Rotation::cur()),
-                    meta.query_advice(is_access_list, Rotation::cur()),
-                ]),
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    sum::expr([
+                        meta.query_advice(is_calldata, Rotation::cur()),
+                        meta.query_advice(is_access_list, Rotation::cur()),
+                    ]),
+                ]))
+            },
+        );
 
         // 4844_debug_current
 
@@ -1857,6 +1862,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
     }
 }
 
+type FixedRowsAssignmentResult<F> = (Vec<AssignedCell<F, F>>, Vec<Value<F>>);
 impl<F: Field> TxCircuitConfig<F> {
     #[allow(clippy::too_many_arguments)]
     fn configure_lookups(
@@ -2459,7 +2465,7 @@ impl<F: Field> TxCircuitConfig<F> {
         chunk_txbytes_len_acc: Value<F>,
         pows_of_rand: &mut Vec<Value<F>>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(Vec<AssignedCell<F, F>>, Vec<Value<F>>), Error> {
+    ) -> Result<FixedRowsAssignmentResult<F>, Error> {
         let keccak_input = challenges.keccak_input();
         let evm_word = challenges.evm_word();
         let zero_rlc = keccak_input.map(|_| F::zero());
@@ -2479,7 +2485,11 @@ impl<F: Field> TxCircuitConfig<F> {
             access_list_size(&tx.access_list);
 
         // Only bytes from L2 txs are accumulated for chunk bytes hash
-        let hash_len = if tx.tx_type != TxType::L1Msg { tx.rlp_signed.len() } else { 0 };
+        let hash_len = if tx.tx_type != TxType::L1Msg {
+            tx.rlp_signed.len()
+        } else {
+            0
+        };
         let tx_hash_rlc = rlc_be_bytes(&tx.rlp_signed, keccak_input);
         if hash_len >= pows_of_rand.len() {
             for _ in 0..(tx.rlp_signed.len() - pows_of_rand.len() + 1) {
@@ -2490,7 +2500,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let chunk_txbytes_rlc = if tx.tx_type != TxType::L1Msg {
             chunk_txbytes_rlc_acc.mul(pow_of_rand).add(tx_hash_rlc)
         } else {
-            chunk_txbytes_rlc_acc.clone()
+            chunk_txbytes_rlc_acc
         };
         let chunk_txbytes_len = chunk_txbytes_len_acc.add(Value::known(F::from(hash_len as u64)));
         supplemental_data.push(chunk_txbytes_rlc);
@@ -2821,7 +2831,12 @@ impl<F: Field> TxCircuitConfig<F> {
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
             }
-            region.assign_advice(|| "chunk_txbytes_len_acc", self.chunk_txbytes_len_acc, *offset, || chunk_txbytes_len)?;
+            region.assign_advice(
+                || "chunk_txbytes_len_acc",
+                self.chunk_txbytes_len_acc,
+                *offset,
+                || chunk_txbytes_len,
+            )?;
 
             // 2nd phase columns
             for (col_anno, col, col_val) in [
@@ -2830,9 +2845,12 @@ impl<F: Field> TxCircuitConfig<F> {
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || col_val)?;
             }
-            tx_value_cells.push(
-                region.assign_advice(|| "chunk_txbytes_rlc", self.chunk_txbytes_rlc, *offset, || chunk_txbytes_rlc)?
-            );
+            tx_value_cells.push(region.assign_advice(
+                || "chunk_txbytes_rlc",
+                self.chunk_txbytes_rlc,
+                *offset,
+                || chunk_txbytes_rlc,
+            )?);
 
             // lookup conditions
             let mut conditions = HashMap::<LookupCondition, F>::new();
@@ -3447,8 +3465,7 @@ impl<F: Field> TxCircuit<F> {
             .txs
             .iter()
             .filter(|&tx| tx.tx_type != TxType::L1Msg)
-            .map(|tx| tx.rlp_signed.clone())
-            .flatten()
+            .flat_map(|tx| tx.rlp_signed.clone())
             .collect::<Vec<u8>>();
         inputs.extend_from_slice(&[chunk_hash_bytes]);
 
@@ -3670,7 +3687,7 @@ impl<F: Field> TxCircuit<F> {
                     tx_value_cells.extend_from_slice(
                         assigned_cells.as_slice()
                     );
-                    
+
                     chunk_txbytes_rlc_acc = supplemental_data[0];
                     chunk_txbytes_len_acc = supplemental_data[1];
                     // set next tx's total_l1_popped_before

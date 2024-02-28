@@ -7,7 +7,8 @@ pub use super::TxCircuit;
 use crate::{
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::{
-        BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable, U16Table, U8Table, PowOfRandTable,
+        BlockTable, KeccakTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable,
+        U16Table, U8Table,
     },
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
