@@ -1755,9 +1755,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                            // q_enable
+                1.expr(),                                           // q_enable
                 meta.query_advice(tx_table.value, Rotation::cur()), // exponent
-                meta.query_advice(pow_of_rand, Rotation::cur()), // pow_of_rand
+                meta.query_advice(pow_of_rand, Rotation::cur()),    // pow_of_rand
             ]
             .into_iter()
             .zip(pow_of_rand_table.table_exprs(meta))
@@ -1793,24 +1793,27 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("One chunk_txbytes_hash for the chunk within the fixed section", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "One chunk_txbytes_hash for the chunk within the fixed section",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            // chunk_txbytes_hash stays the same for the entire chunk
-            cb.require_equal(
-                "chunk_txbytes_hash' == chunk_txbytes_hash",
-                meta.query_advice(chunk_txbytes_hash, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_hash, Rotation::prev()),
-            );
+                // chunk_txbytes_hash stays the same for the entire chunk
+                cb.require_equal(
+                    "chunk_txbytes_hash' == chunk_txbytes_hash",
+                    meta.query_advice(chunk_txbytes_hash, Rotation::cur()),
+                    meta.query_advice(chunk_txbytes_hash, Rotation::prev()),
+                );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                not::expr(meta.query_fixed(q_first, Rotation::prev())),
-                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
-                not::expr(meta.query_advice(is_access_list, Rotation::cur())),
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                    not::expr(meta.query_fixed(q_first, Rotation::prev())),
+                    not::expr(meta.query_advice(is_calldata, Rotation::cur())),
+                    not::expr(meta.query_advice(is_access_list, Rotation::cur())),
+                ]))
+            },
+        );
 
         meta.create_gate(
             "Chunk bytes accumulation only happens in the fixed section of tx_table",
@@ -2494,11 +2497,11 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                            // q_enable
-                1.expr(),                                            // is_final
-                meta.query_advice(chunk_txbytes_rlc, Rotation::next()), // input_rlc
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),  // input_len
-                meta.query_advice(chunk_txbytes_hash, Rotation(2)),      // output_rlc
+                1.expr(),                                                  // q_enable
+                1.expr(),                                                  // is_final
+                meta.query_advice(chunk_txbytes_rlc, Rotation::next()),    // input_rlc
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()), // input_len
+                meta.query_advice(chunk_txbytes_hash, Rotation(2)),        // output_rlc
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
