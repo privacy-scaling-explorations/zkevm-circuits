@@ -1452,7 +1452,11 @@ impl KeccakTable {
         let input_rlc = challenges
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
+        // 4844_debug
+        log::trace!("=> keccak input_rlc: {:?}", input_rlc);
         let input_len = F::from(input.len() as u64);
+        // 4844_debug
+        log::trace!("=> keccak input_len: {:?}", input_len);
         let mut keccak = Keccak::default();
         keccak.update(input);
         let output = keccak.digest();
@@ -1462,6 +1466,9 @@ impl KeccakTable {
                 challenge,
             )
         });
+
+        // 4844_debug
+        log::trace!("=> keccak output_rlc: {:?}", output_rlc);
 
         vec![[
             Value::known(F::one()),

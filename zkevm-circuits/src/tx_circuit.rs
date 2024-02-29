@@ -221,6 +221,7 @@ pub struct TxCircuitConfig<F: Field> {
     // used for calculating hash of all chunk bytes
     chunk_txbytes_rlc: Column<Advice>,
     chunk_txbytes_len_acc: Column<Advice>,
+    chunk_txbytes_hash: Column<Advice>,
     pow_of_rand: Column<Advice>,
 
     _marker: PhantomData<F>,
@@ -346,6 +347,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // Chunk bytes accumulator
         let chunk_txbytes_rlc = meta.advice_column_in(SecondPhase);
+        let chunk_txbytes_hash = meta.advice_column();
         let chunk_txbytes_len_acc = meta.advice_column();
         let pow_of_rand = meta.advice_column_in(SecondPhase);
 
@@ -970,6 +972,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             al_idx,
             sk_idx,
             sks_acc,
+            chunk_txbytes_rlc,
+            chunk_txbytes_len_acc,
+            chunk_txbytes_hash,
         );
 
         meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
@@ -1769,6 +1774,25 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("One chunk_txbytes_hash for the chunk within the fixed section", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // chunk_txbytes_hash stays the same for the entire chunk
+            cb.require_equal(
+                "chunk_txbytes_hash' == chunk_txbytes_hash",
+                meta.query_advice(chunk_txbytes_hash, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_hash, Rotation::prev()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                not::expr(meta.query_fixed(q_first, Rotation::prev())),
+                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
+                not::expr(meta.query_advice(is_access_list, Rotation::cur())),
+            ]))
+        });
+
         meta.create_gate(
             "Chunk bytes accumulation only happens in the fixed section of tx_table",
             |meta| {
@@ -1781,6 +1805,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 cb.require_zero(
                     "chunk_txbytes_rlc = 0",
                     meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                );
+                cb.require_zero(
+                    "chunk_txbytes_hash = 0",
+                    meta.query_advice(chunk_txbytes_hash, Rotation::cur()),
                 );
                 cb.require_zero(
                     "pow_of_rand = 0",
@@ -1855,6 +1883,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             field_rlc,
             chunk_txbytes_rlc,
             chunk_txbytes_len_acc,
+            chunk_txbytes_hash,
             pow_of_rand,
             _marker: PhantomData,
             num_txs,
@@ -1895,6 +1924,9 @@ impl<F: Field> TxCircuitConfig<F> {
         al_idx: Column<Advice>,
         sk_idx: Column<Advice>,
         sks_acc: Column<Advice>,
+        chunk_txbytes_rlc: Column<Advice>,
+        chunk_txbytes_len_acc: Column<Advice>,
+        chunk_txbytes_hash: Column<Advice>,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -2427,6 +2459,34 @@ impl<F: Field> TxCircuitConfig<F> {
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
+
+        ////////////////////////////////////////////////////////////////////
+        /////////////    4844: Chunk bytes RLC lookups     /////////////////
+        ///////////////// //////////////////////////////////////////////////
+        meta.lookup_any("Keccak table lookup for ChunkHash", |meta| {
+            // Isolate the last row in the fixed section, which belongs to the last tx in the chunk
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
+                not::expr(meta.query_advice(is_access_list, Rotation::cur())),
+                sum::expr([
+                    meta.query_advice(is_calldata, Rotation::cur()),
+                    meta.query_advice(is_access_list, Rotation::cur()),
+                ]),
+            ]);
+
+            vec![
+                1.expr(),                                            // q_enable
+                1.expr(),                                            // is_final
+                meta.query_advice(chunk_txbytes_rlc, Rotation::next()), // input_rlc
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),  // input_len
+                meta.query_advice(chunk_txbytes_hash, Rotation(2)),      // output_rlc
+            ]
+            .into_iter()
+            .zip(keccak_table.table_exprs(meta))
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
     }
 
     /// Assign 1st empty row with tag = Null
@@ -2463,6 +2523,7 @@ impl<F: Field> TxCircuitConfig<F> {
         cum_num_txs: u64,
         chunk_txbytes_rlc_acc: Value<F>,
         chunk_txbytes_len_acc: Value<F>,
+        chunk_txbytes_hash: Value<F>,
         pows_of_rand: &mut Vec<Value<F>>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<FixedRowsAssignmentResult<F>, Error> {
@@ -2836,6 +2897,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 self.chunk_txbytes_len_acc,
                 *offset,
                 || chunk_txbytes_len,
+            )?;
+            region.assign_advice(
+                || "chunk_txbytes_hash",
+                self.chunk_txbytes_hash,
+                *offset,
+                || chunk_txbytes_hash,
             )?;
 
             // 2nd phase columns
@@ -3604,6 +3671,20 @@ impl<F: Field> TxCircuit<F> {
                     }
                 };
 
+                let mut chunk_bytes: Vec<u8> = vec![];
+                for i in 0..sigs.len() {
+                    chunk_bytes.extend_from_slice(&get_tx(i).rlp_signed);
+                    // 4844_debug
+                    log::trace!("=> chunk_bytes_add_len: {:?}", &get_tx(i).rlp_signed.len());
+                }
+
+                // 4844_debug
+                log::trace!("=> chunk_bytes_len: {:?}", chunk_bytes.len());
+                let chunk_txbytes_hash = keccak256(chunk_bytes.as_slice());
+                let evm_word = challenges.evm_word();
+                let chunk_txbytes_hash = rlc_be_bytes(&chunk_txbytes_hash, evm_word);
+                log::trace!("=> chunk_bytes_hash: {:?}", chunk_txbytes_hash);
+
                 let mut tx_value_cells = vec![];
                 let mut chunk_txbytes_rlc_acc = Value::known(F::zero());
                 let mut chunk_txbytes_len_acc = Value::known(F::zero());
@@ -3680,6 +3761,7 @@ impl<F: Field> TxCircuit<F> {
                         cum_num_txs,
                         chunk_txbytes_rlc_acc,
                         chunk_txbytes_len_acc,
+                        chunk_txbytes_hash,
                         &mut pows_of_rand,
                         challenges,
                     )?;
@@ -3690,6 +3772,11 @@ impl<F: Field> TxCircuit<F> {
 
                     chunk_txbytes_rlc_acc = supplemental_data[0];
                     chunk_txbytes_len_acc = supplemental_data[1];
+
+                    // 4844_debug
+                    log::trace!("=> chunk_txbytes_rlc_acc: {:?}", chunk_txbytes_rlc_acc);
+                    log::trace!("=> chunk_txbytes_len_acc: {:?}", chunk_txbytes_len_acc);
+
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
                 }
