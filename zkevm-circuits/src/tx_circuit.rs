@@ -3692,16 +3692,11 @@ impl<F: Field> TxCircuit<F> {
                 let mut chunk_bytes: Vec<u8> = vec![];
                 for i in 0..sigs.len() {
                     chunk_bytes.extend_from_slice(&get_tx(i).rlp_signed);
-                    // 4844_debug
-                    log::trace!("=> chunk_bytes_add_len: {:?}", &get_tx(i).rlp_signed.len());
                 }
 
-                // 4844_debug
-                log::trace!("=> chunk_bytes_len: {:?}", chunk_bytes.len());
                 let chunk_txbytes_hash = keccak256(chunk_bytes.as_slice());
                 let evm_word = challenges.evm_word();
                 let chunk_txbytes_hash = rlc_be_bytes(&chunk_txbytes_hash, evm_word);
-                log::trace!("=> chunk_bytes_hash: {:?}", chunk_txbytes_hash);
 
                 let mut tx_value_cells = vec![];
                 let mut chunk_txbytes_rlc_acc = Value::known(F::zero());
@@ -3790,10 +3785,6 @@ impl<F: Field> TxCircuit<F> {
 
                     chunk_txbytes_rlc_acc = supplemental_data[0];
                     chunk_txbytes_len_acc = supplemental_data[1];
-
-                    // 4844_debug
-                    log::trace!("=> chunk_txbytes_rlc_acc: {:?}", chunk_txbytes_rlc_acc);
-                    log::trace!("=> chunk_txbytes_len_acc: {:?}", chunk_txbytes_len_acc);
 
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
