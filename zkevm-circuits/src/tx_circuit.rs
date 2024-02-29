@@ -203,6 +203,7 @@ pub struct TxCircuitConfig<F: Field> {
     block_table: BlockTable,
     rlp_table: RlpTable,
     keccak_table: KeccakTable,
+    pow_of_rand_table: PowOfRandTable,
 
     // Access list columns
     al_idx: Column<Advice>,
@@ -263,7 +264,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             sig_table,
             u8_table,
             u16_table,
-            pow_of_rand_table: _,
+            pow_of_rand_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -964,6 +965,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             field_rlc,
             tx_table.clone(),
             keccak_table.clone(),
+            pow_of_rand_table.clone(),
             rlp_table,
             sig_table,
             is_access_list,
@@ -1746,6 +1748,24 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
+        meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
+            let enable = and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                is_hash_length(meta),
+            ]);
+
+            vec![
+                1.expr(),                                            // q_enable
+                meta.query_advice(tx_table.value, Rotation::cur()), // exponent
+                meta.query_advice(pow_of_rand, Rotation::cur()), // pow_of_rand
+            ]
+            .into_iter()
+            .zip(pow_of_rand_table.table_exprs(meta))
+            .map(|(arg, table)| (enable.clone() * arg, table))
+            .collect()
+        });
+
         meta.create_gate("One chunk_txbytes_len_acc, chunk_txbytes_rlc value and pow_of_rand for each tx (in fixed section)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1825,8 +1845,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             },
         );
 
-        // 4844_debug_current
-
         log_deg("tx_circuit", meta);
 
         Self {
@@ -1873,6 +1891,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_table,
             keccak_table,
             rlp_table,
+            pow_of_rand_table,
             is_tag_block_num,
             al_idx,
             sk_idx,
@@ -1916,6 +1935,7 @@ impl<F: Field> TxCircuitConfig<F> {
         field_rlc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
+        pow_of_rand: PowOfRandTable,
         rlp_table: RlpTable,
         sig_table: SigTable,
         is_access_list: Column<Advice>,
