@@ -341,17 +341,17 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         tx_ctx: TransactionContext,
         next_geth_step: Option<(usize, &GethExecStep)>,
         last_call: Option<Call>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         // we dont chunk if
         // 1. on last chunk
         // 2. still got some buffer room before max_rws
         let Some(max_rws) = self.circuits_params.max_rws() else {
             // terminiate earlier due to no max_rws
-            return Ok(());
+            return Ok(false);
         };
 
         if self.chunk_ctx.is_last_chunk() || self.chunk_rws() + RW_BUFFER_SIZE < max_rws {
-            return Ok(());
+            return Ok(false);
         };
 
         // Optain the first op of the next GethExecStep, for fixed case also lookahead
@@ -377,7 +377,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         self.commit_chunk_ctx(true, tx.id as usize, last_copy, last_call);
         self.set_begin_chunk(&next_ops, Some(&tx));
 
-        Ok(())
+        Ok(true)
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -451,14 +451,23 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             tx.steps_mut().push(end_tx_step.clone());
             (end_tx_step, last_call)
         } else if self.feature_config.invalid_tx {
-            // chunk before hands to avoid chunk between [InvalidTx, BeginTx)
-            self.check_and_chunk(geth_trace, tx.clone(), tx_ctx.clone(), None, None)?;
             // Generate InvalidTx step
             let invalid_tx_step = gen_associated_steps(
                 &mut self.state_ref(&mut tx, &mut tx_ctx),
                 ExecState::InvalidTx,
             )?;
             tx.steps_mut().push(invalid_tx_step.clone());
+            // Peek the end_tx_step
+            let is_chunk =
+                self.check_and_chunk(geth_trace, tx.clone(), tx_ctx.clone(), None, None)?;
+            if is_chunk {
+                // TODO we dont support chunk after invalid_tx
+                // becasuse begin_chunk will constraints what next step execution state.
+                // And for next step either begin_tx or invalid_tx will both failed because
+                // begin_tx/invalid_tx define new execution state.
+                unimplemented!("dont support invalid_tx with multiple chunks")
+            }
+
             (invalid_tx_step, None)
         } else {
             panic!("invalid tx support not enabled")
