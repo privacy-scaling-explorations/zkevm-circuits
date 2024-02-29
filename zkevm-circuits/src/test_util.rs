@@ -78,8 +78,12 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .block_modifier(Box::new(|block, chunk| chunk.fixed_param.max_evm_rows = (1 << 18) - 100))
-///     .run();
+///    .block_modifier(Box::new(|_block, chunk| {
+///        chunk
+///            .iter_mut()
+///            .for_each(|chunk| chunk.fixed_param.max_evm_rows = (1 << 18) - 100);
+///    }))
+///    .run()
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
