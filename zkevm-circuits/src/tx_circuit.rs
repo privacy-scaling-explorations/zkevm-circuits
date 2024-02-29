@@ -2930,7 +2930,11 @@ impl<F: Field> TxCircuitConfig<F> {
             for (col_anno, col, col_val) in [
                 ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc),
                 ("pow_of_rand", self.pow_of_rand, pow_of_rand),
-                ("chunk_txbytes_rlc", self.chunk_txbytes_rlc, chunk_txbytes_rlc),
+                (
+                    "chunk_txbytes_rlc",
+                    self.chunk_txbytes_rlc,
+                    chunk_txbytes_rlc,
+                ),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || col_val)?;
             }
