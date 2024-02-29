@@ -638,7 +638,9 @@ mod evm_circuit_stats {
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
         .block_modifier(Box::new(|_block, chunk| {
-            chunk.fixed_param.max_evm_rows = (1 << 18) - 100
+            chunk
+                .iter_mut()
+                .for_each(|chunk| chunk.fixed_param.max_evm_rows = (1 << 18) - 100);
         }))
         .run();
     }

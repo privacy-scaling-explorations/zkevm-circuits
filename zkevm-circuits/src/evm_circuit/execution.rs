@@ -815,6 +815,10 @@ impl<F: Field> ExecutionConfig<F> {
 
         let step_curr_rw_counter = cb.curr.state.rw_counter.clone();
         let step_curr_rw_counter_offset = cb.rw_counter_offset();
+        if execution_state == ExecutionState::BeginChunk {
+            cb.debug_expression("step_curr_rw_counter.expr()", step_curr_rw_counter.expr());
+        }
+
         let debug_expressions = cb.debug_expressions.clone();
 
         // Extract feature config here before cb is built.
@@ -979,9 +983,10 @@ impl<F: Field> ExecutionConfig<F> {
                                 .collect(),
                         ),
                         (
-                            "Only EndTx or InvalidTx or EndBlock or Padding can transit to EndBlock",
+                            "Only BeginChunk or EndTx or InvalidTx or EndBlock or Padding can transit to EndBlock",
                             ExecutionState::EndBlock,
                             vec![
+                                ExecutionState::BeginChunk,
                                 ExecutionState::EndTx,
                                 ExecutionState::EndBlock,
                                 ExecutionState::Padding,
@@ -1125,24 +1130,26 @@ impl<F: Field> ExecutionConfig<F> {
                 self.q_step_first.enable(&mut region, offset)?;
 
                 let dummy_tx = Transaction::default();
-                let chunk_txs = block
+                // chunk_txs is just a super set of execstep including both belong to this chunk and
+                // outside of this chunk
+                let chunk_txs: &[Transaction] = block
                     .txs
                     .get(chunk.chunk_context.initial_tx_index..chunk.chunk_context.end_tx_index)
                     .unwrap_or_default();
 
-                let last_call = chunk_txs
+                // If it's the very first chunk in a block set last call & begin_chunk to default
+                let prev_chunk_last_call = chunk.prev_last_call.clone().unwrap_or_default();
+                let cur_chunk_last_call = chunk_txs
                     .last()
                     .map(|tx| tx.calls()[0].clone())
-                    .unwrap_or_else(Call::default);
-                // If it's the very first chunk in a block set last call & begin_chunk to default
-                let prev_last_call = chunk.prev_last_call.clone().unwrap_or_default();
+                    .unwrap_or_else(|| prev_chunk_last_call.clone());
 
                 let padding = chunk.padding.as_ref().expect("padding can't be None");
 
                 // conditionally adding first step as begin chunk
                 let maybe_begin_chunk = {
                     if let Some(begin_chunk) = &chunk.begin_chunk {
-                        vec![(&dummy_tx, &prev_last_call, begin_chunk)]
+                        vec![(&dummy_tx, &prev_chunk_last_call, begin_chunk)]
                     } else {
                         vec![]
                     }
@@ -1153,10 +1160,16 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(chunk_txs.iter().flat_map(|tx| {
                         tx.steps()
                             .iter()
+                            // chunk_txs is just a super set of execstep. To filter targetting
+                            // execstep we need to further filter by [initial_rwc, end_rwc)
+                            .filter(|step| {
+                                step.rwc.0 >= chunk.chunk_context.initial_rwc
+                                    && step.rwc.0 < chunk.chunk_context.end_rwc
+                            })
                             .map(move |step| (tx, &tx.calls()[step.call_index], step))
                     }))
                     // this dummy step is just for real step assignment proceed to `second last`
-                    .chain(std::iter::once((&dummy_tx, &last_call, padding)))
+                    .chain(std::iter::once((&dummy_tx, &cur_chunk_last_call, padding)))
                     .peekable();
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
@@ -1228,6 +1241,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
+
                     second_last_real_step = Some(cur);
                     // record offset of current step before assignment
                     second_last_real_step_offset = offset;
@@ -1243,7 +1257,7 @@ impl<F: Field> ExecutionConfig<F> {
                         next_step_after_real_step = Some(padding.clone());
                     }
                     offset = assign_padding_or_step(
-                        (&dummy_tx, &last_call, padding),
+                        (&dummy_tx, &cur_chunk_last_call, padding),
                         offset,
                         None,
                         Some(evm_rows - 1),
@@ -1254,7 +1268,7 @@ impl<F: Field> ExecutionConfig<F> {
                 if let Some(end_chunk) = &chunk.end_chunk {
                     debug_assert_eq!(ExecutionState::EndChunk.get_step_height(), 1);
                     offset = assign_padding_or_step(
-                        (&dummy_tx, &last_call, end_chunk),
+                        (&dummy_tx, &cur_chunk_last_call, end_chunk),
                         offset,
                         None,
                         None,
@@ -1269,7 +1283,7 @@ impl<F: Field> ExecutionConfig<F> {
                     );
                     debug_assert_eq!(ExecutionState::EndBlock.get_step_height(), 1);
                     offset = assign_padding_or_step(
-                        (&dummy_tx, &last_call, &block.end_block),
+                        (&dummy_tx, &cur_chunk_last_call, &block.end_block),
                         offset,
                         None,
                         None,
@@ -1286,7 +1300,11 @@ impl<F: Field> ExecutionConfig<F> {
                     _ = assign_padding_or_step(
                         last_real_step,
                         second_last_real_step_offset,
-                        Some((&dummy_tx, &last_call, &next_step_after_real_step.unwrap())),
+                        Some((
+                            &dummy_tx,
+                            &cur_chunk_last_call,
+                            &next_step_after_real_step.unwrap(),
+                        )),
                         None,
                     )?;
                 }
@@ -1421,6 +1439,13 @@ impl<F: Field> ExecutionConfig<F> {
                 step,
                 call
             );
+            // println!(
+            //     "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
+            //     offset,
+            //     step.execution_state(),
+            //     step,
+            //     call
+            // );
         }
         // Make the region large enough for the current step and the next step.
         // The next step's next step may also be accessed, so make the region large
@@ -1438,6 +1463,13 @@ impl<F: Field> ExecutionConfig<F> {
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
         if let Some(next_step) = next_step {
+            // println!(
+            //     "assign_exec_step nextstep offset: {} state {:?} step: {:?} call: {:?}",
+            //     offset,
+            //     next_step.2.execution_state(),
+            //     next_step.2,
+            //     next_step.1
+            // );
             self.assign_exec_step_int(
                 region,
                 offset + height,

@@ -11,7 +11,7 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::geth_types::GethData;
-use itertools::all;
+use itertools::{all, Itertools};
 use std::cmp;
 use thiserror::Error;
 
@@ -86,8 +86,8 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     circuits_params: Option<FixedCParams>,
     feature_config: Option<FeatureConfig>,
     block: Option<Block<Fr>>,
-    chunk: Option<Chunk<Fr>>,
-    block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>, &mut Chunk<Fr>)>>,
+    chunks: Option<Vec<Chunk<Fr>>>,
+    block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>, &mut Vec<Chunk<Fr>>)>>,
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
@@ -98,7 +98,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             circuits_params: None,
             feature_config: None,
             block: None,
-            chunk: None,
+            chunks: None,
             block_modifiers: vec![],
         }
     }
@@ -111,8 +111,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Generates a CTBC from a [`Block`] passed with all the other fields
     /// set to [`Default`].
-    pub fn new_from_block(block: Block<Fr>, chunk: Chunk<Fr>) -> Self {
-        Self::empty().block_chunk(block, chunk)
+    pub fn new_from_block(block: Block<Fr>, chunks: Vec<Chunk<Fr>>) -> Self {
+        Self::empty().set_block_chunk(block, chunks)
     }
 
     /// Allows to produce a [`TestContext`] which will serve as the generator of
@@ -140,10 +140,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
-    /// Allows to pass a [`Block`] already built to the constructor.
-    pub fn block_chunk(mut self, block: Block<Fr>, chunk: Chunk<Fr>) -> Self {
+    /// Allows to pass a [`Block`], [`Chunk`] vectors already built to the constructor.
+    pub fn set_block_chunk(mut self, block: Block<Fr>, chunks: Vec<Chunk<Fr>>) -> Self {
         self.block = Some(block);
-        self.chunk = Some(chunk);
+        self.chunks = Some(chunks);
         self
     }
 
@@ -153,7 +153,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     ///
     /// That removes the need in a lot of tests to build the block outside of
     /// the builder because they need to modify something particular.
-    pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>, &mut Chunk<Fr>)>) -> Self {
+    pub fn block_modifier(
+        mut self,
+        modifier: Box<dyn Fn(&mut Block<Fr>, &mut Vec<Chunk<Fr>>)>,
+    ) -> Self {
         self.block_modifiers.push(modifier);
         self
     }
@@ -163,12 +166,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// build block
     pub fn build_block(
         &self,
-        chunk_index: usize,
-        total_chunk: usize,
-    ) -> Result<(Block<Fr>, Chunk<Fr>), CircuitTestError> {
-        if let (Some(block), Some(chunk)) = (&self.block, &self.chunk) {
+        total_chunks: Option<usize>,
+    ) -> Result<(Block<Fr>, Vec<Chunk<Fr>>), CircuitTestError> {
+        if let (Some(block), Some(chunks)) = (&self.block, &self.chunks) {
             // If a block is specified, no need to modify the block
-            return Ok((block.clone(), chunk.clone()));
+            return Ok((block.clone(), chunks.clone()));
         }
         let block = self
             .test_ctx
@@ -177,16 +179,19 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         let block: GethData = block.clone().into();
         let builder = match self.circuits_params {
             Some(fixed_param) => {
-                assert!(
-                    fixed_param.total_chunks == total_chunk,
-                    "Total chunks unmatched with fixed param"
-                );
+                if let Some(total_chunks) = total_chunks {
+                    assert!(
+                        fixed_param.total_chunks == total_chunks,
+                        "Total chunks unmatched with fixed param"
+                    );
+                }
+
                 BlockData::new_from_geth_data_with_params(block.clone(), fixed_param)
                     .new_circuit_input_builder_with_feature(self.feature_config.unwrap_or_default())
                     .handle_block(&block.eth_block, &block.geth_traces)
                     .map_err(|err| CircuitTestError::CannotHandleBlock(err.to_string()))?
             }
-            None => BlockData::new_from_geth_data_chunked(block.clone(), total_chunk)
+            None => BlockData::new_from_geth_data_chunked(block.clone(), total_chunks.unwrap_or(1))
                 .new_circuit_input_builder_with_feature(self.feature_config.unwrap_or_default())
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .map_err(|err| CircuitTestError::CannotHandleBlock(err.to_string()))?,
@@ -194,64 +199,152 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // Build a witness block from trace result.
         let mut block = crate::witness::block_convert(&builder)
             .map_err(|err| CircuitTestError::CannotConvertBlock(err.to_string()))?;
-        let mut chunk = crate::witness::chunk_convert(&block, &builder)
-            .unwrap()
-            .remove(chunk_index);
+        let mut chunks = crate::witness::chunk_convert(&block, &builder).unwrap();
 
         for modifier_fn in &self.block_modifiers {
-            modifier_fn.as_ref()(&mut block, &mut chunk);
+            modifier_fn.as_ref()(&mut block, &mut chunks);
         }
-        Ok((block, chunk))
+        Ok((block, chunks))
     }
 
     fn run_evm_circuit_test(
         &self,
         block: Block<Fr>,
-        chunk: Chunk<Fr>,
+        chunks: Vec<Chunk<Fr>>,
     ) -> Result<(), CircuitTestError> {
-        let k = block.get_test_degree(&chunk);
+        if chunks.is_empty() {
+            return Err(CircuitTestError::SanityCheckChunks(
+                "empty chunks vector".to_string(),
+            ));
+        }
+
+        let k = block.get_test_degree(&chunks[0]);
 
         let (active_gate_rows, active_lookup_rows) =
-            EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
+            EvmCircuit::<Fr>::get_active_rows(&block, &chunks[0]);
 
-        // Mainnet EVM circuit constraints can be cached for test performance.
-        // No cache for EVM circuit with customized features
-        let prover = if block.feature_config.is_mainnet() {
-            let circuit = EvmCircuitCached::get_test_circuit_from_block(block, chunk);
-            let instance = circuit.instance();
-            MockProver::<Fr>::run(k, &circuit, instance)
-        } else {
-            let circuit = EvmCircuit::get_test_circuit_from_block(block, chunk);
-            let instance = circuit.instance();
-            MockProver::<Fr>::run(k, &circuit, instance)
-        };
+        // check consistency between chunk
+        chunks
+            .iter()
+            .tuple_windows()
+            .find_map(|(prev_chunk, chunk)| {
+                // global consistent
+                if prev_chunk.permu_alpha != chunk.permu_alpha {
+                    return Some(Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch challenge alpha".to_string(),
+                    )));
+                }
+                if prev_chunk.permu_gamma != chunk.permu_gamma {
+                    return Some(Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch challenge gamma".to_string(),
+                    )));
+                }
 
-        let prover = prover.map_err(|err| CircuitTestError::SynthesisFailure {
-            circuit: Circuit::EVM,
-            reason: err,
-        })?;
+                if prev_chunk.by_address_rw_fingerprints.ending_row
+                    != chunk.by_address_rw_fingerprints.prev_ending_row
+                {
+                    return Some(Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch by_address_rw_fingerprints ending_row".to_string(),
+                    )));
+                }
+                if prev_chunk.by_address_rw_fingerprints.mul_acc
+                    != chunk.by_address_rw_fingerprints.prev_mul_acc
+                {
+                    return Some(Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch by_address_rw_fingerprints mul_acc".to_string(),
+                    )));
+                }
 
-        prover
-            .verify_at_rows(
-                active_gate_rows.iter().cloned(),
-                active_lookup_rows.iter().cloned(),
-            )
-            .map_err(|err| CircuitTestError::VerificationFailed {
-                circuit: Circuit::EVM,
-                reasons: err,
+                if prev_chunk.chrono_rw_fingerprints.ending_row
+                    != chunk.chrono_rw_fingerprints.prev_ending_row
+                {
+                    return Some(Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch chrono_rw_fingerprints ending_row".to_string(),
+                    )));
+                }
+                if prev_chunk.chrono_rw_fingerprints.mul_acc
+                    != chunk.chrono_rw_fingerprints.prev_mul_acc
+                {
+                    return Some(Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch chrono_rw_fingerprints mul_acc".to_string(),
+                    )));
+                }
+                None
             })
+            .unwrap_or_else(|| Ok(()))?;
+
+        // check last chunk fingerprints
+        chunks
+            .last()
+            .map(|last_chunk| {
+                if last_chunk.by_address_rw_fingerprints.mul_acc
+                    != last_chunk.chrono_rw_fingerprints.mul_acc
+                {
+                    Err(CircuitTestError::SanityCheckChunks(
+                        "mismatch last rw_fingerprint mul_acc".to_string(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            })
+            .unwrap_or_else(|| Ok(()))?;
+
+        // stop on first chunk validation error
+        chunks
+            .into_iter()
+            .enumerate()
+            .find_map(|(i, chunk)| {
+                // Mainnet EVM circuit constraints can be cached for test performance.
+                // No cache for EVM circuit with customized features
+                let prover = if block.feature_config.is_mainnet() {
+                    let circuit =
+                        EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk);
+                    let instance = circuit.instance();
+                    MockProver::<Fr>::run(k, &circuit, instance)
+                } else {
+                    let circuit = EvmCircuit::get_test_circuit_from_block(block.clone(), chunk);
+                    let instance = circuit.instance();
+                    MockProver::<Fr>::run(k, &circuit, instance)
+                };
+
+                if let Err(err) = prover {
+                    return Some(Err(CircuitTestError::SynthesisFailure {
+                        circuit: Circuit::EVM,
+                        reason: err,
+                    }));
+                }
+
+                let prover = prover.unwrap();
+
+                let res = prover
+                    .verify_at_rows(
+                        active_gate_rows.iter().cloned(),
+                        active_lookup_rows.iter().cloned(),
+                    )
+                    .map_err(|err| CircuitTestError::VerificationFailed {
+                        circuit: Circuit::EVM,
+                        reasons: err,
+                    });
+                if res.is_err() {
+                    println!("failed on chunk index {}", i);
+                    Some(res)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| Ok(()))
     }
     // TODO: use randomness as one of the circuit public input, since randomness in
     // state circuit and evm circuit must be same
     fn run_state_circuit_test(
         &self,
         block: Block<Fr>,
-        chunk: Chunk<Fr>,
+        chunks: Vec<Chunk<Fr>>,
     ) -> Result<(), CircuitTestError> {
-        let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunk).1;
+        let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunks[0]).1;
         let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-        let state_circuit = StateCircuit::<Fr>::new(&chunk);
-        let max_rws = chunk.fixed_param.max_rws;
+        let state_circuit = StateCircuit::<Fr>::new(&chunks[0]);
+        let max_rws = &chunks[0].fixed_param.max_rws;
         let instance = state_circuit.instance();
         let prover = MockProver::<Fr>::run(k, &state_circuit, instance).map_err(|err| {
             CircuitTestError::SynthesisFailure {
@@ -265,7 +358,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             .iter()
             .filter(|rw| !matches!(rw, Rw::Start { .. }))
             .count();
-        let rows = max_rws - non_start_rows_len..max_rws;
+        let rows = max_rws - non_start_rows_len..*max_rws;
         prover.verify_at_rows(rows.clone(), rows).map_err(|err| {
             CircuitTestError::VerificationFailed {
                 circuit: Circuit::EVM,
@@ -273,140 +366,30 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             }
         })
     }
-    /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
-    /// into a [`Block`] and specified numbers of [`Chunk`]s
-    /// and apply the default or provided modifiers or
-    /// circuit checks to the provers generated for the State and EVM circuits.
-    /// One [`Chunk`] is generated by default and the first one is run unless
-    /// [`FixedCParams`] is set.
-    pub fn run(self) {
-        println!("--------------{:?}", self.circuits_params);
-        if let Some(fixed_params) = self.circuits_params {
-            self.run_dynamic_chunk(fixed_params.total_chunks, 0);
-        } else {
-            self.run_dynamic_chunk(1, 0);
-        }
-    }
 
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run_with_result(self) -> Result<(), CircuitTestError> {
-        let (block, chunk) = self.build_block(0, 1)?;
-
-        self.run_evm_circuit_test(block.clone(), chunk.clone())?;
-        self.run_state_circuit_test(block, chunk)
+        self.run_multiple_chunks_with_result(None)
     }
 
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
-    /// into a [`Block`] and specified numbers of [`Chunk`]s.
-    /// [`FixedCParams`] must be set to build the amount of chunks
-    /// and run the indexed [`Chunk`].
-    pub fn run_chunk(self, chunk_index: usize) {
-        let total_chunk = self
-            .circuits_params
-            .expect("Fixed param not specified")
-            .total_chunks;
-        self.run_dynamic_chunk(total_chunk, chunk_index);
+    /// into a [`Block`] and apply the default or provided block_modifiers or
+    /// circuit checks to the provers generated for the State and EVM circuits.
+    pub fn run_multiple_chunks_with_result(
+        self,
+        total_chunks: Option<usize>,
+    ) -> Result<(), CircuitTestError> {
+        let (block, chunks) = self.build_block(total_chunks)?;
+
+        self.run_evm_circuit_test(block.clone(), chunks.clone())?;
+        self.run_state_circuit_test(block, chunks)
     }
 
-    /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
-    /// into a [`Block`] and specified numbers of [`Chunk`]s with dynamic chunk size
-    /// if [`FixedCParams`] is not set, otherwise the `total_chunk` must matched.
-    pub fn run_dynamic_chunk(self, total_chunk: usize, chunk_index: usize) {
-        assert!(chunk_index < total_chunk, "Chunk index exceed total chunks");
-        let (block, chunk) = if self.block.is_some() && self.chunk.is_some() {
-            (self.block.unwrap(), self.chunk.unwrap())
-        } else if self.test_ctx.is_some() {
-            let block: GethData = self.test_ctx.unwrap().into();
-            let builder = match self.circuits_params {
-                Some(fixed_param) => {
-                    assert_eq!(
-                        fixed_param.total_chunks, total_chunk,
-                        "Total chunks unmatched with fixed param"
-                    );
-                    BlockData::new_from_geth_data_with_params(block.clone(), fixed_param)
-                        .new_circuit_input_builder_with_feature(
-                            self.feature_config.unwrap_or_default(),
-                        )
-                        .handle_block(&block.eth_block, &block.geth_traces)
-                        .unwrap()
-                }
-                None => BlockData::new_from_geth_data_chunked(block.clone(), total_chunk)
-                    .new_circuit_input_builder_with_feature(self.feature_config.unwrap_or_default())
-                    .handle_block(&block.eth_block, &block.geth_traces)
-                    .unwrap(),
-            };
-            // FIXME(Cecilia): debug
-            println!("----after-handle-block-----");
-            builder.chunks.iter().for_each(|c| {
-                println!(
-                    "{:?}\n{:?}\nbegin {:?}\nend {:?}\n",
-                    c.ctx,
-                    c.fixed_param,
-                    c.begin_chunk.is_some(),
-                    c.end_chunk.is_some()
-                );
-                println!("----------");
-            });
-            println!("block rwc = {:?}", builder.block_ctx.rwc);
-
-            // Build a witness block from trace result.
-            let mut block = crate::witness::block_convert(&builder).unwrap();
-
-            let mut chunk = crate::witness::chunk_convert(&block, &builder)
-                .unwrap()
-                .remove(chunk_index);
-
-            for modifier_fn in self.block_modifiers {
-                modifier_fn.as_ref()(&mut block, &mut chunk);
-            }
-            (block, chunk)
-        } else {
-            panic!("No attribute to build a block was passed to the CircuitTestBuilder")
-        };
-        let params = chunk.fixed_param;
-
-        // Run evm circuit test
-        {
-            let k = block.get_test_degree(&chunk);
-
-            let (_active_gate_rows, _active_lookup_rows) =
-                EvmCircuit::<Fr>::get_active_rows(&block, &chunk);
-
-            let _prover = if block.feature_config.is_mainnet() {
-                let circuit =
-                    EvmCircuitCached::get_test_circuit_from_block(block.clone(), chunk.clone());
-                let instance = circuit.instance();
-                MockProver::<Fr>::run(k, &circuit, instance)
-            } else {
-                let circuit = EvmCircuit::get_test_circuit_from_block(block.clone(), chunk.clone());
-                let instance = circuit.instance();
-                MockProver::<Fr>::run(k, &circuit, instance)
-            };
-
-            // self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
-        }
-
-        // Run state circuit test
-        // TODO: use randomness as one of the circuit public input, since randomness in
-        // state circuit and evm circuit must be same
-        {
-            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunk).1;
-            let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-            let state_circuit = StateCircuit::<Fr>::new(&chunk);
-            let instance = state_circuit.instance();
-            let _prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
-            // Skip verification of Start rows to accelerate testing
-            let non_start_rows_len = state_circuit
-                .rows
-                .iter()
-                .filter(|rw| !matches!(rw, Rw::Padding { .. }))
-                .count();
-            let _rows: Vec<usize> = (params.max_rws - non_start_rows_len..params.max_rws).collect();
-
-            // self.state_checks.as_ref()(prover, &rows, &rows);
-        }
+    /// Convenient method to run in test cases that error handling is not required.
+    pub fn run(self) {
+        self.run_with_result().unwrap()
     }
 }
 
@@ -431,6 +414,9 @@ pub enum CircuitTestError {
     /// Something worng in the block_convert
     #[error("CannotConvertBlock({0})")]
     CannotConvertBlock(String),
+    /// Something worng in the chunk_convert
+    #[error("SanityCheckChunks({0})")]
+    SanityCheckChunks(String),
     /// Problem constructing MockProver
     #[error("SynthesisFailure({circuit:?}, reason: {reason:?})")]
     SynthesisFailure {

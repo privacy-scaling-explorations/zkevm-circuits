@@ -348,12 +348,9 @@ pub fn run_test(
 
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
-        let chunk: Chunk<Fr> =
-            zkevm_circuits::evm_circuit::witness::chunk_convert(&block, &builder)
-                .unwrap()
-                .remove(0);
-
-        CircuitTestBuilder::<1, 1>::new_from_block(block, chunk)
+        let chunks: Vec<Chunk<Fr>> =
+            zkevm_circuits::evm_circuit::witness::chunk_convert(&block, &builder).unwrap();
+        CircuitTestBuilder::<1, 1>::new_from_block(block, chunks)
             .run_with_result()
             .map_err(|err| match err {
                 CircuitTestError::VerificationFailed { reasons, .. } => {

@@ -369,7 +369,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                         col1.iter().enumerate().zip_eq(col2.iter()).for_each(
                             |((index, cellv1), cellv2)| {
                                 assert!(
-                                    cellv1.eq(&cellv2),
+                                    cellv1.eq(cellv2),
                                     "cellv1 {:?} != cellv2 {:?} on index {}",
                                     cellv1,
                                     cellv2,
@@ -407,7 +407,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                             col1.iter().enumerate().zip_eq(col2.iter()).for_each(
                                 |((index, cellv1), cellv2)| {
                                     assert!(
-                                        cellv1.eq(&cellv2),
+                                        cellv1.eq(cellv2),
                                         "cellv1 {:?} != cellv2 {:?} on index {}",
                                         cellv1,
                                         cellv2,

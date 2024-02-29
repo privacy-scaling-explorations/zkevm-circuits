@@ -12,6 +12,7 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::{exec_trace::OperationRef, operation::Target};
 use eth_types::Field;
 use halo2_proofs::plonk::Error;
 
@@ -60,12 +61,20 @@ impl<F: Field> ExecutionGadget<F> for EndChunkGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let rwc_before_padding = step
+            .bus_mapping_instance
+            .iter()
+            .filter(|x| {
+                let OperationRef(c, _) = x;
+                *c != Target::Start && *c != Target::Padding
+            })
+            .count();
         self.rw_table_padding_gadget.assign_exec_step(
             region,
             offset,
             block,
             chunk,
-            (step.rwc_inner_chunk.0 - 1 + step.bus_mapping_instance.len()) as u64,
+            (step.rwc_inner_chunk.0 - 1 + rwc_before_padding) as u64,
             step,
         )?;
         Ok(())
@@ -83,6 +92,17 @@ mod test {
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
+    macro_rules! test_2_txs_with_various_chunk_size {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (total_chunks, total_rws) = $value;
+                test_2_txs_with_chunk_size(total_chunks, total_rws);
+            }
+        )*
+        }
+    }
     #[test]
     fn test_chunking_rwmap_logic() {
         let bytecode = bytecode! {
@@ -137,8 +157,7 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_all_chunks_fixed() {
+    fn test_2_txs_with_chunk_size(total_chunks: usize, total_rws: usize) {
         let bytecode = bytecode! {
             GAS
             STOP
@@ -167,28 +186,29 @@ mod test {
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap();
-        (0..6).for_each(|chunk_id| {
-            CircuitTestBuilder::new_from_test_ctx(test_ctx.clone())
-                .params({
-                    FixedCParams {
-                        total_chunks: 6,
-                        max_rws: 90,
-                        max_txs: 2,
-                        ..Default::default()
-                    }
-                })
-                .run_chunk(chunk_id);
-        });
+        CircuitTestBuilder::new_from_test_ctx(test_ctx)
+            .params({
+                FixedCParams {
+                    total_chunks,
+                    max_rws: total_rws / total_chunks,
+                    max_txs: 2,
+                    ..Default::default()
+                }
+            })
+            .run_multiple_chunks_with_result(Some(total_chunks))
+            .unwrap();
     }
 
-    #[test]
-    fn test_single_chunk() {
-        let bytecode = bytecode! {
-            STOP
-        };
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-        )
-        .run();
+    test_2_txs_with_various_chunk_size! {
+        test_2_txs_with_1_400: (1, 400),
+        test_2_txs_with_2_400: (2, 400),
+        test_2_txs_with_3_400: (3, 400),
+        test_2_txs_with_4_400: (4, 400),
+        test_2_txs_with_1_600: (1, 600),
+        test_2_txs_with_2_600: (2, 600),
+        test_2_txs_with_3_600: (3, 600),
+        test_2_txs_with_4_600: (4, 600),
+        test_2_txs_with_5_600: (5, 600),
+        test_2_txs_with_6_600: (6, 600),
     }
 }

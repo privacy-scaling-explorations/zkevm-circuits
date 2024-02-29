@@ -357,7 +357,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         // Optain the first op of the next GethExecStep, for fixed case also lookahead
         let (mut cib, mut tx, mut tx_ctx) = (self.clone(), tx, tx_ctx);
         let mut cib_ref = cib.state_ref(&mut tx, &mut tx_ctx);
-        let next_ops = if let Some((i, step)) = next_geth_step {
+        let mut next_ops = if let Some((i, step)) = next_geth_step {
             log::trace!("chunk at {}th opcode {:?} ", i, step.op);
             gen_associated_ops(&step.op, &mut cib_ref, &geth_trace.struct_logs[i..])?.remove(0)
         } else {
@@ -368,10 +368,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         let last_copy = self.block.copy_events.len();
         // Generate EndChunk and proceed to the next if it's not the last chunk
         // Set next step pre-state as end_chunk state
-        self.set_end_chunk(&next_ops);
+        self.set_end_chunk(&next_ops, Some(&tx));
+
+        // need to update next_ops.rwc to catch block_ctx.rwc in `set_end_chunk`
+        next_ops.rwc = self.block_ctx.rwc;
+
         // tx.id start from 1, so it's equivalent to `next_tx_index`
         self.commit_chunk_ctx(true, tx.id as usize, last_copy, last_call);
-        self.set_begin_chunk(&next_ops);
+        self.set_begin_chunk(&next_ops, Some(&tx));
 
         Ok(())
     }
@@ -394,13 +398,12 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
         let res = if !geth_trace.invalid {
-            let mut last_call = None;
-
             // Generate BeginTx step
             let begin_tx_step = gen_associated_steps(
                 &mut self.state_ref(&mut tx, &mut tx_ctx),
                 ExecState::BeginTx,
             )?;
+            let mut last_call = Some(tx.calls().get(begin_tx_step.call_index).unwrap().clone());
             tx.steps_mut().push(begin_tx_step);
 
             let mut trace = geth_trace.struct_logs.iter().enumerate().peekable();
@@ -416,9 +419,10 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 // Proceed to the next step
                 let (i, step) = trace.next().expect("Peeked step should exist");
                 log::trace!(
-                    "handle {}th opcode {:?} rws = {:?}",
+                    "handle {}th opcode {:?} {:?} rws = {:?}",
                     i,
                     step.op,
+                    step,
                     self.chunk_rws()
                 );
                 let exec_steps = gen_associated_ops(
@@ -466,9 +470,13 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         Ok(res)
     }
 
-    // TODO Fix this, for current logic on processing `call` is incorrect
-    // TODO re-design `gen_chunk_associated_steps` to separate RW
-    fn gen_chunk_associated_steps(&mut self, step: &mut ExecStep, rw: RW) {
+    // generate chunk related steps
+    fn gen_chunk_associated_steps(
+        &mut self,
+        step: &mut ExecStep,
+        rw: RW,
+        tx: Option<&Transaction>,
+    ) {
         let STEP_STATE_LEN = 10;
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -483,12 +491,10 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
 
         let tags = {
             let state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
-            let last_call = state
-                .block
-                .txs
-                .last()
-                .map(|tx| tx.calls[0].clone())
-                .unwrap_or_else(Call::default);
+            let last_call = tx
+                .map(|tx| tx.calls()[step.call_index].clone())
+                .or_else(|| state.block.txs.last().map(|tx| tx.calls[0].clone()))
+                .unwrap();
             [
                 (StepStateField::CodeHash, last_call.code_hash.to_word()),
                 (StepStateField::CallID, Word::from(last_call.call_id)),
@@ -551,24 +557,44 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         self.chunk_ctx.end_copy_index = next_copy_index;
         self.cur_chunk_mut().ctx = self.chunk_ctx.clone();
         if to_next {
+            // here use `-1` to include previous set
             self.chunk_ctx
-                .bump(self.block_ctx.rwc.0, next_tx_index, next_copy_index);
+                .bump(self.block_ctx.rwc.0, next_tx_index - 1, next_copy_index);
+            // println!("bump last_call {:?}", last_call);
+            if last_call.is_none() {
+                panic!("??")
+            }
             self.cur_chunk_mut().prev_last_call = last_call;
         }
     }
 
-    fn set_begin_chunk(&mut self, first_step: &ExecStep) {
-        let mut begin_chunk = first_step.clone();
-        begin_chunk.exec_state = ExecState::BeginChunk;
-        self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ);
+    fn set_begin_chunk(&mut self, first_step: &ExecStep, tx: Option<&Transaction>) {
+        let mut begin_chunk = ExecStep {
+            exec_state: ExecState::BeginChunk,
+            rwc: first_step.rwc,
+            gas_left: first_step.gas_left,
+            call_index: first_step.call_index,
+            ..ExecStep::default()
+        };
+        self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ, tx);
+        println!("in set begin chunk {:?}", begin_chunk);
         self.chunks[self.chunk_ctx.idx].begin_chunk = Some(begin_chunk);
     }
 
-    fn set_end_chunk(&mut self, next_step: &ExecStep) {
-        let mut end_chunk = next_step.clone();
-        end_chunk.exec_state = ExecState::EndChunk;
-        self.gen_chunk_associated_steps(&mut end_chunk, RW::WRITE);
+    fn set_end_chunk(&mut self, next_step: &ExecStep, tx: Option<&Transaction>) {
+        println!("before self.block_ctx.rwc.0 {}", self.block_ctx.rwc.0);
+        // println!("next step {:?}", next_step);
+        let mut end_chunk = ExecStep {
+            exec_state: ExecState::EndChunk,
+            rwc: next_step.rwc,
+            rwc_inner_chunk: next_step.rwc_inner_chunk,
+            gas_left: next_step.gas_left,
+            call_index: next_step.call_index,
+            ..ExecStep::default()
+        };
+        self.gen_chunk_associated_steps(&mut end_chunk, RW::WRITE, tx);
         self.gen_chunk_padding(&mut end_chunk);
+        println!("after self.block_ctx.rwc.0 {}", self.block_ctx.rwc.0);
         self.chunks[self.chunk_ctx.idx].end_chunk = Some(end_chunk);
     }
 
@@ -578,8 +604,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         let total_rws = end_rwc - 1;
         let max_rws = self.cur_chunk().fixed_param.max_rws;
 
-        // We need at least 1 extra row at offset 0 for chunk continuous
-        // FIXME(Cecilia): adding + 1 fail some tests
         assert!(
             total_rws < max_rws,
             "total_rws <= max_rws, total_rws={}, max_rws={}",
@@ -707,17 +731,26 @@ impl CircuitInputBuilder<FixedCParams> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder<FixedCParams>, Error> {
-        println!("--------------{:?}", self.circuits_params);
         // accumulates gas across all txs in the block
         let (last_step, last_call) = self.begin_handle_block(eth_block, geth_traces)?;
-        let last_step = last_step.unwrap_or_default();
+        // since there is no next step, we cook dummy next step from last step to reuse
+        // existing field while update its `rwc`.
+        let mut dummy_next_step = {
+            let mut dummy_next_step = last_step.unwrap_or_default();
+            // raise last step rwc to match with next step
+            (0..dummy_next_step.rw_indices_len()).for_each(|_| {
+                dummy_next_step.rwc.inc_pre();
+                dummy_next_step.rwc_inner_chunk.inc_pre();
+            });
+            dummy_next_step
+        };
 
         assert!(self.circuits_params.max_rws().is_some());
 
         let last_copy = self.block.copy_events.len();
 
         // TODO figure out and resolve generic param type and move fixed_param set inside
-        // commit_chunk_ctx After fixed, then we can set fixed_param on all chunks
+        // commit_chunk_ctx. After fixed, then we can set fixed_param on all chunks
         (0..self.circuits_params.total_chunks()).for_each(|idx| {
             self.get_chunk_mut(idx).fixed_param = self.circuits_params;
         });
@@ -734,16 +767,29 @@ impl CircuitInputBuilder<FixedCParams> {
                     last_call.clone(),
                 );
             } else {
-                // it doent matter what step was put to set_end_chunk/set_begin_chunk on no-used
-                // chunks before end_block. Just need to make sure it's step lookup is consistency.
-                self.set_end_chunk(&last_step);
+                self.set_end_chunk(&dummy_next_step, None);
+
                 self.commit_chunk_ctx(
                     true,
                     eth_block.transactions.len(),
                     last_copy,
                     last_call.clone(),
                 );
-                self.set_begin_chunk(&last_step);
+                // update dummy_next_step rwc to be used for next
+                dummy_next_step.rwc = self.block_ctx.rwc;
+                dummy_next_step.rwc_inner_chunk = self.chunk_ctx.rwc;
+                self.set_begin_chunk(&dummy_next_step, None);
+                dummy_next_step.rwc = self.block_ctx.rwc;
+                dummy_next_step.rwc_inner_chunk = self.chunk_ctx.rwc;
+                // update virtual step: end_block/padding so it can carry state context correctly
+                // TODO: enhance virtual step updating mechanism by having `running_next_step`
+                // defined in circuit_input_builder, so we dont need to
+                self.block.end_block = dummy_next_step.clone();
+                self.cur_chunk_mut().padding = {
+                    let mut padding = dummy_next_step.clone();
+                    padding.exec_state = ExecState::Padding;
+                    Some(padding)
+                };
             }
             Ok::<(), Error>(())
         })?;
@@ -773,6 +819,7 @@ impl CircuitInputBuilder<FixedCParams> {
     fn set_end_block(&mut self) -> Result<(), Error> {
         let mut end_block = self.block.end_block.clone();
         end_block.rwc = self.block_ctx.rwc;
+        end_block.exec_state = ExecState::EndBlock;
         end_block.rwc_inner_chunk = self.chunk_ctx.rwc;
 
         let mut dummy_tx = Transaction::default();

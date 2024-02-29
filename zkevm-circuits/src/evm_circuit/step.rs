@@ -850,6 +850,11 @@ impl<F: Field> Step<F> {
             offset,
             Value::known(F::from(step.rwc_inner_chunk.into())),
         )?;
+        // println!(
+        //     "execstate {:?} self.state.call_id {:?}",
+        //     step.execution_state(),
+        //     F::from(call.call_id as u64)
+        // );
         self.state
             .call_id
             .assign(region, offset, Value::known(F::from(call.call_id as u64)))?;

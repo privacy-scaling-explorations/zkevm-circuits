@@ -109,11 +109,6 @@ pub fn chunk_convert<F: Field>(
             }
         });
 
-        println!(
-            "| {:?} ... {:?} | @chunk_convert",
-            chunk.ctx.initial_rwc, chunk.ctx.end_rwc
-        );
-
         // Get the rws in the i-th chunk
         let chrono_rws = {
             let mut chrono_rws = RwMap::from(&builder.block.container);
@@ -185,7 +180,6 @@ pub fn chunk_convert<F: Field>(
             true,
             prev_chunk_last_chrono_rw,
         );
-
         chunks.push(Chunk {
             permu_alpha: alpha,
             permu_gamma: gamma,
@@ -202,6 +196,13 @@ pub fn chunk_convert<F: Field>(
             prev_chunk_last_chrono_rw,
             prev_chunk_last_by_address_rw,
         });
+    }
+
+    if log::log_enabled!(log::Level::Debug) {
+        chunks
+            .iter()
+            .enumerate()
+            .for_each(|(i, chunk)| log::debug!("{}th chunk context {:?}", i, chunk,));
     }
 
     Ok(chunks)
