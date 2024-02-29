@@ -930,7 +930,7 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     [
                         (
-                            "EndTx can only transit to BeginTx or Padding or EndBlock or EndChunk",
+                            "EndTx can only transit to BeginTx or Padding or EndBlock or EndChunk or InvalidTx",
                             ExecutionState::EndTx,
                             vec![
                                 ExecutionState::BeginTx,
@@ -1171,6 +1171,10 @@ impl<F: Field> ExecutionConfig<F> {
                     // this dummy step is just for real step assignment proceed to `second last`
                     .chain(std::iter::once((&dummy_tx, &cur_chunk_last_call, padding)))
                     .peekable();
+
+                tx_call_steps
+                    .clone()
+                    .for_each(|step| println!("assigned_step step {:?}", step.2));
 
                 let evm_rows = chunk.fixed_param.max_evm_rows;
 

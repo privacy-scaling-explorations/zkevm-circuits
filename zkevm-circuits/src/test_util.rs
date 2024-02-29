@@ -293,6 +293,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         chunks
             .into_iter()
             .enumerate()
+            // terminate on first error
             .find_map(|(i, chunk)| {
                 // Mainnet EVM circuit constraints can be cached for test performance.
                 // No cache for EVM circuit with customized features
@@ -341,30 +342,59 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         block: Block<Fr>,
         chunks: Vec<Chunk<Fr>>,
     ) -> Result<(), CircuitTestError> {
+        // sanity check
+        assert!(!chunks.is_empty());
+        chunks.iter().tuple_windows().for_each(|(chunk1, chunk2)| {
+            let (rows_needed_1, rows_needed_2) = (
+                StateCircuit::<Fr>::min_num_rows_block(&block, chunk1).1,
+                StateCircuit::<Fr>::min_num_rows_block(&block, chunk2).1,
+            );
+            assert!(rows_needed_1 == rows_needed_2);
+
+            assert!(chunk1.fixed_param == chunk2.fixed_param);
+        });
+
         let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block, &chunks[0]).1;
         let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
-        let state_circuit = StateCircuit::<Fr>::new(&chunks[0]);
-        let max_rws = &chunks[0].fixed_param.max_rws;
-        let instance = state_circuit.instance();
-        let prover = MockProver::<Fr>::run(k, &state_circuit, instance).map_err(|err| {
-            CircuitTestError::SynthesisFailure {
-                circuit: Circuit::State,
-                reason: err,
-            }
-        })?;
-        // Skip verification of Start rows to accelerate testing
-        let non_start_rows_len = state_circuit
-            .rows
+
+        chunks
             .iter()
-            .filter(|rw| !matches!(rw, Rw::Start { .. }))
-            .count();
-        let rows = max_rws - non_start_rows_len..*max_rws;
-        prover.verify_at_rows(rows.clone(), rows).map_err(|err| {
-            CircuitTestError::VerificationFailed {
-                circuit: Circuit::EVM,
-                reasons: err,
-            }
-        })
+            // terminate on first error
+            .find_map(|chunk| {
+                let state_circuit = StateCircuit::<Fr>::new(chunk);
+                let instance = state_circuit.instance();
+                let prover = MockProver::<Fr>::run(k, &state_circuit, instance).map_err(|err| {
+                    CircuitTestError::SynthesisFailure {
+                        circuit: Circuit::State,
+                        reason: err,
+                    }
+                });
+                if let Err(err) = prover {
+                    return Some(Err(err));
+                }
+                let prover = prover.unwrap();
+                // Skip verification of Start and Padding rows accelerate testing
+                let non_padding_rows_len = state_circuit
+                    .rows
+                    .iter()
+                    .filter(|rw| {
+                        !matches!(rw, Rw::Start { .. }) && !matches!(rw, Rw::Padding { .. })
+                    })
+                    .count();
+                let rows = 1..1 + non_padding_rows_len;
+                let result: Result<(), CircuitTestError> = prover
+                    .verify_at_rows(rows.clone(), rows)
+                    .map_err(|err| CircuitTestError::VerificationFailed {
+                        circuit: Circuit::EVM,
+                        reasons: err,
+                    });
+                if result.is_ok() {
+                    None
+                } else {
+                    Some(result)
+                }
+            })
+            .unwrap_or_else(|| Ok(()))
     }
 
     /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,

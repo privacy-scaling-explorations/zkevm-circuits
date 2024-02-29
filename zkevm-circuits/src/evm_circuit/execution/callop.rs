@@ -1384,7 +1384,7 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(FixedCParams {
-                max_rws: 500,
+                max_rws: 1 << 12,
                 ..Default::default()
             })
             .run();

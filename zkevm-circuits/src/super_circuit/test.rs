@@ -38,14 +38,20 @@ fn super_circuit_degree() {
 }
 
 fn test_super_circuit(block: GethData, circuits_params: FixedCParams, mock_randomness: Fr) {
-    let (k, circuit, instance, _) =
+    let (k, circuits, instances, _) =
         SuperCircuit::<Fr>::build(block, circuits_params, mock_randomness).unwrap();
-    let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify();
-    if let Err(err) = res {
-        error!("Verification failures: {:#?}", err);
-        panic!("Failed verification");
-    }
+    circuits
+        .into_iter()
+        .zip(instances.into_iter())
+        .enumerate()
+        .for_each(|(i, (circuit, instance))| {
+            let prover = MockProver::run(k, &circuit, instance).unwrap();
+            let res = prover.verify();
+            if let Err(err) = res {
+                error!("{}th supercircuit Verification failures: {:#?}", i, err);
+                panic!("Failed verification");
+            }
+        });
 }
 
 pub(crate) fn block_1tx() -> GethData {
@@ -184,6 +190,25 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_withdrawals: 5,
         max_calldata: 32,
         max_rws: 256,
+        max_copy_rows: 256,
+        max_exp_steps: 256,
+        max_bytecode: 512,
+        max_evm_rows: 0,
+        max_keccak_rows: 0,
+    };
+    test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
+}
+
+#[ignore]
+#[test]
+fn serial_test_multi_chunk_super_circuit_2tx_2max_tx() {
+    let block = block_2tx();
+    let circuits_params = FixedCParams {
+        total_chunks: 4,
+        max_txs: 2,
+        max_withdrawals: 5,
+        max_calldata: 32,
+        max_rws: 90,
         max_copy_rows: 256,
         max_exp_steps: 256,
         max_bytecode: 512,

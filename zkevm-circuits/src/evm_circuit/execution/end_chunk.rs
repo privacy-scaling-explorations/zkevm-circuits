@@ -190,6 +190,7 @@ mod test {
             .params({
                 FixedCParams {
                     total_chunks,
+                    max_evm_rows: 1 << 12,
                     max_rws: total_rws / total_chunks,
                     max_txs: 2,
                     ..Default::default()

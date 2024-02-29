@@ -88,7 +88,7 @@ impl FeatureConfig {
 const RW_BUFFER_SIZE: usize = 30;
 
 /// Circuit Setup Parameters
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FixedCParams {
     ///
     pub total_chunks: usize,
@@ -557,13 +557,9 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         self.chunk_ctx.end_copy_index = next_copy_index;
         self.cur_chunk_mut().ctx = self.chunk_ctx.clone();
         if to_next {
-            // here use `-1` to include previous set
+            // add `-1` to include previous set and deal with transaction cross-chunk case
             self.chunk_ctx
                 .bump(self.block_ctx.rwc.0, next_tx_index - 1, next_copy_index);
-            // println!("bump last_call {:?}", last_call);
-            if last_call.is_none() {
-                panic!("??")
-            }
             self.cur_chunk_mut().prev_last_call = last_call;
         }
     }
@@ -577,13 +573,10 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             ..ExecStep::default()
         };
         self.gen_chunk_associated_steps(&mut begin_chunk, RW::READ, tx);
-        println!("in set begin chunk {:?}", begin_chunk);
         self.chunks[self.chunk_ctx.idx].begin_chunk = Some(begin_chunk);
     }
 
     fn set_end_chunk(&mut self, next_step: &ExecStep, tx: Option<&Transaction>) {
-        println!("before self.block_ctx.rwc.0 {}", self.block_ctx.rwc.0);
-        // println!("next step {:?}", next_step);
         let mut end_chunk = ExecStep {
             exec_state: ExecState::EndChunk,
             rwc: next_step.rwc,
@@ -594,7 +587,6 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         };
         self.gen_chunk_associated_steps(&mut end_chunk, RW::WRITE, tx);
         self.gen_chunk_padding(&mut end_chunk);
-        println!("after self.block_ctx.rwc.0 {}", self.block_ctx.rwc.0);
         self.chunks[self.chunk_ctx.idx].end_chunk = Some(end_chunk);
     }
 

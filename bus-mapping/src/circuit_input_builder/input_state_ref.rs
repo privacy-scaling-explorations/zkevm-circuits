@@ -67,6 +67,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::InvalidTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }

@@ -506,7 +506,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(_block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
-            chunk.chrono_rws.0.values().flatten().count() + 1,
+            chunk.by_address_rws.0.values().flatten().count() + 1,
             chunk.fixed_param.max_rws,
         )
     }

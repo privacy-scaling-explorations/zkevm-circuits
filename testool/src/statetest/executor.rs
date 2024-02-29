@@ -379,9 +379,12 @@ pub fn run_test(
             max_evm_rows: 0,
             max_keccak_rows: 0,
         };
-        let (k, circuit, instance, _builder) =
+        let (k, mut circuits, mut instances, _builder) =
             SuperCircuit::<Fr>::build(geth_data, circuits_params, Fr::from(0x100)).unwrap();
         builder = _builder;
+
+        let circuit = circuits.remove(0);
+        let instance = instances.remove(0);
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover
