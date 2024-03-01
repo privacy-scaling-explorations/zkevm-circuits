@@ -4,7 +4,7 @@ use crate::{
     evm_circuit::{
         step::ExecutionState,
         util::{
-            constraint_builder::{EVMConstraintBuilder, StepStateTransition},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
@@ -29,7 +29,10 @@ impl<F: Field> ExecutionGadget<F> for BeginChunkGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // state lookup
         cb.step_state_lookup(0.expr());
-        let step_state_transition = StepStateTransition::same();
+        let step_state_transition = StepStateTransition {
+            rw_counter: Delta(cb.rw_counter_offset()),
+            ..StepStateTransition::same()
+        };
         cb.require_step_state_transition(step_state_transition);
         Self {
             _marker: PhantomData {},

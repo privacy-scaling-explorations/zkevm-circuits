@@ -265,26 +265,6 @@ impl<F: Field> EvmCircuit<F> {
         // It must have one row for EndBlock/EndChunk and at least one unused one
         num_rows + 2
     }
-
-    /// Compute the public inputs for this circuit.
-    fn instance_extend_chunk_ctx(&self) -> Vec<Vec<F>> {
-        let chunk = self.chunk.as_ref().unwrap();
-
-        let (rw_table_chunked_index, rw_table_total_chunks) =
-            (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
-
-        let mut instance = vec![vec![
-            F::from(rw_table_chunked_index as u64),
-            F::from(rw_table_chunked_index as u64) + F::ONE,
-            F::from(rw_table_total_chunks as u64),
-            F::from(chunk.chunk_context.initial_rwc as u64),
-            F::from(chunk.chunk_context.end_rwc as u64),
-        ]];
-
-        instance.extend(self.instance());
-
-        instance
-    }
 }
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
@@ -334,9 +314,9 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             .assign_block(layouter, block, chunk, challenges)?;
 
         let (rw_rows_padding, _) = RwMap::table_assignments_padding(
-            &chunk.rws.table_assignments(true),
+            &chunk.chrono_rws.table_assignments(true),
             chunk.fixed_param.max_rws,
-            chunk.prev_chunk_last_rw,
+            chunk.prev_chunk_last_chrono_rw,
         );
         let (
             alpha_cell,
@@ -353,10 +333,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                     &mut region,
                     // pass non-padding rws to `load_with_region` since it will be padding
                     // inside
-                    &chunk.rws.table_assignments(true),
+                    &chunk.chrono_rws.table_assignments(true),
                     // align with state circuit to padding to same max_rws
                     chunk.fixed_param.max_rws,
-                    chunk.prev_chunk_last_rw,
+                    chunk.prev_chunk_last_chrono_rw,
                 )?;
                 let permutation_cells = config.rw_permutation_config.assign(
                     &mut region,
@@ -390,20 +370,28 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
-        let _block = self.block.as_ref().unwrap();
         let chunk = self.chunk.as_ref().unwrap();
 
-        let (_rw_table_chunked_index, _rw_table_total_chunks) =
+        let (rw_table_chunked_index, rw_table_total_chunks) =
             (chunk.chunk_context.idx, chunk.chunk_context.total_chunks);
 
-        vec![vec![
-            chunk.permu_alpha,
-            chunk.permu_gamma,
-            chunk.chrono_rw_fingerprints.prev_ending_row,
-            chunk.chrono_rw_fingerprints.ending_row,
-            chunk.chrono_rw_fingerprints.prev_mul_acc,
-            chunk.chrono_rw_fingerprints.mul_acc,
-        ]]
+        vec![
+            vec![
+                F::from(rw_table_chunked_index as u64),
+                F::from(rw_table_chunked_index as u64) + F::ONE,
+                F::from(rw_table_total_chunks as u64),
+                F::from(chunk.chunk_context.initial_rwc as u64),
+                F::from(chunk.chunk_context.end_rwc as u64),
+            ],
+            vec![
+                chunk.permu_alpha,
+                chunk.permu_gamma,
+                chunk.chrono_rw_fingerprints.prev_ending_row,
+                chunk.chrono_rw_fingerprints.ending_row,
+                chunk.chrono_rw_fingerprints.prev_mul_acc,
+                chunk.chrono_rw_fingerprints.mul_acc,
+            ],
+        ]
     }
 }
 
@@ -488,7 +476,7 @@ pub(crate) mod cached {
         }
 
         pub(crate) fn instance(&self) -> Vec<Vec<Fr>> {
-            self.0.instance_extend_chunk_ctx()
+            self.0.instance()
         }
     }
 }
@@ -569,7 +557,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             chunk.fixed_param.max_txs,
             chunk.fixed_param.max_calldata,
         )?;
-        chunk.rws.check_rw_counter_sanity();
+        chunk.chrono_rws.check_rw_counter_sanity();
         config
             .bytecode_table
             .load(&mut layouter, block.bytecodes.clone())?;
@@ -650,7 +638,9 @@ mod evm_circuit_stats {
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
         .block_modifier(Box::new(|_block, chunk| {
-            chunk.fixed_param.max_evm_rows = (1 << 18) - 100
+            chunk
+                .iter_mut()
+                .for_each(|chunk| chunk.fixed_param.max_evm_rows = (1 << 18) - 100);
         }))
         .run();
     }
@@ -702,10 +692,10 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
         let k = block.get_test_degree(&chunk);
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
-        let instance = circuit.instance_extend_chunk_ctx();
+        let instance = circuit.instance();
         let prover1 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         let res = prover1.verify();
         if let Err(err) = res {
@@ -727,11 +717,11 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
         let k = block.get_test_degree(&chunk);
 
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
-        let instance = circuit.instance_extend_chunk_ctx();
+        let instance = circuit.instance();
         let prover1 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
         let code = bytecode! {
@@ -750,10 +740,10 @@ mod evm_circuit_stats {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder).unwrap();
-        let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+        let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
         let k = block.get_test_degree(&chunk);
         let circuit = EvmCircuit::<Fr>::get_test_circuit_from_block(block, chunk);
-        let instance = circuit.instance_extend_chunk_ctx();
+        let instance = circuit.instance();
         let prover2 = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
 
         assert_eq!(prover1.fixed().len(), prover2.fixed().len());

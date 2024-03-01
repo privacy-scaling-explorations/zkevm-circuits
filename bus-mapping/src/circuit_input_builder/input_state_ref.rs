@@ -67,6 +67,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::InvalidTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -148,9 +149,13 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Check whether rws will overflow circuit limit.
     pub fn check_rw_num_limit(&self) -> Result<(), Error> {
         if let Some(max_rws) = self.max_rws {
-            let rwc = self.block_ctx.rwc.0;
+            let rwc = self.chunk_ctx.rwc.0;
             if rwc > max_rws {
-                log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
+                log::error!(
+                    "chunk inner rwc > max_rws, rwc={}, max_rws={}",
+                    rwc,
+                    max_rws
+                );
                 return Err(Error::RwsNotEnough(max_rws, rwc));
             };
         }

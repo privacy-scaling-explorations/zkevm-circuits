@@ -47,7 +47,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
 ) -> Result<(), Vec<VerifyFailure>> {
     let chunked_copy_events = block
         .copy_events
-        .get(chunk.chunk_context.initial_copy..chunk.chunk_context.end_copy)
+        .get(chunk.chunk_context.initial_copy_index..chunk.chunk_context.end_copy_index)
         .unwrap_or_default();
     test_copy_circuit::<F>(
         k,
@@ -58,8 +58,8 @@ pub fn test_copy_circuit_from_block<F: Field>(
             max_calldata: chunk.fixed_param.max_calldata,
             txs: block.txs,
             max_rws: chunk.fixed_param.max_rws,
-            rws: chunk.rws,
-            prev_chunk_last_rw: chunk.prev_chunk_last_rw,
+            rws: chunk.chrono_rws,
+            prev_chunk_last_rw: chunk.prev_chunk_last_chrono_rw,
             bytecodes: block.bytecodes,
         },
     )
@@ -180,7 +180,7 @@ fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
 fn copy_circuit_valid_calldatacopy() {
     let builder = gen_calldatacopy_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     assert_eq!(test_copy_circuit_from_block(14, block, chunk), Ok(()));
 }
 
@@ -188,7 +188,7 @@ fn copy_circuit_valid_calldatacopy() {
 fn copy_circuit_valid_codecopy() {
     let builder = gen_codecopy_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     assert_eq!(test_copy_circuit_from_block(10, block, chunk), Ok(()));
 }
 
@@ -196,7 +196,7 @@ fn copy_circuit_valid_codecopy() {
 fn copy_circuit_valid_extcodecopy() {
     let builder = gen_extcodecopy_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     assert_eq!(test_copy_circuit_from_block(14, block, chunk), Ok(()));
 }
 
@@ -204,7 +204,7 @@ fn copy_circuit_valid_extcodecopy() {
 fn copy_circuit_valid_sha3() {
     let builder = gen_sha3_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     assert_eq!(test_copy_circuit_from_block(14, block, chunk), Ok(()));
 }
 
@@ -212,7 +212,7 @@ fn copy_circuit_valid_sha3() {
 fn copy_circuit_valid_tx_log() {
     let builder = gen_tx_log_data();
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
     assert_eq!(test_copy_circuit_from_block(10, block, chunk), Ok(()));
 }
 
@@ -225,7 +225,7 @@ fn copy_circuit_invalid_calldatacopy() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block, chunk),
@@ -242,7 +242,7 @@ fn copy_circuit_invalid_codecopy() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block, chunk),
@@ -259,7 +259,7 @@ fn copy_circuit_invalid_extcodecopy() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block, chunk),
@@ -276,7 +276,7 @@ fn copy_circuit_invalid_sha3() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block, chunk),
@@ -293,7 +293,7 @@ fn copy_circuit_invalid_tx_log() {
         builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<Fr>(&builder, 0).unwrap();
+    let chunk = chunk_convert::<Fr>(&block, &builder).unwrap().remove(0);
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block, chunk),

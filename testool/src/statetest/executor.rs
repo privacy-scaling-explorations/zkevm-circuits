@@ -16,13 +16,8 @@ use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{
     super_circuit::SuperCircuit,
-<<<<<<< HEAD
-    test_util::CircuitTestBuilder,
-    witness::{Block, Chunk},
-=======
     test_util::{CircuitTestBuilder, CircuitTestError},
-    witness::Block,
->>>>>>> main
+    witness::{Block, Chunk},
 };
 
 #[derive(PartialEq, Eq, Error, Debug)]
@@ -353,13 +348,9 @@ pub fn run_test(
 
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
-        let chunk: Chunk<Fr> =
-            zkevm_circuits::evm_circuit::witness::chunk_convert(&builder, 0).unwrap();
-
-<<<<<<< HEAD
-        CircuitTestBuilder::<1, 1>::new_from_block(block, chunk).run();
-=======
-        CircuitTestBuilder::<1, 1>::new_from_block(block)
+        let chunks: Vec<Chunk<Fr>> =
+            zkevm_circuits::evm_circuit::witness::chunk_convert(&block, &builder).unwrap();
+        CircuitTestBuilder::<1, 1>::new_from_block(block, chunks)
             .run_with_result()
             .map_err(|err| match err {
                 CircuitTestError::VerificationFailed { reasons, .. } => {
@@ -373,7 +364,6 @@ pub fn run_test(
                     found: err.to_string(),
                 },
             })?;
->>>>>>> main
     } else {
         geth_data.sign(&wallets);
 
@@ -389,9 +379,12 @@ pub fn run_test(
             max_evm_rows: 0,
             max_keccak_rows: 0,
         };
-        let (k, circuit, instance, _builder) =
+        let (k, mut circuits, mut instances, _builder) =
             SuperCircuit::<Fr>::build(geth_data, circuits_params, Fr::from(0x100)).unwrap();
         builder = _builder;
+
+        let circuit = circuits.remove(0);
+        let instance = instances.remove(0);
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover

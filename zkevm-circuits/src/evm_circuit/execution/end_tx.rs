@@ -453,7 +453,7 @@ mod test {
             max_txs: 5,
             ..Default::default()
         })
-        .build_block(0, 1)
+        .build_block(None)
         .unwrap();
 
         block.rws.0[&Target::CallContext]

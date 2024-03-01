@@ -1,16 +1,20 @@
+use std::iter;
+
 ///
 use super::{
     rw::{RwFingerprints, ToVec},
-    ExecStep, Rw, RwMap, RwRow,
+    Block, ExecStep, Rw, RwMap, RwRow,
 };
 use crate::util::unwrap_value;
 use bus_mapping::{
     circuit_input_builder::{self, Call, ChunkContext, FixedCParams},
+    operation::Target,
     Error,
 };
 use eth_types::Field;
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 
 /// [`Chunk`]` is the struct used by all circuits, which contains chunkwise
 /// data for witness generation. Used with [`Block`] for blockwise witness.
@@ -24,15 +28,17 @@ pub struct Chunk<F> {
     pub padding: Option<ExecStep>,
     /// Chunk context
     pub chunk_context: ChunkContext,
-    /// Read write events in the RwTable
-    pub rws: RwMap,
+    /// Read write events in the chronological sorted RwTable
+    pub chrono_rws: RwMap,
+    /// Read write events in the by address sorted RwTable
+    pub by_address_rws: RwMap,
     /// Permutation challenge alpha
     pub permu_alpha: F,
     /// Permutation challenge gamma
     pub permu_gamma: F,
 
     /// Current rw_table permutation fingerprint
-    pub rw_fingerprints: RwFingerprints<F>,
+    pub by_address_rw_fingerprints: RwFingerprints<F>,
     /// Current chronological rw_table permutation fingerprint
     pub chrono_rw_fingerprints: RwFingerprints<F>,
 
@@ -42,7 +48,9 @@ pub struct Chunk<F> {
     /// The last call of previous chunk if any, used for assigning continuation
     pub prev_last_call: Option<Call>,
     ///
-    pub prev_chunk_last_rw: Option<Rw>,
+    pub prev_chunk_last_chrono_rw: Option<Rw>,
+    ///
+    pub prev_chunk_last_by_address_rw: Option<Rw>,
 }
 
 impl<F: Field> Default for Chunk<F> {
@@ -54,131 +62,150 @@ impl<F: Field> Default for Chunk<F> {
             end_chunk: None,
             padding: None,
             chunk_context: ChunkContext::default(),
-            rws: RwMap::default(),
+            chrono_rws: RwMap::default(),
+            by_address_rws: RwMap::default(),
             permu_alpha: F::from(1),
             permu_gamma: F::from(1),
-            rw_fingerprints: RwFingerprints::default(),
+            by_address_rw_fingerprints: RwFingerprints::default(),
             chrono_rw_fingerprints: RwFingerprints::default(),
             fixed_param: FixedCParams::default(),
             prev_last_call: None,
-            prev_chunk_last_rw: None,
+            prev_chunk_last_chrono_rw: None,
+            prev_chunk_last_by_address_rw: None,
         }
-    }
-}
-
-impl<F: Field> Chunk<F> {
-    #[allow(dead_code)]
-    pub(crate) fn new_from_rw_map(rws: &RwMap) -> Self {
-        let (alpha, gamma) = get_permutation_randomness();
-        let mut chunk = Chunk::default();
-        let rw_fingerprints = get_permutation_fingerprint_of_rwmap(
-            rws,
-            chunk.fixed_param.max_rws,
-            alpha, // TODO
-            gamma,
-            F::from(1),
-            false,
-        );
-        let chrono_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
-            rws,
-            chunk.fixed_param.max_rws,
-            alpha,
-            gamma,
-            F::from(1),
-            true,
-        );
-        chunk.rws = rws.clone();
-        chunk.rw_fingerprints = rw_fingerprints;
-        chunk.chrono_rw_fingerprints = chrono_rw_fingerprints;
-        chunk
     }
 }
 
 /// Convert the idx-th chunk struct in bus-mapping to a witness chunk used in circuits
 pub fn chunk_convert<F: Field>(
+    block: &Block<F>,
     builder: &circuit_input_builder::CircuitInputBuilder<FixedCParams>,
-    idx: usize,
-) -> Result<Chunk<F>, Error> {
-    let block = &builder.block;
-    let chunk = builder.get_chunk(idx);
-    let mut rws = RwMap::default();
-    let prev_chunk_last_rw = builder.prev_chunk().map(|chunk| {
-        RwMap::get_rw(&block.container, chunk.ctx.end_rwc).expect("Rw does not exist")
-    });
+) -> Result<Vec<Chunk<F>>, Error> {
+    let (by_address_rws, padding_meta) = (&block.by_address_rws, &block.rw_padding_meta);
 
-    // FIXME(Cecilia): debug
-    println!(
-        "| {:?} ... {:?} | @chunk_convert",
-        chunk.ctx.initial_rwc, chunk.ctx.end_rwc
-    );
+    // Todo: poseidon hash to compute alpha/gamma
+    let alpha = F::from(103);
+    let gamma = F::from(101);
 
-    // Compute fingerprints of all chunks
-    let mut alpha_gamas = Vec::with_capacity(builder.chunks.len());
-    let mut rw_fingerprints: Vec<RwFingerprints<F>> = Vec::with_capacity(builder.chunks.len());
-    let mut chrono_rw_fingerprints: Vec<RwFingerprints<F>> =
-        Vec::with_capacity(builder.chunks.len());
+    let mut chunks: Vec<Chunk<F>> = Vec::with_capacity(builder.chunks.len());
+    for (i, (prev_chunk, chunk)) in iter::once(None) // left append `None` to make iteration easier
+        .chain(builder.chunks.iter().map(Some))
+        .tuple_windows()
+        .enumerate()
+    {
+        let chunk = chunk.unwrap(); // current chunk always there
+        let prev_chunk_last_chrono_rw = prev_chunk.map(|prev_chunk| {
+            assert!(builder.circuits_params.max_rws > 0);
+            let chunk_inner_rwc = prev_chunk.ctx.rwc.0;
+            if chunk_inner_rwc.saturating_sub(1) == builder.circuits_params.max_rws {
+                // if prev chunk rws are full, then get the last rwc
+                RwMap::get_rw(&builder.block.container, prev_chunk.ctx.end_rwc - 1)
+                    .expect("Rw does not exist")
+            } else {
+                // last is the padding row
+                Rw::Padding {
+                    rw_counter: builder.circuits_params.max_rws - 1,
+                }
+            }
+        });
 
-    for (i, chunk) in builder.chunks.iter().enumerate() {
-        // Get the Rws in the i-th chunk
-        let cur_rws =
-            RwMap::from_chunked(&block.container, chunk.ctx.initial_rwc, chunk.ctx.end_rwc);
-        cur_rws.check_value();
+        // Get the rws in the i-th chunk
+        let chrono_rws = {
+            let mut chrono_rws = RwMap::from(&builder.block.container);
+            // remove paading here since it will be attached later
+            if let Some(padding_vec) = chrono_rws.0.get_mut(&Target::Padding) {
+                padding_vec.clear()
+            }
+            chrono_rws.take_rw_counter_range(chunk.ctx.initial_rwc, chunk.ctx.end_rwc)
+        };
 
-        // Todo: poseidon hash
-        let alpha = F::from(103);
-        let gamma = F::from(101);
+        let (prev_chunk_last_by_address_rw, by_address_rws) = {
+            // by_address_rws
+            let start = chunk.ctx.idx * builder.circuits_params.max_rws;
+            let size = builder.circuits_params.max_rws;
+            // by_address_rws[start..end].to_vec()
+
+            let skipped = by_address_rws
+                .iter()
+                // remove paading here since it will be attached later
+                .filter(|rw| rw.tag() != Target::Padding)
+                .cloned() // TODO avoid clone here
+                .chain(padding_meta.iter().flat_map(|(k, v)| {
+                    vec![
+                        Rw::Padding { rw_counter: *k };
+                        <i32 as TryInto<usize>>::try_into(*v).unwrap()
+                    ]
+                }));
+            // there is no previous chunk
+            if start == 0 {
+                (None, RwMap::from(skipped.take(size).collect::<Vec<_>>()))
+            } else {
+                // here have `chunk.ctx.idx - 1` because each chunk first row are probagated from
+                // prev chunk. giving idx>0 th chunk, there will be (idx-1) placeholders cant' count
+                // in real order
+                let mut skipped = skipped.skip(start - 1 - (chunk.ctx.idx - 1));
+                let prev_chunk_last_by_address_rw = skipped.next();
+                (
+                    prev_chunk_last_by_address_rw,
+                    RwMap::from(skipped.take(size).collect::<Vec<_>>()),
+                )
+            }
+        };
 
         // Comupute cur fingerprints from last fingerprints and current Rw rows
-        let cur_fingerprints = get_permutation_fingerprint_of_rwmap(
-            &cur_rws,
+        let by_address_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
+            &by_address_rws,
             chunk.fixed_param.max_rws,
             alpha,
             gamma,
             if i == 0 {
                 F::from(1)
             } else {
-                rw_fingerprints[i - 1].mul_acc
+                chunks[i - 1].by_address_rw_fingerprints.mul_acc
             },
             false,
+            prev_chunk_last_by_address_rw,
         );
-        let cur_chrono_fingerprints = get_permutation_fingerprint_of_rwmap(
-            &cur_rws,
+
+        let chrono_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
+            &chrono_rws,
             chunk.fixed_param.max_rws,
             alpha,
             gamma,
             if i == 0 {
                 F::from(1)
             } else {
-                chrono_rw_fingerprints[i - 1].mul_acc
+                chunks[i - 1].chrono_rw_fingerprints.mul_acc
             },
             true,
+            prev_chunk_last_chrono_rw,
         );
-
-        alpha_gamas.push(vec![alpha, gamma]);
-        rw_fingerprints.push(cur_fingerprints);
-        chrono_rw_fingerprints.push(cur_chrono_fingerprints);
-        if i == idx {
-            rws = cur_rws;
-        }
+        chunks.push(Chunk {
+            permu_alpha: alpha,
+            permu_gamma: gamma,
+            by_address_rw_fingerprints,
+            chrono_rw_fingerprints,
+            begin_chunk: chunk.begin_chunk.clone(),
+            end_chunk: chunk.end_chunk.clone(),
+            padding: chunk.padding.clone(),
+            chunk_context: chunk.ctx.clone(),
+            chrono_rws,
+            by_address_rws,
+            fixed_param: chunk.fixed_param,
+            prev_last_call: chunk.prev_last_call.clone(),
+            prev_chunk_last_chrono_rw,
+            prev_chunk_last_by_address_rw,
+        });
     }
 
-    // TODO(Cecilia): if we chunk across blocks then need to store the prev_block
-    let chunck = Chunk {
-        permu_alpha: alpha_gamas[idx][0],
-        permu_gamma: alpha_gamas[idx][1],
-        rw_fingerprints: rw_fingerprints[idx].clone(),
-        chrono_rw_fingerprints: chrono_rw_fingerprints[idx].clone(),
-        begin_chunk: chunk.begin_chunk.clone(),
-        end_chunk: chunk.end_chunk.clone(),
-        padding: chunk.padding.clone(),
-        chunk_context: chunk.ctx.clone(),
-        rws,
-        fixed_param: chunk.fixed_param,
-        prev_last_call: chunk.prev_last_call,
-        prev_chunk_last_rw,
-    };
+    if log::log_enabled!(log::Level::Debug) {
+        chunks
+            .iter()
+            .enumerate()
+            .for_each(|(i, chunk)| log::debug!("{}th chunk context {:?}", i, chunk,));
+    }
 
-    Ok(chunck)
+    Ok(chunks)
 }
 
 ///
@@ -218,6 +245,7 @@ pub fn get_permutation_fingerprint_of_rwmap<F: Field>(
     gamma: F,
     prev_continuous_fingerprint: F,
     is_chrono: bool,
+    padding_start_rw: Option<Rw>,
 ) -> RwFingerprints<F> {
     get_permutation_fingerprint_of_rwvec(
         &rwmap.table_assignments(is_chrono),
@@ -225,6 +253,7 @@ pub fn get_permutation_fingerprint_of_rwmap<F: Field>(
         alpha,
         gamma,
         prev_continuous_fingerprint,
+        padding_start_rw,
     )
 }
 
@@ -235,6 +264,7 @@ pub fn get_permutation_fingerprint_of_rwvec<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
+    padding_start_rw: Option<Rw>,
 ) -> RwFingerprints<F> {
     get_permutation_fingerprint_of_rwrowvec(
         &rwvec
@@ -245,6 +275,7 @@ pub fn get_permutation_fingerprint_of_rwvec<F: Field>(
         alpha,
         gamma,
         prev_continuous_fingerprint,
+        padding_start_rw.map(|r| r.table_assignment()),
     )
 }
 
@@ -255,8 +286,9 @@ pub fn get_permutation_fingerprint_of_rwrowvec<F: Field>(
     alpha: F,
     gamma: F,
     prev_continuous_fingerprint: F,
+    padding_start_rwrow: Option<RwRow<Value<F>>>,
 ) -> RwFingerprints<F> {
-    let (rows, _) = RwRow::padding(rwrowvec, max_row, true);
+    let (rows, _) = RwRow::padding(rwrowvec, max_row, padding_start_rwrow);
     let x = rows.to2dvec();
     let fingerprints = get_permutation_fingerprints(
         &x,

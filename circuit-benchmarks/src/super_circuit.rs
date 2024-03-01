@@ -91,8 +91,9 @@ mod tests {
             max_evm_rows: 0,
             max_keccak_rows: 0,
         };
-        let (_, circuit, instance, _) =
+        let (_, mut circuits, mut instances, _) =
             SuperCircuit::build(block, circuits_params, Fr::from(0x100)).unwrap();
+        let (circuit, instance) = (circuits.remove(0), instances.remove(0));
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation

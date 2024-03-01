@@ -79,6 +79,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Any, Circuit, Column, ConstraintSystem, Error, Expression},
 };
+use itertools::Itertools;
 
 use std::array;
 
@@ -426,7 +427,9 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         instance.extend_from_slice(&self.copy_circuit.instance());
         instance.extend_from_slice(&self.state_circuit.instance());
         instance.extend_from_slice(&self.exp_circuit.instance());
-        instance.extend_from_slice(&self.evm_circuit.instance());
+        // remove first vector which is chunk_ctx
+        // which supercircuit already supply globally on top
+        instance.extend_from_slice(&self.evm_circuit.instance()[1..]);
 
         instance
     }
@@ -558,8 +561,15 @@ impl<F: Field> SuperCircuit<F> {
         geth_data: GethData,
         circuits_params: FixedCParams,
         mock_randomness: F,
-    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder<FixedCParams>), bus_mapping::Error>
-    {
+    ) -> Result<
+        (
+            u32,
+            Vec<Self>,
+            Vec<Vec<Vec<F>>>,
+            CircuitInputBuilder<FixedCParams>,
+        ),
+        bus_mapping::Error,
+    > {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
         let builder = block_data
@@ -576,21 +586,43 @@ impl<F: Field> SuperCircuit<F> {
     ///
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
+    #[allow(clippy::type_complexity)]
     pub fn build_from_circuit_input_builder(
         builder: &CircuitInputBuilder<FixedCParams>,
         mock_randomness: F,
-    ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
+    ) -> Result<(u32, Vec<Self>, Vec<Vec<Vec<F>>>), bus_mapping::Error> {
         let mut block = block_convert(builder).unwrap();
-        let chunk = chunk_convert(builder, 0).unwrap();
+        let chunks = chunk_convert(&block, builder).unwrap();
         block.randomness = mock_randomness;
 
-        let (_, rows_needed) = Self::min_num_rows_block(&block, &chunk);
-        let k = log2_ceil(Self::unusable_rows() + rows_needed);
+        let (rows_needed, circuit_instance_pairs): (Vec<usize>, Vec<(_, _)>) = chunks
+            .iter()
+            .map(|chunk| {
+                let (_, rows_needed) = Self::min_num_rows_block(&block, chunk);
+
+                let circuit = SuperCircuit::new_from_block(&block, chunk);
+                let instance = circuit.instance();
+                (rows_needed, (circuit, instance))
+            })
+            .unzip();
+
+        // assert all rows needed are equal
+        rows_needed
+            .iter()
+            .tuple_windows()
+            .for_each(|rows_needed: (&usize, &usize)| {
+                assert!(
+                    rows_needed.0 == rows_needed.1,
+                    "mismatched super_circuit rows_needed {:?} != {:?}",
+                    rows_needed.0,
+                    rows_needed.1
+                )
+            });
+
+        let k = log2_ceil(Self::unusable_rows() + rows_needed[0]);
         log::debug!("super circuit uses k = {}", k);
 
-        let circuit = SuperCircuit::new_from_block(&block, &chunk);
-
-        let instance = circuit.instance();
-        Ok((k, circuit, instance))
+        let (circuits, instances) = circuit_instance_pairs.into_iter().unzip();
+        Ok((k, circuits, instances))
     }
 }

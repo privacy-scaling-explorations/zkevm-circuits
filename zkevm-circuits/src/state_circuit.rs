@@ -471,7 +471,7 @@ pub struct StateCircuit<F: Field> {
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
     pub fn new(chunk: &Chunk<F>) -> Self {
-        let rows = chunk.rws.table_assignments(false); // address sorted
+        let rows = chunk.by_address_rws.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
         Self {
             rows,
@@ -483,8 +483,8 @@ impl<F: Field> StateCircuit<F> {
             overrides: HashMap::new(),
             permu_alpha: chunk.permu_alpha,
             permu_gamma: chunk.permu_gamma,
-            rw_fingerprints: chunk.rw_fingerprints.clone(),
-            prev_chunk_last_rw: chunk.prev_chunk_last_rw,
+            rw_fingerprints: chunk.by_address_rw_fingerprints.clone(),
+            prev_chunk_last_rw: chunk.prev_chunk_last_by_address_rw,
             _marker: PhantomData::default(),
         }
     }
@@ -506,7 +506,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(_block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
-            chunk.rws.0.values().flatten().count() + 1,
+            chunk.by_address_rws.0.values().flatten().count() + 1,
             chunk.fixed_param.max_rws,
         )
     }

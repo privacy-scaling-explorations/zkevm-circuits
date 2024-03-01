@@ -849,7 +849,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         let chunked_copy_events = block
             .copy_events
-            .get(chunk.chunk_context.initial_copy..chunk.chunk_context.end_copy)
+            .get(chunk.chunk_context.initial_copy_index..chunk.chunk_context.end_copy_index)
             .unwrap_or_default();
         Self::new_with_external_data(
             chunked_copy_events.to_owned(),
@@ -859,8 +859,8 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
                 max_calldata: chunk.fixed_param.max_calldata,
                 txs: block.txs.clone(),
                 max_rws: chunk.fixed_param.max_rws,
-                rws: chunk.rws.clone(),
-                prev_chunk_last_rw: chunk.prev_chunk_last_rw,
+                rws: chunk.chrono_rws.clone(),
+                prev_chunk_last_rw: chunk.prev_chunk_last_chrono_rw,
                 bytecodes: block.bytecodes.clone(),
             },
         )

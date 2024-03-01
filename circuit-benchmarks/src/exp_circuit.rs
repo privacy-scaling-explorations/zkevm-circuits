@@ -149,9 +149,8 @@ mod tests {
             .new_circuit_input_builder()
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        (
-            block_convert(&builder).unwrap(),
-            chunk_convert(&builder, 0).unwrap(),
-        )
+        let block = block_convert(&builder).unwrap();
+        let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
+        (block, chunk)
     }
 }

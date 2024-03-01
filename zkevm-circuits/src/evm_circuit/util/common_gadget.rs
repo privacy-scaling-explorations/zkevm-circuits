@@ -1336,10 +1336,12 @@ impl<F: Field> RwTablePaddingGadget<F> {
             1.expr(),
             max_rws.expr() - inner_rws_before_padding.expr(),
         );
+
         cb.condition(is_end_padding_exist.expr(), |cb| {
             cb.rw_table_padding_lookup(inner_rws_before_padding.expr() + 1.expr());
             cb.rw_table_padding_lookup(max_rws.expr() - 1.expr());
         });
+
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.

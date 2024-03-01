@@ -25,6 +25,7 @@ pub struct ChunkContext {
     /// Index of current chunk, start from 0
     pub idx: usize,
     /// Used to track the inner chunk counter in every operation in the chunk.
+    /// it will be reset for every new chunk.
     /// Contains the next available value.
     pub rwc: RWCounter,
     /// Number of chunks
@@ -33,16 +34,14 @@ pub struct ChunkContext {
     pub initial_rwc: usize,
     /// End global rw counter
     pub end_rwc: usize,
+    /// tx range in block: [initial_tx_index, end_tx_index)
+    pub initial_tx_index: usize,
     ///
-    pub initial_tx: usize,
+    pub end_tx_index: usize,
+    ///  copy range in block: [initial_copy_index, end_copy_index)
+    pub initial_copy_index: usize,
     ///
-    pub end_tx: usize,
-    ///
-    pub initial_copy: usize,
-    ///
-    pub end_copy: usize,
-    /// Druing dry run, chuncking is desabled
-    pub enable: bool,
+    pub end_copy_index: usize,
 }
 
 impl Default for ChunkContext {
@@ -60,11 +59,10 @@ impl ChunkContext {
             total_chunks,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            initial_tx: 1,
-            end_tx: 0,
-            initial_copy: 0,
-            end_copy: 0,
-            enable: true,
+            initial_tx_index: 0,
+            end_tx_index: 0,
+            initial_copy_index: 0,
+            end_copy_index: 0,
         }
     }
 
@@ -76,11 +74,10 @@ impl ChunkContext {
             total_chunks: 1,
             initial_rwc: 1, // rw counter start from 1
             end_rwc: 0,     // end_rwc should be set in later phase
-            initial_tx: 1,
-            end_tx: 0,
-            initial_copy: 0,
-            end_copy: 0,
-            enable: true,
+            initial_tx_index: 0,
+            end_tx_index: 0,
+            initial_copy_index: 0,
+            end_copy_index: 0,
         }
     }
 
@@ -91,11 +88,11 @@ impl ChunkContext {
         self.idx += 1;
         self.rwc = RWCounter::new();
         self.initial_rwc = initial_rwc;
-        self.initial_tx = initial_tx;
-        self.initial_copy = initial_copy;
+        self.initial_tx_index = initial_tx;
+        self.initial_copy_index = initial_copy;
         self.end_rwc = 0;
-        self.end_tx = 0;
-        self.end_copy = 0;
+        self.end_tx_index = 0;
+        self.end_copy_index = 0;
     }
 
     /// Is first chunk
