@@ -89,30 +89,28 @@ impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            // TODO upgrade halo2 to use `unblinded_advice_column`
-            // https://github.com/privacy-scaling-explorations/halo2/blob/main/halo2_proofs/examples/vector-ops-unblinded.rs
-            // rw_counter: meta.unblinded_advice_column(),
-            // is_write: meta.unblinded_advice_column(),
-            // tag: meta.unblinded_advice_column(),
-            // id: meta.unblinded_advice_column(),
-            // address: meta.unblinded_advice_column(),
-            // field_tag: meta.unblinded_advice_column(),
-            // storage_key: word::Word::new([meta.unblinded_advice_column(),
-            // meta.unblinded_advice_column()]), value: word::Word::new([meta.
-            // unblinded_advice_column(), meta.unblinded_advice_column()]), value_prev:
-            // word::Word::new([meta.unblinded_advice_column(), meta.unblinded_advice_column()]),
-            // init_val: word::Word::new([meta.unblinded_advice_column(),
-            // meta.unblinded_advice_column()]),
-            rw_counter: meta.advice_column(),
-            is_write: meta.advice_column(),
-            tag: meta.advice_column(),
-            id: meta.advice_column(),
-            address: meta.advice_column(),
-            field_tag: meta.advice_column(),
-            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            init_val: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            rw_counter: meta.unblinded_advice_column(),
+            is_write: meta.unblinded_advice_column(),
+            tag: meta.unblinded_advice_column(),
+            id: meta.unblinded_advice_column(),
+            address: meta.unblinded_advice_column(),
+            field_tag: meta.unblinded_advice_column(),
+            storage_key: word::Word::new([
+                meta.unblinded_advice_column(),
+                meta.unblinded_advice_column(),
+            ]),
+            value: word::Word::new([
+                meta.unblinded_advice_column(),
+                meta.unblinded_advice_column(),
+            ]),
+            value_prev: word::Word::new([
+                meta.unblinded_advice_column(),
+                meta.unblinded_advice_column(),
+            ]),
+            init_val: word::Word::new([
+                meta.unblinded_advice_column(),
+                meta.unblinded_advice_column(),
+            ]),
         }
     }
     fn assign<F: Field>(

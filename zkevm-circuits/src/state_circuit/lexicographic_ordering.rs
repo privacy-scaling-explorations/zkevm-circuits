@@ -99,7 +99,6 @@ pub struct Config {
     pub(crate) selector: Column<Fixed>,
     pub first_different_limb: BinaryNumberConfig<LimbIndex, 5>,
     limb_difference: Column<Advice>,
-    // limb_difference_inverse: Column<Advice>,
 }
 
 impl Config {
@@ -112,26 +111,16 @@ impl Config {
         let selector = meta.fixed_column();
         let first_different_limb = BinaryNumberChip::configure(meta, selector, None);
         let limb_difference = meta.advice_column();
-        // let limb_difference_inverse = meta.advice_column();
 
         let config = Config {
             selector,
             first_different_limb,
             limb_difference,
-            // limb_difference_inverse,
         };
 
         lookup.range_check_u16(meta, "limb_difference fits into u16", |meta| {
             meta.query_advice(limb_difference, Rotation::cur())
         });
-
-        // meta.create_gate("limb_difference is not zero", |meta| {
-        //     let selector = meta.query_fixed(selector, Rotation::cur());
-        //     let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
-        //     let limb_difference_inverse =
-        //         meta.query_advice(limb_difference_inverse, Rotation::cur());
-        //     vec![selector * (1.expr() - limb_difference * limb_difference_inverse)]
-        // });
 
         meta.create_gate(
             "limb differences before first_different_limb are all 0",

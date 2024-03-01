@@ -1443,13 +1443,6 @@ impl<F: Field> ExecutionConfig<F> {
                 step,
                 call
             );
-            // println!(
-            //     "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
-            //     offset,
-            //     step.execution_state(),
-            //     step,
-            //     call
-            // );
         }
         // Make the region large enough for the current step and the next step.
         // The next step's next step may also be accessed, so make the region large
@@ -1467,13 +1460,6 @@ impl<F: Field> ExecutionConfig<F> {
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
         if let Some(next_step) = next_step {
-            // println!(
-            //     "assign_exec_step nextstep offset: {} state {:?} step: {:?} call: {:?}",
-            //     offset,
-            //     next_step.2.execution_state(),
-            //     next_step.2,
-            //     next_step.1
-            // );
             self.assign_exec_step_int(
                 region,
                 offset + height,
