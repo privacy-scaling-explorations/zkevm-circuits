@@ -1,8 +1,5 @@
 use halo2_proofs::{
-    halo2curves::{
-        bls12_381::Scalar,
-        bn256::{Fq, Fr, G1Affine},
-    },
+    halo2curves::bn256::{Fq, Fr, G1Affine},
     plonk::{Column, ConstraintSystem, Instance},
 };
 use snark_verifier::{

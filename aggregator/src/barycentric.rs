@@ -1,28 +1,20 @@
-mod scalar_field_element;
-use scalar_field_element::ScalarFieldElement;
-
-use crate::constants::{BITS, LIMBS, LOG_DEGREE};
-use eth_types::U256;
-use halo2_base::{
-    gates::range::RangeConfig,
-    utils::{fe_to_biguint, modulus},
-};
+use halo2_base::{gates::range::RangeConfig, utils::modulus};
 use halo2_ecc::{
     bigint::CRTInteger,
-    fields::{
-        fp::{FpConfig, FpStrategy},
-        FieldChip,
-    },
-    halo2_base::{AssignedValue, Context, ContextParams},
+    fields::fp::{FpConfig, FpStrategy},
+    halo2_base::Context,
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField, pairing::Engine},
+    halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
     plonk::ConstraintSystem,
-    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
-use std::{iter, sync::LazyLock};
+use std::sync::LazyLock;
+
+use crate::constants::{BITS, LIMBS, LOG_DEGREE};
+
+mod scalar_field_element;
+use scalar_field_element::ScalarFieldElement;
 
 const BLOB_WIDTH: usize = 4096;
 const LOG_BLOG_WIDTH: usize = 12;
@@ -99,6 +91,7 @@ impl BarycentricEvaluationConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eth_types::U256;
     use std::collections::BTreeSet;
 
     #[test]

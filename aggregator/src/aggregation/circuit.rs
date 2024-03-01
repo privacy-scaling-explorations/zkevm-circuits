@@ -378,7 +378,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         layouter.assign_region(
             || "blob consistency checks",
-            |mut region| -> Result<(), Error> {
+            |region| -> Result<(), Error> {
                 let mut context = Context::new(
                     region,
                     ContextParams {

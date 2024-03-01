@@ -1,15 +1,12 @@
 use halo2_base::utils::fe_to_biguint;
 use halo2_ecc::{
     bigint::CRTInteger,
-    fields::{
-        fp::{FpConfig, FpStrategy},
-        FieldChip,
-    },
-    halo2_base::{AssignedValue, Context},
+    fields::{fp::FpConfig, FieldChip},
+    halo2_base::Context,
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
-    halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
+    circuit::Value,
+    halo2curves::{bls12_381::Scalar, bn256::Fr},
 };
 use std::ops::{Add, Div, Mul, Sub};
 
