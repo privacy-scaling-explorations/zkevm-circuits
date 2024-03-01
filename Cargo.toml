@@ -11,12 +11,17 @@ members = [
     "external-tracer",
     "mock",
     "testool",
-    "mpt-witness-generator/rustlib",
-    "light-client-poc"
+    "bin/mpt-test"
 ]
 
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v0.3.0" }
+
+[patch."https://github.com/scroll-tech/halo2.git"]
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v0.3.0" }
+
+[patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
+halo2curves = { version = "0.1.0", features = ["derive_serde"] }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

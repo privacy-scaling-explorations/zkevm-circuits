@@ -11,7 +11,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -22,7 +22,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    return_data_size: WordCell<F>,
+    return_data_size: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {

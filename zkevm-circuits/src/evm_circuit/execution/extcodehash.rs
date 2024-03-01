@@ -14,7 +14,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -28,7 +28,7 @@ pub(crate) struct ExtcodehashGadget<F> {
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
-    code_hash: WordCell<F>,
+    code_hash: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {

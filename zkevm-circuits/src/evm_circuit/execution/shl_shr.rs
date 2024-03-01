@@ -15,7 +15,7 @@ use crate::{
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -69,11 +69,10 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
         let mul_add_words =
             MulAddWordsGadget::construct(cb, [&quotient, &divisor, &remainder, &dividend]);
-        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.limbs[1..32]));
-        let divisor_is_zero = IsZeroWordGadget::construct(cb, &divisor);
-        let remainder_is_zero = IsZeroWordGadget::construct(cb, &remainder);
-        let remainder_lt_divisor =
-            LtWordGadget::construct(cb, &remainder.to_word(), &divisor.to_word());
+        let shf_lt256 = cb.is_zero(sum::expr(&shift.limbs[1..32]));
+        let divisor_is_zero = cb.is_zero_word(&divisor);
+        let remainder_is_zero = cb.is_zero_word(&remainder);
+        let remainder_lt_divisor = cb.is_lt_word(&remainder.to_word(), &divisor.to_word());
 
         // Constrain stack pops and pushes as:
         // - for SHL, two pops are shift and quotient, and push is dividend.
@@ -102,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             "shift == shift.cells[0] when divisor != 0",
             shift
                 .to_word()
-                .sub_unchecked(Word::from_lo_unchecked(shift.limbs[0].expr()))
+                .sub_unchecked(WordLoHi::from_lo_unchecked(shift.limbs[0].expr()))
                 .mul_selector(1.expr() - divisor_is_zero.expr()),
         );
 
@@ -181,9 +180,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         let shf_lt256 = pop1
             .to_le_bytes()
             .iter()
-            .fold(Some(0_u64), |acc, val| {
-                acc.and_then(|acc| acc.checked_add(u64::from(*val)))
-            })
+            .try_fold(0u64, |acc, val| acc.checked_add(u64::from(*val)))
             .unwrap()
             - shf0;
         let divisor = if shf_lt256 == 0 {
@@ -208,9 +205,9 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
         self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         self.divisor_is_zero
-            .assign(region, offset, Word::from(divisor))?;
+            .assign(region, offset, WordLoHi::from(divisor))?;
         self.remainder_is_zero
-            .assign(region, offset, Word::from(remainder))?;
+            .assign(region, offset, WordLoHi::from(remainder))?;
         self.remainder_lt_divisor
             .assign(region, offset, remainder, divisor)?;
         Ok(())

@@ -62,8 +62,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
 
-        let insufficient_gas_cost =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        let insufficient_gas_cost = cb.is_lt(cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
             "Gas left is less than gas cost",

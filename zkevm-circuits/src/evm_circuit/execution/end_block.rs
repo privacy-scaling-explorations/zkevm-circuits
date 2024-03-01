@@ -7,22 +7,22 @@ use crate::{
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::IsEqualGadget,
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::{word::Word, Expr},
+    util::{word::WordLoHi, Expr},
 };
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
-    is_empty_rwc: IsZeroGadget<F>,
+    is_empty_block: IsEqualGadget<F>,
     max_txs: Cell<F>,
     rw_table_padding_gadget: RwTablePaddingGadget<F>,
 }
@@ -35,22 +35,22 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let max_txs = cb.query_copy_cell();
         let total_txs = cb.query_cell();
-        let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
-        let is_empty_rwc =
-            IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
+        let total_txs_is_max_txs = cb.is_eq(total_txs.expr(), max_txs.expr());
+        // Note that rw_counter starts at 1
+        let is_empty_block = cb.is_eq(cb.curr.state.rw_counter.clone().expr(), 1.expr());
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
-        cb.condition(is_empty_rwc.expr(), |cb| {
+        cb.condition(is_empty_block.expr(), |cb| {
             // 1a.
             cb.require_equal("total_txs is 0 in empty block", total_txs.expr(), 0.expr());
         });
-        cb.condition(not::expr(is_empty_rwc.expr()), |cb| {
+        cb.condition(not::expr(is_empty_block.expr()), |cb| {
             // 1b. total_txs matches the tx_id that corresponds to the final step.
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::TxId,
-                Word::from_lo_unchecked(total_txs.expr()),
+                WordLoHi::from_lo_unchecked(total_txs.expr()),
             );
         });
 
@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                Word::zero(),
+                WordLoHi::zero(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at
@@ -107,7 +107,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             max_txs,
             total_txs,
             total_txs_is_max_txs,
-            is_empty_rwc,
+            is_empty_block,
             rw_table_padding_gadget,
         }
     }
@@ -122,12 +122,11 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let total_rwc = u64::from(step.rwc) - 1;
-        self.is_empty_rwc
-            .assign(region, offset, F::from(total_rwc))?;
+        self.is_empty_block
+            .assign(region, offset, F::from(u64::from(step.rwc)), F::ONE)?;
 
         let inner_rws_before_padding =
-            step.rwc_inner_chunk.0 as u64 - 1 + if total_rwc > 0 { 1 } else { 0 };
+            step.rwc_inner_chunk.0 as u64 - 1 + if u64::from(step.rwc) > 1 { 1 } else { 0 };
         self.rw_table_padding_gadget.assign_exec_step(
             region,
             offset,

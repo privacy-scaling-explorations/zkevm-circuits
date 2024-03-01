@@ -5,7 +5,7 @@ use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 /// The target and index of an `Operation` in the context of an
-/// `ExecutionTrace`.
+/// [`GethExecTrace`](eth_types::GethExecTrace).
 pub struct OperationRef(pub Target, pub usize);
 
 impl fmt::Debug for OperationRef {

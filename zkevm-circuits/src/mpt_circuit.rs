@@ -10,7 +10,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var, marker::PhantomData};
+use std::{convert::TryInto, env::var, io::Read, marker::PhantomData};
 
 mod account_leaf;
 mod branch;
@@ -201,7 +201,7 @@ pub enum FixedTableTag {
     RangeKeyLen256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen16,
-    /// Extesion key odd key
+    /// Extension key odd key
     ExtOddKey,
     /// RLP decoding
     RLP,
@@ -359,10 +359,10 @@ impl<F: Field> MPTConfig<F> {
         }
         let cell_columns = [rlp_cm.columns(), state_cm.columns()].concat();
 
-        println!("max expression degree: {}", meta.degree());
-        println!("num lookups: {}", meta.lookups().len());
-        println!("num advices: {}", meta.num_advice_columns());
-        println!("num fixed: {}", meta.num_fixed_columns());
+        log::info!("max expression degree: {}", meta.degree());
+        log::info!("num lookups: {}", meta.lookups().len());
+        log::info!("num advices: {}", meta.num_advice_columns());
+        log::info!("num fixed: {}", meta.num_fixed_columns());
         // cb.base.print_stats();
 
         MPTConfig {
@@ -733,11 +733,9 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     }
 }
 
-/// Loads an MPT proof from disk
-pub fn load_proof(path: &str) -> Vec<Node> {
-    let file = std::fs::File::open(path);
-    let reader = std::io::BufReader::new(file.unwrap());
-    let mut nodes: Vec<Node> = serde_json::from_reader(reader).unwrap();
+/// Loads an MPT proof from reader
+pub fn load_proof<R: Read>(reader: R) -> Result<Vec<Node>, serde_json::Error> {
+    let mut nodes: Vec<Node> = serde_json::from_reader(reader)?;
 
     // Add the address and the key to the list of values in the Account and Storage nodes
     for node in nodes.iter_mut() {
@@ -754,17 +752,52 @@ pub fn load_proof(path: &str) -> Vec<Node> {
                 .push([vec![160], storage.key.to_vec()].concat().into());
         }
     }
-    nodes
+    Ok(nodes)
+}
+
+/// Loads an MPT proof from disk
+pub fn load_proof_from_file(path: &str) -> Vec<Node> {
+    let file = std::fs::File::open(path);
+    let reader = std::io::BufReader::new(file.unwrap());
+    load_proof(reader).unwrap()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use std::{fs, ops::Deref};
+    use itertools::Itertools;
+    use std::{fs, ops::Deref, path::PathBuf};
 
     #[test]
     fn test_mpt() {
+        let degree = 15;
+        get_witnesses()
+            .enumerate()
+            .for_each(|(idx, (path, num_rows, circuit))| {
+                println!("{} {:?}", idx, path);
+                let prover = MockProver::<Fr>::run(degree, &circuit, vec![]).unwrap();
+                assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
+                // assert_eq!(prover.verify_par(), Ok(()));
+                // prover.assert_satisfied();
+            });
+    }
+
+    #[test]
+    fn variadic_size_check() {
+        let mut circuits = get_witnesses();
+        let first = circuits.next().unwrap().2;
+        let second = circuits.next().unwrap().2;
+
+        let degree = 15;
+        let prover_1 = MockProver::<Fr>::run(degree, &first, vec![]).unwrap();
+        let prover_2 = MockProver::<Fr>::run(degree, &second, vec![]).unwrap();
+
+        assert_eq!(prover_1.fixed(), prover_2.fixed());
+        assert_eq!(prover_1.permutation(), prover_2.permutation());
+    }
+
+    fn get_witnesses() -> impl Iterator<Item = (PathBuf, usize, MPTCircuit<Fr>)> {
         let path = "src/mpt_circuit/tests";
         let files = fs::read_dir(path).unwrap();
         files
@@ -776,13 +809,13 @@ mod tests {
                     false
                 }
             })
-            .enumerate()
-            .for_each(|(idx, f)| {
+            .sorted_by(|a, b| a.file_name().cmp(&b.file_name()))
+            .map(|f| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
 
-                let nodes = load_proof(path.to_str().unwrap());
+                let nodes = load_proof_from_file(path.to_str().unwrap());
                 let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
                 let mut keccak_data = vec![];
@@ -791,24 +824,21 @@ mod tests {
                         keccak_data.push(k.deref().clone());
                     }
                 }
-
                 let disable_preimage_check = nodes[0].start.clone().unwrap().disable_preimage_check;
                 let degree = 15;
                 let max_nodes = 520;
-                let circuit = MPTCircuit::<Fr> {
-                    nodes,
-                    keccak_data,
-                    degree,
-                    max_nodes,
-                    disable_preimage_check,
-                    _marker: PhantomData,
-                };
-
-                println!("{} {:?}", idx, path);
-                let prover = MockProver::<Fr>::run(degree as u32, &circuit, vec![]).unwrap();
-                assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                // assert_eq!(prover.verify(), Ok(()));
-                // prover.assert_satisfied();
-            });
+                (
+                    path,
+                    num_rows,
+                    MPTCircuit::<Fr> {
+                        nodes,
+                        keccak_data,
+                        degree,
+                        max_nodes,
+                        disable_preimage_check,
+                        _marker: PhantomData,
+                    },
+                )
+            })
     }
 }

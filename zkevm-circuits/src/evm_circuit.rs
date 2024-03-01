@@ -22,8 +22,8 @@ pub use crate::witness;
 use crate::{
     evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
-        UXTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable,
+        SigTable, TxTable, UXTable,
     },
     util::{chunk_ctx::ChunkContextConfig, Challenges, SubCircuit, SubCircuitConfig},
     witness::{Chunk, RwMap},
@@ -52,6 +52,7 @@ pub struct EvmCircuitConfig<F> {
     copy_table: CopyTable,
     keccak_table: KeccakTable,
     exp_table: ExpTable,
+    sig_table: SigTable,
     /// rw permutation config
     pub rw_permutation_config: PermutationChipConfig<F>,
 
@@ -84,6 +85,8 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub u8_table: UXTable<8>,
     /// U16Table
     pub u16_table: UXTable<16>,
+    /// SigTable
+    pub sig_table: SigTable,
     /// chunk_ctx config
     pub chunk_ctx_config: ChunkContextConfig<F>,
     /// Feature config
@@ -107,6 +110,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             exp_table,
             u8_table,
             u16_table,
+            sig_table,
             chunk_ctx_config,
             feature_config,
         }: Self::ConfigArgs,
@@ -126,6 +130,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &copy_table,
             &keccak_table,
             &exp_table,
+            &sig_table,
             &chunk_ctx_config.chunk_ctx_table,
             &chunk_ctx_config.is_first_chunk,
             &chunk_ctx_config.is_last_chunk,
@@ -144,6 +149,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
         exp_table.annotate_columns(meta);
         u8_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
+        sig_table.annotate_columns(meta);
         chunk_ctx_config.chunk_ctx_table.annotate_columns(meta);
 
         let rw_permutation_config = PermutationChip::configure(
@@ -166,6 +172,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            sig_table,
             rw_permutation_config,
             chunk_ctx_config,
             pi_chunk_continuity,
@@ -514,6 +521,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let challenges_expr = challenges.exprs(meta);
         let chunk_ctx_config = ChunkContextConfig::new(meta, &challenges_expr);
 
+        let sig_table = SigTable::construct(meta);
         (
             EvmCircuitConfig::new(
                 meta,
@@ -528,6 +536,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
                     exp_table,
                     u8_table,
                     u16_table,
+                    sig_table,
                     chunk_ctx_config,
                     feature_config: params,
                 },
@@ -572,6 +581,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 
         config.u8_table.load(&mut layouter)?;
         config.u16_table.load(&mut layouter)?;
+        config.sig_table.dev_load(&mut layouter, block)?;
 
         // synthesize chunk context
         config.chunk_ctx_config.assign_chunk_context(
@@ -686,6 +696,7 @@ mod evm_circuit_stats {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_vertical_circuit_rows: 0,
         };
         let builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
             .new_circuit_input_builder()

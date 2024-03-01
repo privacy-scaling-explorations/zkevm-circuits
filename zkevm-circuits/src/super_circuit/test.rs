@@ -42,7 +42,7 @@ fn test_super_circuit(block: GethData, circuits_params: FixedCParams, mock_rando
         SuperCircuit::<Fr>::build(block, circuits_params, mock_randomness).unwrap();
     circuits
         .into_iter()
-        .zip(instances.into_iter())
+        .zip(instances)
         .enumerate()
         .for_each(|(i, (circuit, instance))| {
             let prover = MockProver::run(k, &circuit, instance).unwrap();
@@ -159,6 +159,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
         max_bytecode: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
+        max_vertical_circuit_rows: 0,
     };
     test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }
@@ -177,6 +178,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
         max_bytecode: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
+        max_vertical_circuit_rows: 0,
     };
     test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }
@@ -195,6 +197,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_bytecode: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
+        max_vertical_circuit_rows: 0,
     };
     test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }
@@ -214,6 +217,7 @@ fn serial_test_multi_chunk_super_circuit_2tx_2max_tx() {
         max_bytecode: 512,
         max_evm_rows: 0,
         max_keccak_rows: 0,
+        max_vertical_circuit_rows: 0,
     };
     test_super_circuit(block, circuits_params, Fr::from(TEST_MOCK_RANDOMNESS));
 }
@@ -241,6 +245,7 @@ where
         max_evm_rows: 0,
         max_keccak_rows: 0,
         total_chunks: 1,
+        max_vertical_circuit_rows: 0,
     };
     let rw_map = RwMap::from(&OperationContainer {
         ..Default::default()

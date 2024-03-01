@@ -1041,7 +1041,7 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         permu_gamma: Fr::from(1),
         rw_fingerprints: rwtable_fingerprints,
         prev_chunk_last_rw: None,
-        _marker: std::marker::PhantomData::default(),
+        _marker: std::marker::PhantomData,
     };
     let instance = circuit.instance();
 

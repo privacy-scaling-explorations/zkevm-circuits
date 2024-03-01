@@ -4,7 +4,7 @@ use crate::{
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::{
-        word::{self, Word4, WordExpr},
+        word::{Word32Cell, Word4, WordExpr},
         Expr,
     },
 };
@@ -57,8 +57,8 @@ impl<F: Field> MulAddWords512Gadget<F> {
     /// Addend is the optional c.
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        words: [&word::Word32Cell<F>; 4],
-        addend: Option<&word::Word32Cell<F>>,
+        words: [&Word32Cell<F>; 4],
+        addend: Option<&Word32Cell<F>>,
     ) -> Self {
         let carry_0 = cb.query_bytes();
         let carry_1 = cb.query_bytes();
@@ -207,11 +207,11 @@ mod tests {
     /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
     struct MulAddWords512GadgetContainer<F> {
         math_gadget: MulAddWords512Gadget<F>,
-        a: word::Word32Cell<F>,
-        b: word::Word32Cell<F>,
-        d: word::Word32Cell<F>,
-        e: word::Word32Cell<F>,
-        addend: word::Word32Cell<F>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
+        d: Word32Cell<F>,
+        e: Word32Cell<F>,
+        addend: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
@@ -258,7 +258,7 @@ mod tests {
         // 0 * 0 + 0 == 0 * 2**256 + 0
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(0),
                 Word::from(0),
@@ -270,7 +270,7 @@ mod tests {
         // 1 * 0 + 0 == 0 * 2**256 + 0
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(0),
                 Word::from(0),
@@ -282,7 +282,7 @@ mod tests {
         // 1 * 1 + 0 == 0 * 2**256 + 1
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(1),
                 Word::from(0),
@@ -294,7 +294,7 @@ mod tests {
         // 100 * 54 + 0 == 0 * 2**256 + 5400
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(0),
@@ -306,7 +306,7 @@ mod tests {
         // 100 * 54 + max == 1 * 2**256 + 5400
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(1),
@@ -318,7 +318,7 @@ mod tests {
         // 100 * 54 + low_max == 0 * 2**256 + 5400 + low_max
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(0),
@@ -330,7 +330,7 @@ mod tests {
         // 100 * 54 + high_max == 0 * 2**256 + 5400 + high_max
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(100),
                 Word::from(54),
                 Word::from(0),
@@ -346,7 +346,7 @@ mod tests {
         // 10 * 1 + 0 != 1 * 2**256 + 3
         try_test!(
             MulAddWords512GadgetContainer<Fr>,
-            vec![
+            [
                 Word::from(10),
                 Word::from(1),
                 Word::from(1),

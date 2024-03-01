@@ -15,7 +15,7 @@ use crate::{
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -26,8 +26,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct JumpiGadget<F> {
     same_context: SameContextGadget<F>,
     dest: WordByteRangeGadget<F, N_BYTES_PROGRAM_COUNTER>,
-    condition: WordCell<F>,
-    is_condition_zero: IsZeroWordGadget<F, WordCell<F>>,
+    condition: WordLoHiCell<F>,
+    is_condition_zero: IsZeroWordGadget<F, WordLoHiCell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         cb.stack_pop(condition.to_word());
 
         // Determine if the jump condition is met
-        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
+        let is_condition_zero = cb.is_zero_word(&condition);
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump
@@ -101,8 +101,11 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
         self.dest.assign(region, offset, destination)?;
         self.condition.assign_u256(region, offset, condition)?;
-        self.is_condition_zero
-            .assign_value(region, offset, Value::known(Word::from(condition)))?;
+        self.is_condition_zero.assign_value(
+            region,
+            offset,
+            Value::known(WordLoHi::from(condition)),
+        )?;
 
         Ok(())
     }

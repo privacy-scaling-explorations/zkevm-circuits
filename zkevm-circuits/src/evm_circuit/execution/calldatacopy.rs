@@ -19,7 +19,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordExpr},
+        word::{WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -69,12 +69,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::TxId,
-                Word::from_lo_unchecked(src_id.expr()),
+                WordLoHi::from_lo_unchecked(src_id.expr()),
             );
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallDataLength,
-                Word::from_lo_unchecked(call_data_length.expr()),
+                WordLoHi::from_lo_unchecked(call_data_length.expr()),
             );
             cb.require_zero(
                 "call_data_offset == 0 in the root call",
@@ -85,17 +85,17 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallerId,
-                Word::from_lo_unchecked(src_id.expr()),
+                WordLoHi::from_lo_unchecked(src_id.expr()),
             );
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallDataLength,
-                Word::from_lo_unchecked(call_data_length.expr()),
+                WordLoHi::from_lo_unchecked(call_data_length.expr()),
             );
             cb.call_context_lookup_read(
                 None,
                 CallContextFieldTag::CallDataOffset,
-                Word::from_lo_unchecked(call_data_offset.expr()),
+                WordLoHi::from_lo_unchecked(call_data_offset.expr()),
             );
         });
 
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             CopyDataType::Memory.expr(),
         );
         cb.condition(memory_address.has_length(), |cb| {
-            // Set source start to the minimun value of data offset and call data length.
+            // Set source start to the minimum value of data offset and call data length.
             let src_addr = call_data_offset.expr()
                 + select::expr(
                     data_offset.lt_cap(),
@@ -127,9 +127,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             let src_addr_end = call_data_offset.expr() + call_data_length.expr();
 
             cb.copy_table_lookup(
-                Word::from_lo_unchecked(src_id.expr()),
+                WordLoHi::from_lo_unchecked(src_id.expr()),
                 src_tag,
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 src_addr,
                 src_addr_end,

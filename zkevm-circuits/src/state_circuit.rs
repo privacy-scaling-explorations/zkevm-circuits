@@ -19,7 +19,7 @@ use self::{
 };
 use crate::{
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
-    util::{word, Challenges, Expr, SubCircuit, SubCircuitConfig},
+    util::{word::WordLoHi, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{
         self,
         rw::{RwFingerprints, ToVec},
@@ -30,7 +30,7 @@ use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::{BinaryNumberBits, BinaryNumberChip, BinaryNumberConfig},
     permutation::{PermutationChip, PermutationChipConfig},
 };
 use halo2_proofs::{
@@ -62,14 +62,14 @@ pub struct StateCircuitConfig<F> {
     // Assigned value at the start of the block. For Rw::Account and
     // Rw::AccountStorage rows this is the committed value in the MPT, for
     // others, it is 0.
-    initial_value: word::Word<Column<Advice>>,
+    initial_value: WordLoHi<Column<Advice>>,
     // For Rw::AccountStorage, identify non-existing if both committed value and
     // new value are zero. Will do lookup for MPTProofType::StorageDoesNotExist if
     // non-existing, otherwise do lookup for MPTProofType::StorageChanged.
     is_non_exist: BatchedIsZeroConfig,
     // Intermediary witness used to reduce mpt lookup expression degree
     mpt_proof_type: Column<Advice>,
-    state_root: word::Word<Column<Advice>>,
+    state_root: WordLoHi<Column<Advice>>,
     lexicographic_ordering: LexicographicOrderingConfig,
     not_first_access: Column<Advice>,
     lookups: LookupsConfig,
@@ -120,7 +120,8 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let lookups = LookupsChip::configure(meta, u8_table, u10_table, u16_table);
 
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
-        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
+        let bits = BinaryNumberBits::construct(meta);
+        let tag = BinaryNumberChip::configure(meta, bits, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
 
         let address = MpiChip::configure(meta, selector, [rw_table.address], lookups);
@@ -131,7 +132,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             [rw_table.storage_key.lo(), rw_table.storage_key.hi()],
             lookups,
         );
-        let initial_value = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let initial_value = WordLoHi::new([meta.advice_column(), meta.advice_column()]);
 
         let is_non_exist = BatchedIsZeroChip::configure(
             meta,
@@ -147,7 +148,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             },
         );
         let mpt_proof_type = meta.advice_column_in(SecondPhase);
-        let state_root = word::Word::new([meta.advice_column(), meta.advice_column()]);
+        let state_root = WordLoHi::new([meta.advice_column(), meta.advice_column()]);
 
         let sort_keys = SortKeysConfig {
             tag,
@@ -191,7 +192,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             mpt_table,
             rw_permutation_config,
             pi_chunk_continuity,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -310,7 +311,7 @@ impl<F: Field> StateCircuitConfig<F> {
             }
 
             // The initial value can be determined from the mpt updates or is 0.
-            let initial_value = word::Word::<F>::from(
+            let initial_value = WordLoHi::<F>::from(
                 updates
                     .get(row)
                     .map(|u| u.value_assignments().1)
@@ -332,8 +333,8 @@ impl<F: Field> StateCircuitConfig<F> {
                     .unwrap_or_default();
                 let value = row.value_assignment();
                 (
-                    word::Word::<F>::from(committed_value),
-                    word::Word::<F>::from(value),
+                    WordLoHi::<F>::from(committed_value),
+                    WordLoHi::<F>::from(value),
                 )
             };
 
@@ -380,9 +381,12 @@ impl<F: Field> StateCircuitConfig<F> {
             // State root assignment is at previous row (offset - 1) because the state root
             // changes on the last access row.
             if offset != 0 {
-                word::Word::<F>::from(state_root)
-                    .into_value()
-                    .assign_advice(region, || "state root", self.state_root, offset - 1)?;
+                WordLoHi::<F>::from(state_root).into_value().assign_advice(
+                    region,
+                    || "state root",
+                    self.state_root,
+                    offset - 1,
+                )?;
             }
 
             if offset == rows_len - 1 {
@@ -395,9 +399,12 @@ impl<F: Field> StateCircuitConfig<F> {
                         new_root
                     };
                 }
-                word::Word::<F>::from(state_root)
-                    .into_value()
-                    .assign_advice(region, || "last row state_root", self.state_root, offset)?;
+                WordLoHi::<F>::from(state_root).into_value().assign_advice(
+                    region,
+                    || "last row state_root",
+                    self.state_root,
+                    offset,
+                )?;
             }
         }
 
@@ -485,7 +492,7 @@ impl<F: Field> StateCircuit<F> {
             permu_gamma: chunk.permu_gamma,
             rw_fingerprints: chunk.by_address_rw_fingerprints.clone(),
             prev_chunk_last_rw: chunk.prev_chunk_last_by_address_rw,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
@@ -640,8 +647,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
     assert_eq!(mpt_update_table_expressions.len(), 12);
 
     let meta_query_word =
-        |metap: &mut VirtualCells<'_, F>, word_column: word::Word<Column<Advice>>, at: Rotation| {
-            word::Word::new([
+        |metap: &mut VirtualCells<'_, F>, word_column: WordLoHi<Column<Advice>>, at: Rotation| {
+            WordLoHi::new([
                 metap.query_advice(word_column.lo(), at),
                 metap.query_advice(word_column.hi(), at),
             ])
@@ -668,24 +675,24 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
             address: mpt_update_table_expressions[0].clone(),
-            storage_key: word::Word::new([
+            storage_key: WordLoHi::new([
                 mpt_update_table_expressions[1].clone(),
                 mpt_update_table_expressions[2].clone(),
             ]),
             proof_type: mpt_update_table_expressions[3].clone(),
-            new_root: word::Word::new([
+            new_root: WordLoHi::new([
                 mpt_update_table_expressions[4].clone(),
                 mpt_update_table_expressions[5].clone(),
             ]),
-            old_root: word::Word::new([
+            old_root: WordLoHi::new([
                 mpt_update_table_expressions[6].clone(),
                 mpt_update_table_expressions[7].clone(),
             ]),
-            new_value: word::Word::new([
+            new_value: WordLoHi::new([
                 mpt_update_table_expressions[8].clone(),
                 mpt_update_table_expressions[9].clone(),
             ]),
-            old_value: word::Word::new([
+            old_value: WordLoHi::new([
                 mpt_update_table_expressions[10].clone(),
                 mpt_update_table_expressions[11].clone(),
             ]),

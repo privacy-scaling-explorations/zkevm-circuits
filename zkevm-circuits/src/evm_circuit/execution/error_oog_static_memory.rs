@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    util::{word::Word, Expr},
+    util::{word::WordLoHi, Expr},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToWord};
 use gadgets::util::or;
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         );
 
         // Check if this is an MSTORE8
-        let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
+        let is_mstore8 = cb.is_eq(opcode.expr(), OpcodeId::MSTORE8.expr());
 
         // pop memory_offset from stack
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
@@ -65,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         cb.require_equal_word(
             "Memory length must be 32 for MLOAD and MSTORE, and 1 for MSTORE8",
             memory_address.length_word(),
-            Word::from_lo_unchecked(select::expr(is_mstore8.expr(), 1.expr(), 32.expr())),
+            WordLoHi::from_lo_unchecked(select::expr(is_mstore8.expr(), 1.expr(), 32.expr())),
         );
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);

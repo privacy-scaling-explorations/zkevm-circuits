@@ -15,7 +15,7 @@ pub fn encode_funccall(spec: &str) -> Result<Bytes> {
     let func_name = func_name_params[0];
     let func_params = &func_name_params[1..func_name_params.len() - 1];
 
-    // transform func_params and args into the appropiate types
+    // transform func_params and args into the appropriate types
 
     let map_type = |t| match t {
         "uint" => ParamType::Uint(256),

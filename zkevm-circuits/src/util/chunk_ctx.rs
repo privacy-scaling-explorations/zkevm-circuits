@@ -211,7 +211,7 @@ impl<F: Field> ChunkContextConfig<F> {
             },
         )?;
 
-        vec![
+        [
             chunk_index_cell,
             chunk_index_next_cell,
             total_chunk_cell,

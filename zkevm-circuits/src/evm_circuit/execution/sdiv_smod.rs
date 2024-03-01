@@ -16,7 +16,7 @@ use crate::{
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -52,13 +52,13 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let divisor_abs = AbsWordGadget::construct(cb);
         let remainder_abs = AbsWordGadget::construct(cb);
         let dividend_abs = AbsWordGadget::construct(cb);
-        let quotient_is_zero = IsZeroWordGadget::construct(cb, quotient_abs.x());
-        let divisor_is_zero = IsZeroWordGadget::construct(cb, divisor_abs.x());
-        let remainder_is_zero = IsZeroWordGadget::construct(cb, remainder_abs.x());
+        let quotient_is_zero = cb.is_zero_word(quotient_abs.x());
+        let divisor_is_zero = cb.is_zero_word(divisor_abs.x());
+        let remainder_is_zero = cb.is_zero_word(remainder_abs.x());
 
         cb.stack_pop(dividend_abs.x().to_word());
         cb.stack_pop(divisor_abs.x().to_word());
-        cb.stack_push(Word::select(
+        cb.stack_push(WordLoHi::select(
             is_sdiv,
             quotient_abs
                 .x()
@@ -109,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         // `sign(dividend) == sign(divisor) ^ sign(quotient)` cannot be applied
         // for this case.
         let dividend_is_signed_overflow =
-            LtGadget::construct(cb, 127.expr(), dividend_abs.x_abs().limbs[31].expr());
+            cb.is_lt(127.expr(), dividend_abs.x_abs().limbs[31].expr());
 
         // Constrain sign(dividend) == sign(divisor) ^ sign(quotient) when both
         // quotient and divisor are non-zero and dividend is not signed overflow.
@@ -219,11 +219,11 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
             u64::from(dividend_abs.to_le_bytes()[31]).into(),
         )?;
         self.quotient_is_zero
-            .assign(region, offset, Word::from(quotient))?;
+            .assign(region, offset, WordLoHi::from(quotient))?;
         self.divisor_is_zero
-            .assign(region, offset, Word::from(divisor))?;
+            .assign(region, offset, WordLoHi::from(divisor))?;
         self.remainder_is_zero
-            .assign(region, offset, Word::from(remainder))?;
+            .assign(region, offset, WordLoHi::from(remainder))?;
         Ok(())
     }
 }

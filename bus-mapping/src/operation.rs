@@ -90,7 +90,7 @@ impl RWCounter {
     }
 }
 
-/// Enum used to differenciate between EVM Stack, Memory and Storage operations.
+/// Enum used to differentiate between EVM Stack, Memory and Storage operations.
 /// This is also used as the RwTableTag for the RwTable.
 #[derive(Debug, Clone, PartialEq, Eq, Copy, EnumIter, Hash)]
 pub enum Target {
@@ -1165,7 +1165,7 @@ impl<T: Op> Operation<T> {
         &mut self.op
     }
 
-    // /// Matches over an `Operation` returning the [`Target`] of the iternal
+    // /// Matches over an `Operation` returning the [`Target`] of the internal
     // op /// it stores inside.
     // pub const fn target(&self) -> Target {
     //     self.op.target()

@@ -14,7 +14,7 @@ use crate::{
         },
     },
     util::{
-        word::{Word, WordCell},
+        word::{WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -55,10 +55,10 @@ pub(crate) trait CommonMemoryAddressGadget<F: Field> {
     ) -> Result<u64, Error>;
 
     /// Return original word of memory offset.
-    fn offset_word(&self) -> Word<Expression<F>>;
+    fn offset_word(&self) -> WordLoHi<Expression<F>>;
 
     /// Return original word of memory length.
-    fn length_word(&self) -> Word<Expression<F>>;
+    fn length_word(&self) -> WordLoHi<Expression<F>>;
 
     /// Return valid memory length of Uint64.
     fn length(&self) -> Expression<F>;
@@ -74,7 +74,7 @@ pub(crate) trait CommonMemoryAddressGadget<F: Field> {
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAddressGadget<F> {
     memory_offset_bytes: MemoryAddress<F>,
-    memory_offset: WordCell<F>,
+    memory_offset: WordLoHiCell<F>,
     memory_length: MemoryAddress<F>,
     memory_length_is_zero: IsZeroGadget<F>,
 }
@@ -82,17 +82,17 @@ pub(crate) struct MemoryAddressGadget<F> {
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        memory_offset: WordCell<F>,
+        memory_offset: WordLoHiCell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
-        let memory_length_is_zero = IsZeroGadget::construct(cb, memory_length.sum_expr());
+        let memory_length_is_zero = cb.is_zero(memory_length.sum_expr());
         let memory_offset_bytes = cb.query_memory_address();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
         cb.condition(has_length, |cb| {
             cb.require_equal_word(
                 "Offset decomposition into 5 bytes",
-                Word::from_lo_unchecked(memory_offset_bytes.expr()),
+                WordLoHi::from_lo_unchecked(memory_offset_bytes.expr()),
                 memory_offset.to_word(),
             );
         });
@@ -157,11 +157,11 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
         })
     }
 
-    fn offset_word(&self) -> Word<Expression<F>> {
+    fn offset_word(&self) -> WordLoHi<Expression<F>> {
         self.memory_offset.to_word()
     }
 
-    fn length_word(&self) -> Word<Expression<F>> {
+    fn length_word(&self) -> WordLoHi<Expression<F>> {
         self.memory_length.to_word()
     }
 
@@ -196,16 +196,15 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         let length = cb.query_word32();
         let sum = cb.query_word32();
 
-        let sum_lt_cap = LtGadget::construct(
-            cb,
+        let sum_lt_cap = cb.is_lt(
             from_bytes::expr(&sum.limbs[..N_BYTES_U64]),
             (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr(),
         );
 
         let sum_overflow_hi = sum::expr(&sum.limbs[N_BYTES_U64..]);
-        let sum_within_u64 = IsZeroGadget::construct(cb, sum_overflow_hi);
+        let sum_within_u64 = cb.is_zero(sum_overflow_hi);
 
-        let length_is_zero = IsZeroGadget::construct(cb, sum::expr(&length.limbs));
+        let length_is_zero = cb.is_zero(sum::expr(&length.limbs));
         let offset_length_sum = AddWordsGadget::construct(cb, [offset, length], sum);
 
         Self {
@@ -260,12 +259,12 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         Ok(address)
     }
 
-    fn offset_word(&self) -> Word<Expression<F>> {
+    fn offset_word(&self) -> WordLoHi<Expression<F>> {
         let addends = self.offset_length_sum.addends();
         addends[0].to_word()
     }
 
-    fn length_word(&self) -> Word<Expression<F>> {
+    fn length_word(&self) -> WordLoHi<Expression<F>> {
         let addends = self.offset_length_sum.addends();
         addends[1].to_word()
     }
@@ -340,7 +339,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
 
 impl<F: Field> MemoryWordSizeGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: Expression<F>) -> Self {
-        let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
+        let memory_word_size = cb.div_by_const(address + 31.expr(), 32);
 
         Self { memory_word_size }
     }
@@ -569,7 +568,7 @@ pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_ME
 {
     /// The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
-    /// The selectors that indicate if the corrsponding byte contains real data
+    /// The selectors that indicate if the corresponding byte contains real data
     /// or is padded
     selectors: [Cell<F>; MAX_BYTES],
     /// The min gadget to take the minimum of addr_start and addr_end
@@ -613,7 +612,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         let is_empty = not::expr(&selectors[0]);
         let cap = select::expr(is_empty.expr(), 0.expr(), MAX_BYTES.expr());
         let signed_len = addr_end - addr_start;
-        let min_gadget = MinMaxGadget::construct(cb, cap, signed_len);
+        let min_gadget = cb.min_max(cap, signed_len);
 
         // If we claim that the buffer is empty, we prove that the end is at or before the start.
         //     buffer_len = max(0, signed_len) = 0
@@ -802,7 +801,7 @@ mod test {
         // buffer len = data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(2),
                 Word::from(256),
@@ -813,7 +812,7 @@ mod test {
         // buffer len > data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(2),
                 Word::from(256),
@@ -827,7 +826,7 @@ mod test {
         // buffer len < data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(1),
                 Word::from(256),
@@ -838,7 +837,7 @@ mod test {
         // buffer len <= 0
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(1),
                 Word::from(0),
                 Word::from(256),
@@ -849,7 +848,7 @@ mod test {
         // empty buffer
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(0),
                 Word::from(256),
@@ -860,7 +859,7 @@ mod test {
         // MAX_BYTES < buffer size
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,
-            vec![
+            [
                 Word::from(0),
                 Word::from(31),
                 Word::from(256),

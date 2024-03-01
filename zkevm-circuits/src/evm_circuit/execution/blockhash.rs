@@ -11,7 +11,7 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::LtGadget,
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell, WordLoHi,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
@@ -28,7 +28,7 @@ pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
     block_number: WordByteCapGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
-    block_hash: Word<Cell<F>>,
+    block_hash: WordLoHi<Cell<F>>,
     diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         cb.block_lookup(
             BlockContextFieldTag::Number.expr(),
             None,
-            Word::from_lo_unchecked(current_block_number.expr()),
+            WordLoHi::from_lo_unchecked(current_block_number.expr()),
         );
 
         let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());

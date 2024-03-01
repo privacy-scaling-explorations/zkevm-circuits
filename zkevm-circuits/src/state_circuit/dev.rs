@@ -61,7 +61,7 @@ where
 }
 
 #[cfg(test)]
-use crate::util::word::Word;
+use crate::util::word::WordLoHi;
 
 #[cfg(test)]
 use crate::state_circuit::HashMap;
@@ -151,26 +151,26 @@ impl AdviceColumn {
             Self::IsWrite => row.is_write = Value::known(value),
             Self::_Address => row.address = Value::known(value),
             Self::_StorageKeyLo => {
-                row.storage_key = Word::new([Value::known(value), row.storage_key.hi()])
+                row.storage_key = WordLoHi::new([Value::known(value), row.storage_key.hi()])
             }
             Self::_StorageKeyHi => {
-                row.storage_key = Word::new([row.storage_key.lo(), Value::known(value)])
+                row.storage_key = WordLoHi::new([row.storage_key.lo(), Value::known(value)])
             }
-            Self::ValueLo => row.value = Word::new([Value::known(value), row.value.hi()]),
-            Self::ValueHi => row.value = Word::new([row.value.lo(), Value::known(value)]),
+            Self::ValueLo => row.value = WordLoHi::new([Value::known(value), row.value.hi()]),
+            Self::ValueHi => row.value = WordLoHi::new([row.value.lo(), Value::known(value)]),
             Self::ValuePrevLo => {
-                row.value_prev = Word::new([Value::known(value), row.value_prev.hi()])
+                row.value_prev = WordLoHi::new([Value::known(value), row.value_prev.hi()])
             }
             Self::ValuePrevHi => {
-                row.value_prev = Word::new([row.value_prev.lo(), Value::known(value)])
+                row.value_prev = WordLoHi::new([row.value_prev.lo(), Value::known(value)])
             }
             Self::RwCounter => row.rw_counter = Value::known(value),
             Self::Tag => row.tag = Value::known(value),
             Self::InitialValueLo => {
-                row.init_val = Word::new([Value::known(value), row.init_val.hi()])
+                row.init_val = WordLoHi::new([Value::known(value), row.init_val.hi()])
             }
             Self::InitialValueHi => {
-                row.init_val = Word::new([row.init_val.lo(), Value::known(value)])
+                row.init_val = WordLoHi::new([row.init_val.lo(), Value::known(value)])
             }
             _ => (),
         };

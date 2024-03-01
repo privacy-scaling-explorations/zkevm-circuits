@@ -1,4 +1,4 @@
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity, U256};
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
@@ -26,11 +26,11 @@ use crate::{
             IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
             KECCAK,
         },
-        param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
-    util::word::{self, Word},
+    util::word::WordLoHi,
     witness::MptUpdateRow,
 };
 
@@ -142,27 +142,66 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_mod_extension[is_s.idx()] = cb.query_bool();
             }
 
+            // Constraint 1
             config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
-            // Don't allow an account node to follow an account node
+            // Constraint 2: Don't allow an account node to follow another account node
             require!(config.main_data.is_below_account => false);
 
             let mut key_rlc = vec![0.expr(); 2];
-            let mut nonce = vec![Word::zero(); 2];
-            let mut balance = vec![Word::zero(); 2];
-            let mut storage = vec![Word::zero(); 2];
-            let mut codehash = vec![Word::zero(); 2];
+            let mut nonce = vec![WordLoHi::zero(); 2];
+            let mut balance = vec![WordLoHi::zero(); 2];
+            let mut storage = vec![WordLoHi::zero(); 2];
+            let mut codehash = vec![WordLoHi::zero(); 2];
             let mut leaf_no_key_rlc = vec![0.expr(); 2];
             let mut leaf_no_key_rlc_mult = vec![0.expr(); 2];
             let mut value_list_num_bytes = vec![0.expr(); 2];
 
             let parent_data = &mut config.parent_data;
+
+            // Constraint 3:
             parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
+            // Constraint 4:
             parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
             let key_data = &mut config.key_data;
+            // Constraint 5:
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
+            // Constraint 6:
             key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
+
+            // Constraint 7: IsEqualGadget using IsZeroGadget to determine the proof type
+            // Proof types
+            config.is_non_existing_account_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::AccountDoesNotExist.expr(),
+            );
+            config.is_account_delete_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::AccountDestructed.expr(),
+            );
+            config.is_nonce_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::NonceChanged.expr(),
+            );
+            config.is_balance_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::BalanceChanged.expr(),
+            );
+            config.is_storage_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::StorageChanged.expr(),
+            );
+            config.is_codehash_mod = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                MPTProofType::CodeHashChanged.expr(),
+            );
 
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
@@ -233,11 +272,39 @@ impl<F: Field> AccountLeafConfig<F> {
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
                     require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
 
-                    // Check if the account is in its parent.
-                    // Check is skipped for placeholder leaves which are dummy leaves
-                    ifx! {not!(and::expr(&[not!(parent_data[is_s.idx()].is_placeholder), config.is_placeholder_leaf[is_s.idx()].expr()])) => {
+                    // Check if the leaf is in its parent.
+                    // Check is skipped for placeholder leaves which are dummy leaves.
+                    // Contrary to the storage leaf, the account leaf is always hashed since its length
+                    // is always greater than 32.
+                    // Note that the constraint works for the case when there is the placeholder branch above
+                    // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
+                    // branch.
+                    ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
                         let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
+                    } elsex {
+                        // For NonExistingAccountProof prove there is no leaf.
+
+                        // When there is only one leaf in the trie, `getProof` will always return this leaf - so we will have
+                        // either the required leaf or the wrong leaf, so for NonExistingAccountProof we don't handle this
+                        // case here (handled by WrongLeaf gadget).
+                        ifx! {config.is_non_existing_account_proof.expr() => {
+                            ifx! {parent_data[is_s.idx()].is_root.expr() => {
+                                // If leaf is placeholder and the parent is root (no branch above leaf) and the proof is NonExistingStorageProof,
+                                // the trie needs to be empty.
+                                let empty_hash = WordLoHi::<F>::from(U256::from_big_endian(&EMPTY_TRIE_HASH));
+                                let hash = parent_data[is_s.idx()].hash.expr();
+                                require!(hash.lo() => Expression::Constant(empty_hash.lo()));
+                                require!(hash.hi() => Expression::Constant(empty_hash.hi()));
+                            } elsex {
+                                // For NonExistingAccountProof we need to prove that there is nil in the parent branch
+                                // at the `modified_pos` position.
+                                // Note that this does not hold when there is NonExistingAccountProof wrong leaf scenario,
+                                // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
+                                // so the check below is not triggered.
+                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                            }}
+                        }}
                     }}
 
                     // Check the RLP encoding consistency.
@@ -281,38 +348,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     key_data,
                 );
             }};
-
-            // Proof types
-            config.is_non_existing_account_proof = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::AccountDoesNotExist.expr(),
-            );
-            config.is_account_delete_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::AccountDestructed.expr(),
-            );
-            config.is_nonce_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::NonceChanged.expr(),
-            );
-            config.is_balance_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::BalanceChanged.expr(),
-            );
-            config.is_storage_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::StorageChanged.expr(),
-            );
-            config.is_codehash_mod = IsEqualGadget::construct(
-                &mut cb.base,
-                config.main_data.proof_type.expr(),
-                MPTProofType::CodeHashChanged.expr(),
-            );
 
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
@@ -426,28 +461,49 @@ impl<F: Field> AccountLeafConfig<F> {
             let address = address_item.word().compress();
 
             ifx! {not!(config.parent_data[false.idx()].is_placeholder) => {
-                ctx.mpt_table.constrain(
-                    meta,
-                    &mut cb.base,
-                    address.clone(),
-                    proof_type.clone(),
-                    Word::zero(),
-                    config.main_data.new_root.expr(),
-                    config.main_data.old_root.expr(),
-                    Word::<Expression<F>>::new([new_value_lo, new_value_hi]),
-                    Word::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
-                );
+                ifx! {not!(config.is_non_existing_account_proof) => {
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        address.clone(),
+                        proof_type.clone(),
+                        WordLoHi::zero(),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        WordLoHi::<Expression<F>>::new([new_value_lo, new_value_hi]),
+                        WordLoHi::<Expression<F>>::new([old_value_lo.clone(), old_value_hi.clone()]),
+                    );
+                } elsex {
+                    // Non-existing proof doesn't have the value set to 0 in the case of a wrong leaf - we set it to 0
+                    // below to enable lookups with the value set to 0 (as in the case of a non-wrong non-existing proof).
+                    ctx.mpt_table.constrain(
+                        meta,
+                        &mut cb.base,
+                        address.clone(),
+                        proof_type.clone(),
+                        WordLoHi::zero(),
+                        config.main_data.new_root.expr(),
+                        config.main_data.old_root.expr(),
+                        WordLoHi::zero(),
+                        WordLoHi::zero(),
+                    );
+                }};
             } elsex {
+                // When the value is set to 0, the leaf is deleted, and if there were only two leaves in the branch,
+                // the neighbour leaf moves one level up and replaces the branch. When the lookup is executed with
+                // the new value set to 0, the lookup fails (without the code below), because the leaf that is returned
+                // is the neighbour node that moved up (because the branch and the old leaf doesn’t exist anymore),
+                // but this leaf doesn’t have the zero value.
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,
                     address,
                     proof_type,
-                    Word::zero(),
+                    WordLoHi::zero(),
                     config.main_data.new_root.expr(),
                     config.main_data.old_root.expr(),
-                    Word::zero(),
-                    Word::<Expression<F>>::new([old_value_lo, old_value_hi]),
+                    WordLoHi::zero(),
+                    WordLoHi::<Expression<F>>::new([old_value_lo, old_value_hi]),
                 );
             }};
         });
@@ -498,10 +554,10 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut nonce = vec![Word::zero_f(); 2];
-        let mut balance = vec![Word::zero_f(); 2];
-        let mut storage = vec![Word::zero_f(); 2];
-        let mut codehash = vec![Word::zero_f(); 2];
+        let mut nonce = vec![WordLoHi::zero(); 2];
+        let mut balance = vec![WordLoHi::zero(); 2];
+        let mut storage = vec![WordLoHi::zero(); 2];
+        let mut codehash = vec![WordLoHi::zero(); 2];
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
@@ -671,11 +727,11 @@ impl<F: Field> AccountLeafConfig<F> {
         } else if is_codehash_mod {
             (MPTProofType::CodeHashChanged, codehash)
         } else if is_account_delete_mod {
-            (MPTProofType::AccountDestructed, vec![Word::zero_f(); 2])
+            (MPTProofType::AccountDestructed, vec![WordLoHi::zero(); 2])
         } else if is_non_existing_proof {
-            (MPTProofType::AccountDoesNotExist, vec![Word::zero_f(); 2])
+            (MPTProofType::AccountDoesNotExist, vec![WordLoHi::zero(); 2])
         } else {
-            (MPTProofType::Disabled, vec![Word::zero_f(); 2])
+            (MPTProofType::Disabled, vec![WordLoHi::zero(); 2])
         };
 
         if account.is_mod_extension[0] || account.is_mod_extension[1] {
@@ -688,8 +744,12 @@ impl<F: Field> AccountLeafConfig<F> {
         }
 
         let mut new_value = value[false.idx()];
+        let mut old_value = value[true.idx()];
         if parent_data[false.idx()].is_placeholder {
-            new_value = word::Word::zero_f();
+            new_value = WordLoHi::zero();
+        } else if is_non_existing_proof {
+            new_value = WordLoHi::zero();
+            old_value = WordLoHi::zero();
         }
         mpt_config.mpt_table.assign_cached(
             region,
@@ -698,12 +758,12 @@ impl<F: Field> AccountLeafConfig<F> {
                 address: Value::known(from_bytes::value(
                     &account.address.iter().cloned().rev().collect::<Vec<_>>(),
                 )),
-                storage_key: word::Word::zero_f().into_value(),
+                storage_key: WordLoHi::zero().into_value(),
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
                 new_value: new_value.into_value(),
-                old_value: value[true.idx()].into_value(),
+                old_value: old_value.into_value(),
             },
         )?;
 

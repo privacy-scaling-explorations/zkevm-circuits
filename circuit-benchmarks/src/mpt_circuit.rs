@@ -22,7 +22,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::{env::var, ops::Deref};
-    use zkevm_circuits::mpt_circuit::{load_proof, witness_row::Node, MPTCircuit};
+    use zkevm_circuits::mpt_circuit::{load_proof_from_file, witness_row::Node, MPTCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -39,7 +39,7 @@ mod tests {
             .expect("Cannot parse DEGREE env var as u32");
 
         let path = "../zkevm-circuits/src/mpt_circuit/tests/UpdateOneLevel.json";
-        let nodes: Vec<Node> = load_proof(path);
+        let nodes: Vec<Node> = load_proof_from_file(path);
 
         let mut keccak_data = vec![];
         for node in nodes.iter() {

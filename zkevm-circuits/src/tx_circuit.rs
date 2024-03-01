@@ -15,7 +15,7 @@ pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
     table::{KeccakTable, TxFieldTag, TxTable},
-    util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
+    util::{word::WordLoHi, Challenges, SubCircuit, SubCircuitConfig},
     witness::{self, Chunk},
 };
 use eth_types::{geth_types::Transaction, sign_types::SignData, Field};
@@ -41,7 +41,7 @@ pub struct TxCircuitConfig<F: Field> {
     tx_id: Column<Advice>,
     tag: Column<Fixed>,
     index: Column<Advice>,
-    value: Word<Column<Advice>>,
+    value: WordLoHi<Column<Advice>>,
     sign_verify: SignVerifyConfig,
     _marker: PhantomData<F>,
 }
@@ -103,8 +103,8 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_id: usize,
         tag: TxFieldTag,
         index: usize,
-        value: Word<Value<F>>,
-    ) -> Result<Word<AssignedCell<F, F>>, Error> {
+        value: WordLoHi<Value<F>>,
+    ) -> Result<WordLoHi<AssignedCell<F, F>>, Error> {
         region.assign_advice(
             || "tx_id",
             self.tx_id,
@@ -186,7 +186,7 @@ impl<F: Field> TxCircuit<F> {
                     0,
                     TxFieldTag::Null,
                     0,
-                    Word::default().into_value(),
+                    WordLoHi::default().into_value(),
                 )?;
                 offset += 1;
                 // Assign all Tx fields except for call data
@@ -201,27 +201,33 @@ impl<F: Field> TxCircuit<F> {
                     for (tag, value) in [
                         (
                             TxFieldTag::Nonce,
-                            Word::from(tx.nonce.as_u64()).into_value(),
+                            WordLoHi::from(tx.nonce.as_u64()).into_value(),
                         ),
-                        (TxFieldTag::Gas, Word::from(tx.gas()).into_value()),
-                        (TxFieldTag::GasPrice, Word::from(tx.gas_price).into_value()),
-                        (TxFieldTag::CallerAddress, Word::from(tx.from).into_value()),
+                        (TxFieldTag::Gas, WordLoHi::from(tx.gas()).into_value()),
+                        (
+                            TxFieldTag::GasPrice,
+                            WordLoHi::from(tx.gas_price).into_value(),
+                        ),
+                        (
+                            TxFieldTag::CallerAddress,
+                            WordLoHi::from(tx.from).into_value(),
+                        ),
                         (
                             TxFieldTag::CalleeAddress,
-                            Word::from(tx.to_or_zero()).into_value(),
+                            WordLoHi::from(tx.to_or_zero()).into_value(),
                         ),
                         (
                             TxFieldTag::IsCreate,
-                            Word::from(tx.is_create() as u64).into_value(),
+                            WordLoHi::from(tx.is_create() as u64).into_value(),
                         ),
-                        (TxFieldTag::Value, Word::from(tx.value).into_value()),
+                        (TxFieldTag::Value, WordLoHi::from(tx.value).into_value()),
                         (
                             TxFieldTag::CallDataLength,
-                            Word::from(tx.call_data.0.len() as u64).into_value(),
+                            WordLoHi::from(tx.call_data.0.len() as u64).into_value(),
                         ),
                         (
                             TxFieldTag::CallDataGasCost,
-                            Word::from(tx.call_data_gas_cost()).into_value(),
+                            WordLoHi::from(tx.call_data_gas_cost()).into_value(),
                         ),
                         (
                             TxFieldTag::TxSignHash,
@@ -271,7 +277,7 @@ impl<F: Field> TxCircuit<F> {
                             i + 1, // tx_id
                             TxFieldTag::CallData,
                             index,
-                            Word::from(*byte as u64).into_value(),
+                            WordLoHi::from(*byte as u64).into_value(),
                         )?;
                         offset += 1;
                         calldata_count += 1;
@@ -284,7 +290,7 @@ impl<F: Field> TxCircuit<F> {
                         0, // tx_id
                         TxFieldTag::CallData,
                         0,
-                        Word::default().into_value(),
+                        WordLoHi::default().into_value(),
                     )?;
                     offset += 1;
                 }

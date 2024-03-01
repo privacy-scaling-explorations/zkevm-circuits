@@ -98,7 +98,9 @@ impl<T: Clone> Challenges<T> {
         [&self.keccak_input, &self.lookup_input]
     }
 
-    pub(crate) fn mock(keccak_input: T, lookup_input: T) -> Self {
+    /// Returns a mock Challenges for testing purposes
+    #[cfg(feature = "mock-challenge")]
+    pub fn mock(keccak_input: T, lookup_input: T) -> Self {
         Self {
             keccak_input,
             lookup_input,

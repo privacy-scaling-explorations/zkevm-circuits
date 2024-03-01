@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
         let is_first_byte_invalid =
-            IsEqualGadget::construct(cb, first_byte.expr(), INVALID_INIT_CODE_FIRST_BYTE.expr());
+            cb.is_eq(first_byte.expr(), INVALID_INIT_CODE_FIRST_BYTE.expr());
         cb.require_true(
             "is_first_byte_invalid is true",
             is_first_byte_invalid.expr(),

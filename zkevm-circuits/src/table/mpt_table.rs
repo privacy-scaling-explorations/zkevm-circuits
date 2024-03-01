@@ -46,17 +46,17 @@ pub struct MptTable {
     /// Account address
     pub address: Column<Advice>,
     /// Storage address
-    pub storage_key: word::Word<Column<Advice>>,
+    pub storage_key: WordLoHi<Column<Advice>>,
     /// Proof type
     pub proof_type: Column<Advice>,
     /// New MPT root
-    pub new_root: word::Word<Column<Advice>>,
+    pub new_root: WordLoHi<Column<Advice>>,
     /// Previous MPT root
-    pub old_root: word::Word<Column<Advice>>,
+    pub old_root: WordLoHi<Column<Advice>>,
     /// New value
-    pub new_value: word::Word<Column<Advice>>,
+    pub new_value: WordLoHi<Column<Advice>>,
     /// Old value
-    pub old_value: word::Word<Column<Advice>>,
+    pub old_value: WordLoHi<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for MptTable {
@@ -100,15 +100,15 @@ impl<F: Field> LookupTable<F> for MptTable {
 
 impl MptTable {
     /// Construct a new MptTable
-    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             address: meta.advice_column(),
-            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            storage_key: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             proof_type: meta.advice_column(),
-            new_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            old_root: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            new_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
-            old_value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            new_root: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            old_root: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            new_value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            old_value: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -119,11 +119,11 @@ impl MptTable {
         cb: &mut ConstraintBuilder<F, C>,
         address: Expression<F>,
         proof_type: Expression<F>,
-        storage_key: word::Word<Expression<F>>,
-        new_root: word::Word<Expression<F>>,
-        old_root: word::Word<Expression<F>>,
-        new_value: word::Word<Expression<F>>,
-        old_value: word::Word<Expression<F>>,
+        storage_key: WordLoHi<Expression<F>>,
+        new_root: WordLoHi<Expression<F>>,
+        old_root: WordLoHi<Expression<F>>,
+        new_value: WordLoHi<Expression<F>>,
+        old_value: WordLoHi<Expression<F>>,
     ) {
         circuit!([meta, cb], {
             require!(a!(self.address) => address);

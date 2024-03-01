@@ -2,8 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, ChunkContext, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
-    TransactionContext,
+    CallKind, ChunkContext, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent,
+    Transaction, TransactionContext,
 };
 use crate::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
@@ -126,7 +126,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) into the
+    /// Push an [`Operation`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
     /// reference to the stored operation ([`OperationRef`]) inside the
@@ -207,8 +207,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(step, RW::WRITE, op)
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) with reversible to be
-    /// true into the
+    /// Push an [`Operation`] with reversible to be true into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
     /// reference to the stored operation
@@ -1238,7 +1237,7 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
         let geth_step = steps
-            .get(0)
+            .first()
             .ok_or(Error::InternalError("invalid index 0"))?;
         let is_revert_or_return_call_success = (geth_step.op == OpcodeId::REVERT
             || geth_step.op == OpcodeId::RETURN)
@@ -1417,6 +1416,11 @@ impl<'a> CircuitInputStateRef<'a> {
         self.block.add_exp_event(event)
     }
 
+    /// Push an event representing auxiliary data for a precompile call to the state.
+    pub fn push_precompile_event(&mut self, event: PrecompileEvent) {
+        self.block.add_precompile_event(event)
+    }
+
     pub(crate) fn get_step_err(
         &self,
         step: &GethExecStep,
@@ -1432,7 +1436,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?;
 
-        if matches!(next_step, None) {
+        if next_step.is_none() {
             // enumerating call scope successful cases
             // case 1: call with normal halt opcode termination
             if matches!(
@@ -1627,7 +1631,6 @@ impl<'a> CircuitInputStateRef<'a> {
                         PrecompileCalls::Sha256
                         | PrecompileCalls::Ripemd160
                         | PrecompileCalls::Blake2F
-                        | PrecompileCalls::ECRecover
                         | PrecompileCalls::Bn128Add
                         | PrecompileCalls::Bn128Mul
                         | PrecompileCalls::Bn128Pairing

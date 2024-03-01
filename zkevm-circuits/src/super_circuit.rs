@@ -63,7 +63,7 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, MptTable,
-        RwTable, TxTable, UXTable, WdTable,
+        RwTable, SigTable, TxTable, UXTable, WdTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{chunk_ctx::ChunkContextConfig, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
@@ -100,6 +100,8 @@ pub struct SuperCircuitConfig<F: Field> {
     pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
     chunk_ctx_config: ChunkContextConfig<F>,
+    #[cfg(not(feature = "mock-challenge"))]
+    challenges: Challenges<halo2_proofs::plonk::Challenge>,
 }
 
 /// Circuit configuration arguments
@@ -156,22 +158,33 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let u16_table = UXTable::construct(meta);
 
         // Use a mock randomness instead of the randomness derived from the challenge
-        // (either from mock or real prover) to help debugging assignments.
+        // (either from mock or real prover) to help debugging assignments, when "mock-challenge"
+        // feature is enabled.
+        #[allow(unused_variables)]
         let power_of_randomness: [Expression<F>; 31] =
             array::from_fn(|i| Expression::Constant(mock_randomness.pow([1 + i as u64, 0, 0, 0])));
 
-        let challenges = Challenges::mock(
+        // Use the real challenges for real use, when "mock-challenge" feature is disabled.
+        #[cfg(not(feature = "mock-challenge"))]
+        let challenges = Challenges::construct(meta);
+
+        #[cfg(feature = "mock-challenge")]
+        let challenges_exprs = Challenges::mock(
             power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
         );
+        #[cfg(not(feature = "mock-challenge"))]
+        let challenges_exprs = challenges.exprs(meta);
 
-        let chunk_ctx_config = ChunkContextConfig::new(meta, &challenges);
+        let sig_table = SigTable::construct(meta);
+
+        let chunk_ctx_config = ChunkContextConfig::new(meta, &challenges_exprs);
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
             KeccakCircuitConfigArgs {
                 keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_exprs.clone(),
             },
         );
 
@@ -185,7 +198,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 tx_table: tx_table.clone(),
                 wd_table,
                 keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_exprs.clone(),
             },
         );
         let tx_circuit = TxCircuitConfig::new(
@@ -193,7 +206,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             TxCircuitConfigArgs {
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_exprs.clone(),
             },
         );
         let bytecode_circuit = BytecodeCircuitConfig::new(
@@ -201,7 +214,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             BytecodeCircuitConfigArgs {
                 bytecode_table: bytecode_table.clone(),
                 keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
+                challenges: challenges_exprs.clone(),
             },
         );
         let copy_circuit = CopyCircuitConfig::new(
@@ -212,7 +225,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
-                challenges: challenges.clone(),
+                challenges: challenges_exprs.clone(),
             },
         );
         let state_circuit = StateCircuitConfig::new(
@@ -223,14 +236,14 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 u8_table,
                 u10_table,
                 u16_table,
-                challenges: challenges.clone(),
+                challenges: challenges_exprs.clone(),
             },
         );
         let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                challenges,
+                challenges: challenges_exprs,
                 tx_table,
                 rw_table: chronological_rw_table,
                 bytecode_table,
@@ -240,6 +253,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 exp_table,
                 u8_table,
                 u16_table,
+                sig_table,
                 chunk_ctx_config: chunk_ctx_config.clone(),
                 feature_config,
             },
@@ -317,6 +331,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             pi_circuit,
             exp_circuit,
             chunk_ctx_config,
+            #[cfg(not(feature = "mock-challenge"))]
+            challenges,
         }
     }
 }
@@ -360,7 +376,7 @@ impl<F: Field> SuperCircuit<F> {
     }
 }
 
-// Eventhough the SuperCircuit is not a subcircuit we implement the SubCircuit
+// Even though the SuperCircuit is not a subcircuit we implement the SubCircuit
 // trait for it in order to get the `new_from_block` and `instance` methods that
 // allow us to generalize integration tests.
 impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
@@ -530,10 +546,14 @@ impl<F: Field> Circuit<F> for SuperCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.evm_circuit.block.as_ref().unwrap();
+        #[cfg(feature = "mock-challenge")]
         let challenges = Challenges::mock(
             Value::known(block.randomness),
             Value::known(block.randomness),
         );
+        #[cfg(not(feature = "mock-challenge"))]
+        let challenges = config.challenges.values(&mut layouter);
+
         let rws = &self.state_circuit.rows;
 
         config.block_table.load(&mut layouter, &block.context)?;

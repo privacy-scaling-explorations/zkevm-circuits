@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), is_call.expr());
 
         // Check if the amount of gas available is less than the amount of gas required
-        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
             "Either Memory address is overflow or gas left is less than cost",

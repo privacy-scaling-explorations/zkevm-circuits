@@ -38,8 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
         // Check if the amount of gas available is less than the amount of gas
         // required
-        let insufficient_gas =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_required.expr());
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), gas_required.expr());
         cb.require_equal(
             "constant gas left is less than gas required ",
             insufficient_gas.expr(),

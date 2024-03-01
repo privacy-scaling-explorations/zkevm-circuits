@@ -4,18 +4,14 @@ use crate::{
     copy_circuit::util::number_or_hash_to_word,
     evm_circuit::util::rlc,
     impl_expr,
-    util::{
-        build_tx_log_address, keccak,
-        word::{self, Word},
-        Challenges,
-    },
+    util::{build_tx_log_address, keccak, word::WordLoHi, Challenges},
     witness::{Block, BlockContext, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction},
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::BinaryNumberBits,
     util::{split_u256, split_u256_limb64},
 };
 use halo2_proofs::{
@@ -43,6 +39,8 @@ pub(crate) mod keccak_table;
 pub mod mpt_table;
 /// rw table
 pub(crate) mod rw_table;
+/// signature table
+pub(crate) mod sig_table;
 /// tx table
 pub(crate) mod tx_table;
 /// ux table
@@ -50,19 +48,18 @@ pub(crate) mod ux_table;
 /// withdrawal table
 pub(crate) mod wd_table;
 
-pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
-pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
-pub(crate) use copy_table::CopyTable;
-pub(crate) use exp_table::ExpTable;
+pub use block_table::{BlockContextFieldTag, BlockTable};
+pub use bytecode_table::{BytecodeFieldTag, BytecodeTable};
+pub use copy_table::CopyTable;
+pub use exp_table::ExpTable;
 pub use keccak_table::KeccakTable;
-pub(crate) use ux_table::UXTable;
+pub use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
-pub(crate) use rw_table::RwTable;
-pub(crate) use tx_table::{
-    TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
-};
-pub(crate) use wd_table::WdTable;
+pub use rw_table::RwTable;
+pub use sig_table::SigTable;
+pub use tx_table::{TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable};
+pub use wd_table::WdTable;
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {

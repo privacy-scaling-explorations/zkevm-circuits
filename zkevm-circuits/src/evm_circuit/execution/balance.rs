@@ -15,7 +15,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -29,8 +29,8 @@ pub(crate) struct BalanceGadget<F> {
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
-    code_hash: WordCell<F>,
-    not_exists: IsZeroWordGadget<F, WordCell<F>>,
+    code_hash: WordLoHiCell<F>,
+    not_exists: IsZeroWordGadget<F, WordLoHiCell<F>>,
     balance: Word32Cell<F>,
 }
 
@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let not_exists = cb.is_zero_word(&code_hash);
         let exists = not::expr(not_exists.expr());
         let balance = cb.query_word32();
         cb.condition(exists.expr(), |cb| {
@@ -140,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.code_hash
             .assign_u256(region, offset, code_hash.to_word())?;
         self.not_exists
-            .assign_value(region, offset, Value::known(Word::from(code_hash)))?;
+            .assign_value(region, offset, Value::known(WordLoHi::from(code_hash)))?;
         let balance = if code_hash.is_zero() {
             eth_types::Word::zero()
         } else {

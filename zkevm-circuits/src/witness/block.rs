@@ -9,15 +9,17 @@ use crate::{
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, unwrap_value, word, SubCircuit},
+    util::{log2_ceil, unwrap_value, word::WordLoHi, SubCircuit},
     witness::Chunk,
 };
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, Withdrawal},
+    circuit_input_builder::{
+        self, CopyEvent, ExpEvent, FeatureConfig, FixedCParams, PrecompileEvents, Withdrawal,
+    },
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Address, Field, ToScalar, Word, H256};
+use eth_types::{sign_types::SignData, Address, Field, ToScalar, Word, H256};
 
 use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
@@ -59,6 +61,8 @@ pub struct Block<F> {
     pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
+    /// IO to/from the precompiled contract calls.
+    pub precompile_events: PrecompileEvents,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// rw_table padding meta data
@@ -81,6 +85,26 @@ impl<F: Field> Block<F> {
                 }
             }
         }
+    }
+
+    /// Get signature (witness) from the block for tx signatures and ecRecover calls.
+    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
+        let mut signatures: Vec<SignData> = self
+            .txs
+            .iter()
+            .map(|tx| tx.tx.sign_data(self.context.chain_id.as_u64()))
+            .filter_map(|res| res.ok())
+            .collect::<Vec<SignData>>();
+        signatures.extend_from_slice(&self.precompile_events.get_ecrecover_events());
+        if padding && self.txs.len() < self.circuits_params.max_txs {
+            // padding tx's sign data
+            signatures.push(
+                Transaction::dummy()
+                    .sign_data(self.context.chain_id.as_u64())
+                    .unwrap(),
+            );
+        }
+        signatures
     }
 
     /// Get a read-write record
@@ -177,7 +201,7 @@ pub struct BlockContext {
     pub number: Word,
     /// The timestamp of the block
     pub timestamp: Word,
-    /// The difficulty of the blcok
+    /// The difficulty of the block
     pub difficulty: Word,
     /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
@@ -197,8 +221,8 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.coinbase).lo()),
-                    Value::known(word::Word::from(self.coinbase).hi()),
+                    Value::known(WordLoHi::from(self.coinbase).lo()),
+                    Value::known(WordLoHi::from(self.coinbase).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
@@ -215,8 +239,8 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.difficulty).lo()),
-                    Value::known(word::Word::from(self.difficulty).hi()),
+                    Value::known(WordLoHi::from(self.difficulty).lo()),
+                    Value::known(WordLoHi::from(self.difficulty).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -227,20 +251,20 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.base_fee).lo()),
-                    Value::known(word::Word::from(self.base_fee).hi()),
+                    Value::known(WordLoHi::from(self.base_fee).lo()),
+                    Value::known(WordLoHi::from(self.base_fee).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.chain_id).lo()),
-                    Value::known(word::Word::from(self.chain_id).hi()),
+                    Value::known(WordLoHi::from(self.chain_id).lo()),
+                    Value::known(WordLoHi::from(self.chain_id).hi()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::WithdrawalRoot as u64)),
                     Value::known(F::ZERO),
-                    Value::known(word::Word::from(self.withdrawals_root).lo()),
-                    Value::known(word::Word::from(self.withdrawals_root).hi()),
+                    Value::known(WordLoHi::from(self.withdrawals_root).lo()),
+                    Value::known(WordLoHi::from(self.withdrawals_root).hi()),
                 ],
             ],
             {
@@ -252,8 +276,8 @@ impl BlockContext {
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
                             Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            Value::known(word::Word::from(*hash).lo()),
-                            Value::known(word::Word::from(*hash).hi()),
+                            Value::known(WordLoHi::from(*hash).lo()),
+                            Value::known(WordLoHi::from(*hash).hi()),
                         ]
                     })
                     .collect()
@@ -324,6 +348,7 @@ pub fn block_convert<F: Field>(
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        precompile_events: block.precompile_events.clone(),
         eth_block: block.eth_block.clone(),
         end_block: block.end_block.clone(),
         rw_padding_meta,

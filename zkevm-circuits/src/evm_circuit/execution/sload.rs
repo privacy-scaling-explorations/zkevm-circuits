@@ -13,7 +13,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -25,10 +25,10 @@ pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    callee_address: WordCell<F>,
-    key: WordCell<F>,
-    value: WordCell<F>,
-    committed_value: WordCell<F>,
+    callee_address: WordLoHiCell<F>,
+    key: WordLoHiCell<F>,
+    value: WordLoHiCell<F>,
+    committed_value: WordLoHiCell<F>,
     is_warm: Cell<F>,
 }
 
@@ -65,14 +65,14 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
-            Word::from_lo_unchecked(is_warm.expr()),
+            WordLoHi::from_lo_unchecked(is_warm.expr()),
         );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
-            Word::from_lo_unchecked(true.expr()),
-            Word::from_lo_unchecked(is_warm.expr()),
+            WordLoHi::from_lo_unchecked(true.expr()),
+            WordLoHi::from_lo_unchecked(is_warm.expr()),
             Some(&mut reversion_info),
         );
 

@@ -8,7 +8,11 @@
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
-#![allow(clippy::upper_case_acronyms)] // Too pedantic
+
+// Too pedantic
+#![allow(clippy::upper_case_acronyms)]
+// Clippy is buggy on this one. Remove after https://github.com/rust-lang/rust-clippy/issues/12101 is resolved.
+#![allow(clippy::useless_vec)]
 
 #[macro_use]
 pub mod macros;
@@ -24,9 +28,12 @@ pub use keccak::{keccak256, Keccak};
 
 pub use bytecode::Bytecode;
 pub use error::Error;
-use halo2_proofs::halo2curves::{
-    bn256::{Fq, Fr},
-    ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
+use halo2_proofs::{
+    halo2curves::{
+        bn256::{Fq, Fr},
+        ff::{Field as Halo2Field, FromUniformBytes, PrimeField},
+    },
+    plonk::Expression,
 };
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage, OpcodeId};
@@ -42,9 +49,58 @@ pub use ethers_core::{
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
 
+/// trait to retrieve general operation itentity element
+pub trait OpsIdentity {
+    /// output type
+    type Output;
+    /// additive identity
+    fn zero() -> Self::Output;
+    /// multiplicative identity
+    fn one() -> Self::Output;
+}
+
+impl<F: Field> OpsIdentity for Expression<F> {
+    type Output = Expression<F>;
+    fn zero() -> Self::Output {
+        Expression::Constant(F::ZERO)
+    }
+
+    fn one() -> Self::Output {
+        Expression::Constant(F::ONE)
+    }
+}
+
+// Impl OpsIdentity for Fr
+impl OpsIdentity for Fr {
+    type Output = Fr;
+
+    fn zero() -> Self::Output {
+        Fr::zero()
+    }
+
+    fn one() -> Self::Output {
+        Fr::one()
+    }
+}
+
+// Impl OpsIdentity for Fq
+impl OpsIdentity for Fq {
+    type Output = Fq;
+
+    fn zero() -> Self::Output {
+        Fq::zero()
+    }
+
+    fn one() -> Self::Output {
+        Fq::one()
+    }
+}
+
 /// Trait used to reduce verbosity with the declaration of the [`PrimeField`]
 /// trait and its repr.
-pub trait Field: Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + Ord {
+pub trait Field:
+    Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64> + Ord + OpsIdentity<Output = Self>
+{
     /// Gets the lower 128 bits of this field element when expressed
     /// canonically.
     fn get_lower_128(&self) -> u128 {
@@ -420,14 +476,14 @@ impl<'de> Deserialize<'de> for GethExecStep {
 }
 
 /// Helper type built to deal with the weird `result` field added between
-/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// [`GethExecTrace`]s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct ResultGethExecTraces(pub Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
-/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// [`GethExecTrace`]s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]

@@ -20,7 +20,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordExpr},
+        word::{WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -71,8 +71,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.to_word());
-        cb.stack_pop(Word::from_lo_unchecked(data_offset.expr()));
-        cb.stack_pop(Word::from_lo_unchecked(size.expr()));
+        cb.stack_pop(WordLoHi::from_lo_unchecked(data_offset.expr()));
+        cb.stack_pop(WordLoHi::from_lo_unchecked(size.expr()));
 
         // 2. Add lookup constraint in the call context for the returndatacopy field.
         let last_callee_id = cb.query_cell();
@@ -81,20 +81,20 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeId,
-            Word::from_lo_unchecked(last_callee_id.expr()),
+            WordLoHi::from_lo_unchecked(last_callee_id.expr()),
         );
         cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataOffset,
-            Word::from_lo_unchecked(return_data_offset.expr()),
+            WordLoHi::from_lo_unchecked(return_data_offset.expr()),
         );
         cb.call_context_lookup_read(
             None,
             CallContextFieldTag::LastCalleeReturnDataLength,
-            Word::from_lo_unchecked(return_data_size.expr()),
+            WordLoHi::from_lo_unchecked(return_data_size.expr()),
         );
 
-        // 3. contraints for copy: copy overflow check
+        // 3. constraints for copy: copy overflow check
         // i.e., offset + size <= return_data_size
         let in_bound_check = RangeCheckGadget::construct(
             cb,
@@ -118,9 +118,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
             cb.copy_table_lookup(
-                Word::from_lo_unchecked(last_callee_id.expr()),
+                WordLoHi::from_lo_unchecked(last_callee_id.expr()),
                 CopyDataType::Memory.expr(),
-                Word::from_lo_unchecked(cb.curr.state.call_id.expr()),
+                WordLoHi::from_lo_unchecked(cb.curr.state.call_id.expr()),
                 CopyDataType::Memory.expr(),
                 return_data_offset.expr() + data_offset.expr(),
                 return_data_offset.expr() + return_data_size.expr(),

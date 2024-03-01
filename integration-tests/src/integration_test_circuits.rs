@@ -72,6 +72,8 @@ const MAX_EVM_ROWS: usize = 10000;
 const MAX_EXP_STEPS: usize = 1000;
 
 const MAX_KECCAK_ROWS: usize = 38000;
+/// MAX_VERTICAL_CIRCUIT_ROWS
+const MAX_VERTICAL_CIRCUIT_ROWS: usize = 0;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     total_chunks: TOTAL_CHUNKS,
@@ -84,6 +86,7 @@ const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_evm_rows: MAX_EVM_ROWS,
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
+    max_vertical_circuit_rows: MAX_VERTICAL_CIRCUIT_ROWS,
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;
@@ -168,7 +171,7 @@ fn test_actual_circuit<C: Circuit<Fr>>(
 
     let mut transcript = PoseidonTranscript::new(Vec::new());
 
-    // change instace to slice
+    // change instance to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen circuit proof");
@@ -218,7 +221,7 @@ fn test_actual_root_circuit<C: Circuit<Fr>>(
 
     let mut transcript = EvmTranscript::<_, NativeLoader, _, _>::new(vec![]);
 
-    // change instace to slice
+    // change instance to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen root circuit proof");

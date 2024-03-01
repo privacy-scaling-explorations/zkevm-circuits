@@ -10,7 +10,7 @@ pub struct KeccakTable {
     /// Byte array input length
     pub input_len: Column<Advice>,
     /// Output hash word
-    pub output: word::Word<Column<Advice>>,
+    pub output: WordLoHi<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -42,7 +42,7 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            output: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -55,7 +55,7 @@ impl KeccakTable {
             .keccak_input()
             .map(|challenge| rlc::value(input.iter().rev(), challenge));
         let input_len = F::from(input.len() as u64);
-        let output = word::Word::from(keccak(input));
+        let output = WordLoHi::from(keccak(input));
 
         vec![[
             Value::known(F::ONE),
@@ -125,12 +125,12 @@ impl KeccakTable {
     }
 
     /// returns matchings between the circuit columns passed as parameters and
-    /// the table collumns
+    /// the table columns
     pub fn match_columns(
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: Word<Column<Advice>>,
+        code_hash: WordLoHi<Column<Advice>>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),

@@ -71,7 +71,7 @@ impl<F: Field> PermutationChipConfig<F> {
 
         // power_of_gamma start from gamma**1
         let power_of_gamma = {
-            let num_of_col = col_values.get(0).map(|row| row.len()).unwrap_or_default();
+            let num_of_col = col_values.first().map(|row| row.len()).unwrap_or_default();
             std::iter::successors(Some(gamma), |prev| (*prev * gamma).into())
                 .take(num_of_col.saturating_sub(1))
                 .collect::<Vec<Value<F>>>()
@@ -327,7 +327,7 @@ pub fn get_permutation_fingerprints<F: Field>(
     acc_fingerprints_prev: Value<F>,
 ) -> Vec<(Value<F>, Value<F>)> {
     let power_of_gamma = {
-        let num_of_col = col_values.get(0).map(|row| row.len()).unwrap_or_default();
+        let num_of_col = col_values.first().map(|row| row.len()).unwrap_or_default();
         std::iter::successors(Some(Value::known(F::ONE)), |prev| (*prev * gamma).into())
             .take(num_of_col)
             .collect::<Vec<Value<F>>>()

@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion,
     },
-    util::word::{self},
+    util::word::WordLoHi,
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -18,13 +18,13 @@ pub struct LtWordGadget<F> {
 impl<F: Field> LtWordGadget<F> {
     pub(crate) fn construct<T: Expr<F> + Clone>(
         cb: &mut EVMConstraintBuilder<F>,
-        lhs: &word::Word<T>,
-        rhs: &word::Word<T>,
+        lhs: &WordLoHi<T>,
+        rhs: &WordLoHi<T>,
     ) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
         let comparison_hi = ComparisonGadget::construct(cb, lhs_hi.expr(), rhs_hi.expr());
-        let lt_lo = LtGadget::construct(cb, lhs_lo.expr(), rhs_lo.expr());
+        let lt_lo = cb.is_lt(lhs_lo.expr(), rhs_lo.expr());
         Self {
             comparison_hi,
             lt_lo,
@@ -113,27 +113,19 @@ mod tests {
     fn test_ltword_expect() {
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
+            true,
+        );
+        try_test!(LtWordTestContainer<Fr>, [Word::from(1), Word::MAX], true,);
+        try_test!(LtWordTestContainer<Fr>, [WORD_LOW_MAX, WORD_HIGH_MAX], true,);
+        try_test!(
+            LtWordTestContainer<Fr>,
+            [Word::from(90), WORD_LOW_MAX],
             true,
         );
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![Word::from(1), Word::MAX],
-            true,
-        );
-        try_test!(
-            LtWordTestContainer<Fr>,
-            vec![WORD_LOW_MAX, WORD_HIGH_MAX],
-            true,
-        );
-        try_test!(
-            LtWordTestContainer<Fr>,
-            vec![Word::from(90), WORD_LOW_MAX],
-            true,
-        );
-        try_test!(
-            LtWordTestContainer<Fr>,
-            vec![Word::from(90), WORD_HIGH_MAX],
+            [Word::from(90), WORD_HIGH_MAX],
             true,
         );
     }
@@ -142,14 +134,14 @@ mod tests {
     fn test_ltword_unexpect() {
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![Word::from(1), Word::from(0)],
+            [Word::from(1), Word::from(0)],
             false,
         );
-        try_test!(LtWordTestContainer<Fr>, vec![Word::MAX, Word::MAX], false,);
+        try_test!(LtWordTestContainer<Fr>, [Word::MAX, Word::MAX], false,);
 
         try_test!(
             LtWordTestContainer<Fr>,
-            vec![WORD_HIGH_MAX, WORD_LOW_MAX],
+            [WORD_HIGH_MAX, WORD_LOW_MAX],
             false,
         );
     }

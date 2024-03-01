@@ -11,7 +11,7 @@ use crate::{
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct GasPriceGadget<F> {
     tx_id: Cell<F>,
-    gas_price: WordCell<F>,
+    gas_price: WordLoHiCell<F>,
     same_context: SameContextGadget<F>,
 }
 

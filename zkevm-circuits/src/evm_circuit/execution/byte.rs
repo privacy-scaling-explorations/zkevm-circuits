@@ -11,7 +11,7 @@ use crate::{
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
-        word::{Word, Word32Cell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
 };
@@ -53,7 +53,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         let is_byte_selected = array_init(|idx| {
             // Check if this byte is selected looking only at the LSB of the
             // index word
-            IsEqualGadget::construct(cb, index.limbs[0].expr(), (31 - idx).expr())
+            cb.is_eq(index.limbs[0].expr(), (31 - idx).expr())
         });
 
         // Sum all possible selected bytes
@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         // it only uses the LSB of a word.
         cb.stack_pop(index.to_word());
         cb.stack_pop(value.to_word());
-        cb.stack_push(Word::from_lo_unchecked(selected_byte));
+        cb.stack_push(WordLoHi::from_lo_unchecked(selected_byte));
 
         // State transition
         let step_state_transition = StepStateTransition {

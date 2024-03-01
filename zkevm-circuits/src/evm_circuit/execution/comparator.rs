@@ -11,7 +11,7 @@ use crate::{
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -21,12 +21,12 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
     same_context: SameContextGadget<F>,
-    a: WordCell<F>,
-    b: WordCell<F>,
+    a: WordLoHiCell<F>,
+    b: WordLoHiCell<F>,
     result: Cell<F>,
     is_eq: IsEqualGadget<F>,
     is_gt: IsEqualGadget<F>,
-    word_comparison: CmpWordsGadget<F, WordCell<F>, WordCell<F>>,
+    word_comparison: CmpWordsGadget<F, WordLoHiCell<F>, WordLoHiCell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
@@ -41,10 +41,10 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         let b = cb.query_word_unchecked();
 
         // Check if opcode is EQ
-        let is_eq = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());
+        let is_eq = cb.is_eq(opcode.expr(), OpcodeId::EQ.expr());
         // Check if opcode is GT. For GT we swap the stack inputs so that we
         // actually do greater than instead of smaller than.
-        let is_gt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::GT.expr());
+        let is_gt = cb.is_eq(opcode.expr(), OpcodeId::GT.expr());
 
         let word_comparison = CmpWordsGadget::construct(cb, a.clone(), b.clone());
 
@@ -62,9 +62,9 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         // When swap is enabled we swap stack places between a and b.
         // We can push result here directly because
         // it only uses the LSB of a word.
-        cb.stack_pop(Word::select(is_gt.expr(), b.to_word(), a.to_word()));
-        cb.stack_pop(Word::select(is_gt.expr(), a.to_word(), b.to_word()));
-        cb.stack_push(Word::from_lo_unchecked(result.expr()));
+        cb.stack_pop(WordLoHi::select(is_gt.expr(), b.to_word(), a.to_word()));
+        cb.stack_pop(WordLoHi::select(is_gt.expr(), a.to_word(), b.to_word()));
+        cb.stack_push(WordLoHi::from_lo_unchecked(result.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {

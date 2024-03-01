@@ -1,7 +1,8 @@
 //! Block-related utility module
 
 use super::{
-    execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent, Withdrawal,
+    execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent, PrecompileEvent,
+    PrecompileEvents, Withdrawal,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
@@ -49,7 +50,7 @@ pub struct Block {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// coinbase
     pub coinbase: Address,
@@ -80,6 +81,8 @@ pub struct Block {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
+    /// IO to/from the precompiled contract calls.
+    pub precompile_events: PrecompileEvents,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
@@ -132,6 +135,7 @@ impl Block {
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),
+            precompile_events: PrecompileEvents { events: Vec::new() },
             eth_block: eth_block.clone(),
         })
     }
@@ -177,5 +181,10 @@ impl Block {
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
+    }
+
+    /// Push a precompile event to the block.
+    pub fn add_precompile_event(&mut self, event: PrecompileEvent) {
+        self.precompile_events.events.push(event);
     }
 }

@@ -4,7 +4,7 @@ use crate::{
     circuit_tools::cached_region::CachedRegion,
     evm_circuit::util::rlc,
     table::LookupTable,
-    util::{query_expression, word::Word, Expr},
+    util::{query_expression, word::WordLoHi, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -103,11 +103,11 @@ impl<F: Field> Expr<F> for &Cell<F> {
     }
 }
 
-pub(crate) type WordCell<F> = Word<Cell<F>>;
+pub(crate) type WordLoHiCell<F> = WordLoHi<Cell<F>>;
 
-impl<F: Field> WordCell<F> {
-    pub fn expr(&self) -> Word<Expression<F>> {
-        Word::new([self.lo().expr(), self.hi().expr()])
+impl<F: Field> WordLoHiCell<F> {
+    pub fn expr(&self) -> WordLoHi<Expression<F>> {
+        WordLoHi::new([self.lo().expr(), self.hi().expr()])
     }
 }
 
@@ -239,7 +239,7 @@ impl<F: Field, C: CellType> Eq for CellColumn<F, C> {}
 
 impl<F: Field, C: CellType> PartialOrd for CellColumn<F, C> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.height.partial_cmp(&other.height)
+        Some(self.cmp(other))
     }
 }
 

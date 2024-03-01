@@ -1,10 +1,10 @@
 //! Define generic Word type with utility functions
-// Naming Convesion
+// Naming Conversion
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
 use bus_mapping::state_db::CodeDB;
-use eth_types::{Field, ToLittleEndian, H160, H256};
+use eth_types::{Field, OpsIdentity, ToLittleEndian, H160, H256};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
@@ -35,7 +35,7 @@ pub(crate) type Word4<T> = WordLimbs<T, 4>;
 
 pub(crate) type Word32<T> = WordLimbs<T, 32>;
 
-pub(crate) type WordCell<F> = Word<Cell<F>>;
+pub(crate) type WordLoHiCell<F> = WordLoHi<Cell<F>>;
 
 pub(crate) type Word32Cell<F> = Word32<Cell<F>>;
 
@@ -79,7 +79,7 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
 /// Get the word expression
 pub trait WordExpr<F> {
     /// Get the word expression
-    fn to_word(&self) -> Word<Expression<F>>;
+    fn to_word(&self) -> WordLoHi<Expression<F>>;
 }
 
 impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
@@ -186,8 +186,8 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
 }
 
 impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word(self.word_expr().to_word_n())
+    fn to_word(&self) -> WordLoHi<Expression<F>> {
+        WordLoHi(self.word_expr().to_word_n())
     }
 }
 
@@ -200,9 +200,9 @@ impl<F: Field, const N: usize> WordLimbs<F, N> {
 
 /// `Word`, special alias for Word2.
 #[derive(Clone, Debug, Copy, Default)]
-pub struct Word<T>(Word2<T>);
+pub struct WordLoHi<T>(Word2<T>);
 
-impl<T: Clone> Word<T> {
+impl<T: Clone> WordLoHi<T> {
     /// Construct the word from 2 limbs
     pub fn new(limbs: [T; 2]) -> Self {
         Self(WordLimbs::<T, 2>::new(limbs))
@@ -230,19 +230,19 @@ impl<T: Clone> Word<T> {
         (lo, hi)
     }
 
-    /// Wrap `Word` into `Word<Value>`
-    pub fn into_value(self) -> Word<Value<T>> {
+    /// Wrap `Word` into `WordLoHi<Value>`
+    pub fn into_value(self) -> WordLoHi<Value<T>> {
         let [lo, hi] = self.0.limbs;
-        Word::new([Value::known(lo), Value::known(hi)])
+        WordLoHi::new([Value::known(lo), Value::known(hi)])
     }
 
     /// Map the word to other types
-    pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> Word<T2> {
-        Word(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
+    pub fn map<T2: Clone>(&self, mut func: impl FnMut(T) -> T2) -> WordLoHi<T2> {
+        WordLoHi(WordLimbs::<T2, 2>::new([func(self.lo()), func(self.hi())]))
     }
 }
 
-impl<T> std::ops::Deref for Word<T> {
+impl<T> std::ops::Deref for WordLoHi<T> {
     type Target = WordLimbs<T, 2>;
 
     fn deref(&self) -> &Self::Target {
@@ -250,24 +250,35 @@ impl<T> std::ops::Deref for Word<T> {
     }
 }
 
-impl<T: Clone + PartialEq> PartialEq for Word<T> {
+impl<T: Clone + PartialEq> PartialEq for WordLoHi<T> {
     fn eq(&self, other: &Self) -> bool {
         self.lo() == other.lo() && self.hi() == other.hi()
     }
 }
 
-impl<F: Field> From<eth_types::Word> for Word<F> {
+impl<F: Field> From<eth_types::Word> for WordLoHi<F> {
     /// Construct the word from u256
     fn from(value: eth_types::Word) -> Self {
         let bytes = value.to_le_bytes();
-        Word::new([
+        WordLoHi::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
     }
 }
 
-impl<F: Field> From<H256> for Word<F> {
+impl<T: Clone + OpsIdentity<Output = T>> OpsIdentity for WordLoHi<T> {
+    /// output type
+    type Output = WordLoHi<T>;
+    fn zero() -> Self::Output {
+        WordLoHi::new([T::zero(), T::zero()])
+    }
+    fn one() -> Self::Output {
+        WordLoHi::new([T::one(), T::zero()])
+    }
+}
+
+impl<F: Field> From<H256> for WordLoHi<F> {
     /// Construct the word from H256
     fn from(h: H256) -> Self {
         let le_bytes = {
@@ -275,55 +286,55 @@ impl<F: Field> From<H256> for Word<F> {
             b.reverse();
             b
         };
-        Word::new([
+        WordLoHi::new([
             from_bytes::value(&le_bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&le_bytes[N_BYTES_HALF_WORD..]),
         ])
     }
 }
 
-impl<F: Field> From<u64> for Word<F> {
+impl<F: Field> From<u64> for WordLoHi<F> {
     /// Construct the word from u64
     fn from(value: u64) -> Self {
         let bytes = value.to_le_bytes();
-        Word::new([from_bytes::value(&bytes), F::from(0)])
+        WordLoHi::new([from_bytes::value(&bytes), F::from(0)])
     }
 }
 
-impl<F: Field> From<u8> for Word<F> {
+impl<F: Field> From<u8> for WordLoHi<F> {
     /// Construct the word from u8
     fn from(value: u8) -> Self {
-        Word::new([F::from(value as u64), F::from(0)])
+        WordLoHi::new([F::from(value as u64), F::from(0)])
     }
 }
 
-impl<F: Field> From<bool> for Word<F> {
+impl<F: Field> From<bool> for WordLoHi<F> {
     fn from(value: bool) -> Self {
-        Word::new([F::from(value as u64), F::from(0)])
+        WordLoHi::new([F::from(value as u64), F::from(0)])
     }
 }
 
-impl<F: Field> From<H160> for Word<F> {
+impl<F: Field> From<H160> for WordLoHi<F> {
     /// Construct the word from h160
     fn from(value: H160) -> Self {
         let mut bytes = *value.as_fixed_bytes();
         bytes.reverse();
-        Word::new([
+        WordLoHi::new([
             from_bytes::value(&bytes[..N_BYTES_HALF_WORD]),
             from_bytes::value(&bytes[N_BYTES_HALF_WORD..]),
         ])
     }
 }
 
-impl<F: Field> Word<Value<F>> {
+impl<F: Field> WordLoHi<Value<F>> {
     /// Assign advice
     pub fn assign_advice<A, AR>(
         &self,
         region: &mut Region<'_, F>,
         annotation: A,
-        column: Word<Column<Advice>>,
+        column: WordLoHi<Column<Advice>>,
         offset: usize,
-    ) -> Result<Word<AssignedCell<F, F>>, Error>
+    ) -> Result<WordLoHi<AssignedCell<F, F>>, Error>
     where
         A: Fn() -> AR,
         AR: Into<String>,
@@ -332,38 +343,28 @@ impl<F: Field> Word<Value<F>> {
         let lo = region.assign_advice(|| &annotation, column.lo(), offset, || self.lo())?;
         let hi = region.assign_advice(|| &annotation, column.hi(), offset, || self.hi())?;
 
-        Ok(Word::new([lo, hi]))
+        Ok(WordLoHi::new([lo, hi]))
     }
 }
 
-impl Word<Column<Advice>> {
+impl WordLoHi<Column<Advice>> {
     /// Query advice of Word of columns advice
     pub fn query_advice<F: Field>(
         &self,
         meta: &mut VirtualCells<F>,
         at: Rotation,
-    ) -> Word<Expression<F>> {
+    ) -> WordLoHi<Expression<F>> {
         self.0.query_advice(meta, at).to_word()
     }
 }
 
-impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for Word<T> {
-    fn to_word(&self) -> Word<Expression<F>> {
+impl<F: Field, T: Expr<F> + Clone> WordExpr<F> for WordLoHi<T> {
+    fn to_word(&self) -> WordLoHi<Expression<F>> {
         self.map(|limb| limb.expr())
     }
 }
 
-impl<F: Field> Word<F> {
-    /// zero word
-    pub fn zero_f() -> Self {
-        Self::new([F::ZERO, F::ZERO])
-    }
-
-    /// one word
-    pub fn one_f() -> Self {
-        Self::new([F::ONE, F::ZERO])
-    }
-
+impl<F: Field> WordLoHi<F> {
     /// Convert address (h160) to single field element.
     /// This method is Address specific
     pub fn compress_f(&self) -> F {
@@ -371,31 +372,22 @@ impl<F: Field> Word<F> {
     }
 }
 
-impl<F: Field> Word<Expression<F>> {
+impl<F: Field> WordLoHi<Expression<F>> {
     /// create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
     pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self::new([lo, 0.expr()])
-    }
-    /// zero word
-    pub fn zero() -> Self {
-        Self::new([0.expr(), 0.expr()])
-    }
-
-    /// one word
-    pub fn one() -> Self {
-        Self::new([1.expr(), 0.expr()])
     }
 
     /// select based on selector. Here assume selector is 1/0 therefore no overflow check
     pub fn select<T: Expr<F> + Clone>(
         selector: T,
-        when_true: Word<T>,
-        when_false: Word<T>,
-    ) -> Word<Expression<F>> {
+        when_true: WordLoHi<T>,
+        when_false: WordLoHi<T>,
+    ) -> WordLoHi<Expression<F>> {
         let (true_lo, true_hi) = when_true.to_lo_hi();
 
         let (false_lo, false_hi) = when_false.to_lo_hi();
-        Word::new([
+        WordLoHi::new([
             selector.expr() * true_lo.expr() + (1.expr() - selector.expr()) * false_lo.expr(),
             selector.expr() * true_hi.expr() + (1.expr() - selector.expr()) * false_hi.expr(),
         ])
@@ -403,22 +395,22 @@ impl<F: Field> Word<Expression<F>> {
 
     /// Assume selector is 1/0 therefore no overflow check
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([self.lo() * selector.clone(), self.hi() * selector])
+        WordLoHi::new([self.lo() * selector.clone(), self.hi() * selector])
     }
 
     /// No overflow check on lo/hi limbs
     pub fn add_unchecked(self, rhs: Self) -> Self {
-        Word::new([self.lo() + rhs.lo(), self.hi() + rhs.hi()])
+        WordLoHi::new([self.lo() + rhs.lo(), self.hi() + rhs.hi()])
     }
 
     /// No underflow check on lo/hi limbs
     pub fn sub_unchecked(self, rhs: Self) -> Self {
-        Word::new([self.lo() - rhs.lo(), self.hi() - rhs.hi()])
+        WordLoHi::new([self.lo() - rhs.lo(), self.hi() - rhs.hi()])
     }
 
     /// No overflow check on lo/hi limbs
     pub fn mul_unchecked(self, rhs: Self) -> Self {
-        Word::new([self.lo() * rhs.lo(), self.hi() * rhs.hi()])
+        WordLoHi::new([self.lo() * rhs.lo(), self.hi() * rhs.hi()])
     }
 
     /// Convert address (h160) to single expression.
@@ -462,14 +454,14 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
 }
 
 impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
-    fn to_word(&self) -> Word<Expression<F>> {
-        Word(self.to_word_n())
+    fn to_word(&self) -> WordLoHi<Expression<F>> {
+        WordLoHi(self.to_word_n())
     }
 }
 
-/// Return the hash of the empty code as a `Word<Value<F>>` in little-endian.
-pub fn empty_code_hash_word_value<F: Field>() -> Word<Value<F>> {
-    Word::from(CodeDB::empty_code_hash()).into_value()
+/// Return the hash of the empty code as a `WordLoHi<Value<F>>` in little-endian.
+pub fn empty_code_hash_word_value<F: Field>() -> WordLoHi<Value<F>> {
+    WordLoHi::from(CodeDB::empty_code_hash()).into_value()
 }
 
 // TODO unittest

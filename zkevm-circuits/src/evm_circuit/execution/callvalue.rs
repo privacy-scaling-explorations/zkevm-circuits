@@ -11,7 +11,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -24,7 +24,7 @@ pub(crate) struct CallValueGadget<F> {
     same_context: SameContextGadget<F>,
     // Value in rw_table->stack_op and call_context->call_value are both RLC
     // encoded, so no need to decode.
-    call_value: WordCell<F>,
+    call_value: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {

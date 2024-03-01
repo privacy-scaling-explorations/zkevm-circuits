@@ -11,7 +11,7 @@ use crate::{
     },
     table::BlockContextFieldTag,
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -22,7 +22,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ChainIdGadget<F> {
     same_context: SameContextGadget<F>,
-    chain_id: WordCell<F>,
+    chain_id: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {

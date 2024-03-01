@@ -16,7 +16,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, Word32Cell, WordCell, WordExpr},
+        word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -33,7 +33,7 @@ pub(crate) struct SstoreGadget<F> {
     tx_id: Cell<F>,
     is_static: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    callee_address: WordCell<F>,
+    callee_address: WordLoHiCell<F>,
     key: Word32Cell<F>,
     value: Word32Cell<F>,
     value_prev: Word32Cell<F>,
@@ -88,14 +88,14 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
-            Word::from_lo_unchecked(is_warm.expr()),
+            WordLoHi::from_lo_unchecked(is_warm.expr()),
         );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
-            Word::from_lo_unchecked(true.expr()),
-            Word::from_lo_unchecked(is_warm.expr()),
+            WordLoHi::from_lo_unchecked(true.expr()),
+            WordLoHi::from_lo_unchecked(is_warm.expr()),
             Some(&mut reversion_info),
         );
 
@@ -129,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
         cb.tx_refund_write(
             tx_id.expr(),
-            Word::from_lo_unchecked(tx_refund.expr()),
+            WordLoHi::from_lo_unchecked(tx_refund.expr()),
             tx_refund_prev.to_word(),
             Some(&mut reversion_info),
         );
@@ -232,12 +232,13 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 pub(crate) struct SstoreTxRefundGadget<F> {
     tx_refund_old: U64Cell<F>,
     tx_refund_new: Expression<F>,
-    value_prev_is_zero_gadget: IsZeroWordGadget<F, Word<Expression<F>>>,
-    value_is_zero_gadget: IsZeroWordGadget<F, Word<Expression<F>>>,
-    original_is_zero_gadget: IsZeroWordGadget<F, Word<Expression<F>>>,
-    original_eq_value_gadget: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
-    prev_eq_value_gadget: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
-    original_eq_prev_gadget: IsEqualWordGadget<F, Word<Expression<F>>, Word<Expression<F>>>,
+    value_prev_is_zero_gadget: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
+    value_is_zero_gadget: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
+    original_is_zero_gadget: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
+    original_eq_value_gadget:
+        IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
+    prev_eq_value_gadget: IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
+    original_eq_prev_gadget: IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -248,16 +249,14 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value_prev: T,
         original_value: T,
     ) -> Self {
-        let value_prev_is_zero_gadget = IsZeroWordGadget::construct(cb, &value_prev.to_word());
-        let value_is_zero_gadget = IsZeroWordGadget::construct(cb, &value.to_word());
-        let original_is_zero_gadget = IsZeroWordGadget::construct(cb, &original_value.to_word());
+        let value_prev_is_zero_gadget = cb.is_zero_word(&value_prev.to_word());
+        let value_is_zero_gadget = cb.is_zero_word(&value.to_word());
+        let original_is_zero_gadget = cb.is_zero_word(&original_value.to_word());
 
-        let original_eq_value_gadget =
-            IsEqualWordGadget::construct(cb, &original_value.to_word(), &value.to_word());
-        let prev_eq_value_gadget =
-            IsEqualWordGadget::construct(cb, &value_prev.to_word(), &value.to_word());
+        let original_eq_value_gadget = cb.is_eq_word(&original_value.to_word(), &value.to_word());
+        let prev_eq_value_gadget = cb.is_eq_word(&value_prev.to_word(), &value.to_word());
         let original_eq_prev_gadget =
-            IsEqualWordGadget::construct(cb, &original_value.to_word(), &value_prev.to_word());
+            cb.is_eq_word(&original_value.to_word(), &value_prev.to_word());
 
         let value_prev_is_zero = value_prev_is_zero_gadget.expr();
         let value_is_zero = value_is_zero_gadget.expr();
@@ -268,20 +267,20 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let original_eq_prev = original_eq_prev_gadget.expr();
 
         // (value_prev != value) && (original_value != value) && (value ==
-        // Word::from(0))
+        // WordLoHi::from(0))
         let delete_slot =
             not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
         // (value_prev != value) && (original_value == value) && (original_value !=
-        // Word::from(0))
+        // WordLoHi::from(0))
         let reset_existing = not::expr(prev_eq_value.clone())
             * original_eq_value.clone()
             * not::expr(original_is_zero.clone());
         // (value_prev != value) && (original_value == value) && (original_value ==
-        // Word::from(0))
+        // WordLoHi::from(0))
         let reset_inexistent =
             not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
         // (value_prev != value) && (original_value != value_prev) && (value_prev ==
-        // Word::from(0))
+        // WordLoHi::from(0))
         let recreate_slot =
             not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
 
@@ -322,28 +321,28 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         self.tx_refund_old
             .assign(region, offset, Some(tx_refund_old.to_le_bytes()))?;
         self.value_prev_is_zero_gadget
-            .assign(region, offset, Word::from(value_prev))?;
+            .assign(region, offset, WordLoHi::from(value_prev))?;
         self.value_is_zero_gadget
-            .assign(region, offset, Word::from(value))?;
+            .assign(region, offset, WordLoHi::from(value))?;
         self.original_is_zero_gadget
-            .assign(region, offset, Word::from(original_value))?;
+            .assign(region, offset, WordLoHi::from(original_value))?;
         self.original_eq_value_gadget.assign(
             region,
             offset,
-            Word::from(original_value),
-            Word::from(value),
+            WordLoHi::from(original_value),
+            WordLoHi::from(value),
         )?;
         self.prev_eq_value_gadget.assign(
             region,
             offset,
-            Word::from(value_prev),
-            Word::from(value),
+            WordLoHi::from(value_prev),
+            WordLoHi::from(value),
         )?;
         self.original_eq_prev_gadget.assign(
             region,
             offset,
-            Word::from(original_value),
-            Word::from(value_prev),
+            WordLoHi::from(original_value),
+            WordLoHi::from(value_prev),
         )?;
         debug_assert_eq!(
             calc_expected_tx_refund(tx_refund_old, value, value_prev, original_value),

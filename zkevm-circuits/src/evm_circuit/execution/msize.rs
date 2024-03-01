@@ -13,7 +13,7 @@ use crate::{
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    util::{word::Word, Expr},
+    util::{word::WordLoHi, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         );
 
         // Push the value on the stack
-        cb.stack_push(Word::from_lo_unchecked(value.expr()));
+        cb.stack_push(WordLoHi::from_lo_unchecked(value.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {

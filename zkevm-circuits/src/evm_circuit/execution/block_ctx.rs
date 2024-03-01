@@ -10,7 +10,7 @@ use crate::{
     },
     table::BlockContextFieldTag,
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -23,7 +23,7 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxGadget<F> {
     same_context: SameContextGadget<F>,
-    value: WordCell<F>,
+    value: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BlockCtxGadget<F> {

@@ -148,12 +148,12 @@ mod tests {
     fn test_lt_expect() {
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
             true,
         );
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0)],
             false,
         );
     }
@@ -162,7 +162,7 @@ mod tests {
     fn test_lt_just_in_range() {
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
+            [Word::from(1), Word::from((1u64 << (N * 8)) - 1)],
             true,
         );
     }
@@ -171,7 +171,7 @@ mod tests {
     fn test_lt_out_of_range() {
         try_test!(
             LtGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(2 << (N * 8))],
+            [Word::from(1), Word::from(2 << (N * 8))],
             false,
         );
     }

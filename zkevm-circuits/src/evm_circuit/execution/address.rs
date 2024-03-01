@@ -11,7 +11,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{WordCell, WordExpr},
+        word::{WordExpr, WordLoHiCell},
         Expr,
     },
 };
@@ -22,7 +22,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
     same_context: SameContextGadget<F>,
-    address: WordCell<F>,
+    address: WordLoHiCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {

@@ -16,12 +16,12 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordExpr},
+        word::{WordExpr, WordLoHi},
         Expr,
     },
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, OpsIdentity};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         );
 
         // Call ends with STOP must be successful
-        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::one());
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, WordLoHi::one());
 
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(

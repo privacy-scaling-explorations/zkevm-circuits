@@ -7,7 +7,7 @@ use std::{iter, ops::Deref};
 use eth_types::{geth_types::Transaction, Address, ToBigEndian, Word, H256};
 use itertools::Itertools;
 
-use crate::{util::word, witness::Block};
+use crate::{util::word::WordLoHi, witness::Block};
 
 pub(super) const ZERO_BYTE_GAS_COST: u64 = 4;
 pub(super) const NONZERO_BYTE_GAS_COST: u64 = 16;
@@ -289,11 +289,11 @@ impl PublicData {
         max_txs: usize,
         max_withdrawals: usize,
         max_calldata: usize,
-    ) -> word::Word<F> {
+    ) -> WordLoHi<F> {
         let mut keccak = Keccak::default();
         keccak.update(&self.get_pi_bytes(max_txs, max_withdrawals, max_calldata));
         let digest = keccak.digest();
-        word::Word::from(Word::from_big_endian(&digest))
+        WordLoHi::from(Word::from_big_endian(&digest))
     }
 }
 

@@ -17,7 +17,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::{
-        word::{Word, WordCell, WordExpr},
+        word::{WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -34,14 +34,14 @@ pub(crate) struct ErrorOOGSloadSstoreGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     is_static: Cell<F>,
-    callee_address: WordCell<F>,
-    key: WordCell<F>,
-    value: WordCell<F>,
-    value_prev: WordCell<F>,
-    original_value: WordCell<F>,
+    callee_address: WordLoHiCell<F>,
+    key: WordLoHiCell<F>,
+    value: WordLoHiCell<F>,
+    value_prev: WordLoHiCell<F>,
+    original_value: WordLoHiCell<F>,
     is_warm: Cell<F>,
     is_sstore: PairSelectGadget<F>,
-    sstore_gas_cost: SstoreGasGadget<F, WordCell<F>>,
+    sstore_gas_cost: SstoreGasGadget<F, WordLoHiCell<F>>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     // Constrain for SSTORE reentrancy sentry.
     insufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
@@ -81,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             tx_id.expr(),
             callee_address.to_word(),
             key.to_word(),
-            Word::from_lo_unchecked(is_warm.expr()),
+            WordLoHi::from_lo_unchecked(is_warm.expr()),
         );
 
         let sload_gas_cost = SloadGasGadget::construct(cb, is_warm.expr());

@@ -33,7 +33,7 @@ use crate::{
     },
     table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable, WdTable},
     tx_circuit::TX_LEN,
-    util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
+    util::{word::WordLoHi, Challenges, SubCircuit, SubCircuitConfig},
     witness::{self, Chunk},
 };
 use gadgets::{
@@ -402,8 +402,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let default_calldata_row_constraint4 = tx_id_is_zero_config.expr() * gas_cost.expr();
 
             // if tx_id != 0 then
-            //    1. tx_id_next == tx_id: idx_next == idx + 1, gas_cost_next == gas_cost +
-            //       gas_next, is_final == false;
+            //    1. tx_id_next == tx_id: idx_next == idx + 1, gas_cost_next == gas_cost + gas_next,
+            //       is_final == false;
             //    2. tx_id_next == tx_id + 1 + x (where x is in [0, 2^16)): idx_next == 0,
             //       gas_cost_next == gas_next, is_final == true;
             //    3. tx_id_next == 0: is_final == true, idx_next == 0, gas_cost_next == 0;
@@ -617,7 +617,7 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || Value::known(F::ZERO),
         )?;
-        Word::default().into_value().assign_advice(
+        WordLoHi::default().into_value().assign_advice(
             region,
             || "tx_value",
             self.tx_table.value,
@@ -698,7 +698,7 @@ impl<F: Field> PiCircuitConfig<F> {
             F::ZERO
         };
         let tag = F::from(tag as u64);
-        let tx_value = Word::new([
+        let tx_value = WordLoHi::new([
             from_bytes::value(
                 &tx_value_bytes_le[..min(N_BYTES_HALF_WORD, tx_value_bytes_le.len())],
             ),
@@ -811,7 +811,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::ZERO);
         let tag = F::from(TxFieldTag::CallData as u64);
         let index = F::from(index as u64);
-        let tx_value: Word<Value<F>> = Word::from(tx_value_byte).into_value();
+        let tx_value: WordLoHi<Value<F>> = WordLoHi::from(tx_value_byte).into_value();
         let tx_value_inv = tx_value.map(|t| t.map(|x| x.invert().unwrap_or(F::ZERO)));
         let is_final = if is_final { F::ONE } else { F::ZERO };
 
@@ -910,7 +910,7 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || Value::known(F::from(wd.validator_id)),
         )?;
-        let address_assigned_cell = Word::<F>::from(wd.address).into_value().assign_advice(
+        let address_assigned_cell = WordLoHi::<F>::from(wd.address).into_value().assign_advice(
             region,
             || "address",
             self.wd_table.address,
@@ -1095,7 +1095,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         Ok((
             rpi_bytes_keccakrlc_cells[0].clone(),
-            Word::new(
+            WordLoHi::new(
                 (0..2) // padding rpi_value_lc_cells to 2 limbs if less then 2
                     .map(|i| rpi_value_lc_cells.get(i).unwrap_or(&zero_cell).clone())
                     .collect_vec()
@@ -1123,7 +1123,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut block_copy_cells = vec![];
 
         // coinbase
-        let block_value = Word::from(block_values.coinbase)
+        let block_value = WordLoHi::from(block_values.coinbase)
             .into_value()
             .assign_advice(
                 region,
@@ -1150,7 +1150,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // gas_limit
-        let block_value = Word::from(block_values.gas_limit)
+        let block_value = WordLoHi::from(block_values.gas_limit)
             .into_value()
             .assign_advice(
                 region,
@@ -1171,12 +1171,14 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // number
-        let block_value = Word::from(block_values.number).into_value().assign_advice(
-            region,
-            || "number",
-            self.block_table.value,
-            *block_table_offset,
-        )?;
+        let block_value = WordLoHi::from(block_values.number)
+            .into_value()
+            .assign_advice(
+                region,
+                || "number",
+                self.block_table.value,
+                *block_table_offset,
+            )?;
         let (_, word) = self.assign_raw_bytes(
             region,
             &block_values.number.to_le_bytes(),
@@ -1190,7 +1192,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // timestamp
-        let block_value = Word::from(block_values.timestamp)
+        let block_value = WordLoHi::from(block_values.timestamp)
             .into_value()
             .assign_advice(
                 region,
@@ -1211,7 +1213,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // difficulty
-        let block_value = Word::from(block_values.difficulty)
+        let block_value = WordLoHi::from(block_values.difficulty)
             .into_value()
             .assign_advice(
                 region,
@@ -1232,7 +1234,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // base_fee
-        let block_value = Word::from(block_values.base_fee)
+        let block_value = WordLoHi::from(block_values.base_fee)
             .into_value()
             .assign_advice(
                 region,
@@ -1253,7 +1255,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // chain_id
-        let block_value = Word::from(block_values.chain_id)
+        let block_value = WordLoHi::from(block_values.chain_id)
             .into_value()
             .assign_advice(
                 region,
@@ -1274,7 +1276,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         // withdrawals_root
-        let block_value = Word::from(block_values.withdrawals_root)
+        let block_value = WordLoHi::from(block_values.withdrawals_root)
             .into_value()
             .assign_advice(
                 region,
@@ -1295,7 +1297,7 @@ impl<F: Field> PiCircuitConfig<F> {
         *block_table_offset += 1;
 
         for prev_hash in block_values.history_hashes {
-            let block_value = Word::from(prev_hash).into_value().assign_advice(
+            let block_value = WordLoHi::from(prev_hash).into_value().assign_advice(
                 region,
                 || "prev_hash",
                 self.block_table.value,
@@ -1402,8 +1404,8 @@ impl<F: Field> PiCircuitConfig<F> {
     fn assign_rpi_digest_word(
         &self,
         region: &mut Region<'_, F>,
-        digest_word: Word<F>,
-    ) -> Result<Word<AssignedCell<F, F>>, Error> {
+        digest_word: WordLoHi<F>,
+    ) -> Result<WordLoHi<AssignedCell<F, F>>, Error> {
         let lo_assigned_cell = region.assign_advice(
             || "rpi_digest_bytes_limbs_lo",
             self.rpi_digest_bytes_limbs,
@@ -1416,7 +1418,7 @@ impl<F: Field> PiCircuitConfig<F> {
             1,
             || digest_word.into_value().hi(),
         )?;
-        Ok(Word::new([lo_assigned_cell, hi_assigned_cell]))
+        Ok(WordLoHi::new([lo_assigned_cell, hi_assigned_cell]))
     }
 }
 
@@ -1562,7 +1564,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let mut block_table_offset = 0;
 
                 // assign empty row in block table
-                let zero_word = Word::default().into_value().assign_advice(
+                let zero_word = WordLoHi::default().into_value().assign_advice(
                     &mut region,
                     || "zero",
                     config.block_table.value,
@@ -1619,7 +1621,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 // Add empty row
                 // assign first tx_value empty row, and to obtain zero cell via hi() part.
                 // we use hi() part to copy-constrains other tx_table value `hi` cells.
-                let zero_cell = Word::default()
+                let zero_cell = WordLoHi::default()
                     .into_value()
                     .assign_advice(&mut region, || "tx_value", config.tx_table.value, 0)?
                     .hi();

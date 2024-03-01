@@ -10,7 +10,7 @@ use crate::{
         util::{from_bytes, not, rlc},
     },
     table::KeccakTable,
-    util::{word::Word, Challenges, Expr},
+    util::{word::WordLoHi, Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
@@ -105,7 +105,7 @@ impl<F: Field> Default for SignVerifyChip<F> {
             aux_generator: Secp256k1Affine::default(),
             window_size: 4,
             max_verif: 0,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
@@ -292,8 +292,8 @@ pub(crate) struct AssignedECDSA<F: Field> {
 
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
-    pub(crate) address: Word<AssignedValue<F>>,
-    pub(crate) msg_hash: Word<AssignedValue<F>>,
+    pub(crate) address: WordLoHi<AssignedValue<F>>,
+    pub(crate) msg_hash: WordLoHi<AssignedValue<F>>,
 }
 
 // Return an array of bytes that corresponds to the little endian representation
@@ -350,9 +350,10 @@ impl<F: Field> SignVerifyChip<F> {
         let SignData {
             signature,
             pk,
+            msg: _,
             msg_hash,
         } = sign_data;
-        let (sig_r, sig_s) = signature;
+        let (sig_r, sig_s, _) = signature;
 
         let ChipsRef {
             main_gate: _,
@@ -389,9 +390,9 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 4. Verify the ECDSA signature
         ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
 
-        // TODO: Update once halo2wrong suports the following methods:
+        // TODO: Update once halo2wrong supports the following methods:
         // - `IntegerChip::assign_integer_from_bytes_le`
-        // - `GeneralEccChip::assing_point_from_bytes_le`
+        // - `GeneralEccChip::assign_point_from_bytes_le`
 
         Ok(AssignedECDSA {
             pk_x_le,
@@ -451,7 +452,7 @@ impl<F: Field> SignVerifyChip<F> {
         ctx: &mut RegionCtx<F>,
         is_address_zero: &AssignedCell<F, F>,
         pk_rlc: &AssignedCell<F, F>,
-        pk_hash: &Word<AssignedCell<F, F>>,
+        pk_hash: &WordLoHi<AssignedCell<F, F>>,
     ) -> Result<(), Error> {
         let copy = |ctx: &mut RegionCtx<F>, name, column, assigned: &AssignedCell<F, F>| {
             let copied = ctx.assign_advice(|| name, column, assigned.value().copied())?;
@@ -559,8 +560,8 @@ impl<F: Field> SignVerifyChip<F> {
             )?;
 
             (
-                Word::new([address_cell_lo, address_cell_hi]),
-                Word::new([pk_hash_cell_lo, pk_hash_cell_hi]),
+                WordLoHi::new([address_cell_lo, address_cell_hi]),
+                WordLoHi::new([pk_hash_cell_lo, pk_hash_cell_hi]),
             )
         };
 
@@ -594,7 +595,7 @@ impl<F: Field> SignVerifyChip<F> {
                 |_, _| Ok(()),
             )?;
 
-            Word::new([msg_hash_cell_lo, msg_hash_cell_hi])
+            WordLoHi::new([msg_hash_cell_lo, msg_hash_cell_hi])
         };
 
         let pk_rlc = {
@@ -717,7 +718,7 @@ mod sign_verify_tests {
     use super::*;
     use crate::util::Challenges;
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
-    use eth_types::sign_types::sign;
+    use eth_types::{sign_types::sign, Bytes};
     use halo2_proofs::{
         arithmetic::Field as HaloField,
         circuit::SimpleFloorPlanner,
@@ -841,7 +842,7 @@ mod sign_verify_tests {
         rng: impl RngCore,
         sk: secp256k1::Fq,
         msg_hash: secp256k1::Fq,
-    ) -> (secp256k1::Fq, secp256k1::Fq) {
+    ) -> (secp256k1::Fq, secp256k1::Fq, u8) {
         let randomness = secp256k1::Fq::random(rng);
         sign(randomness, sk, msg_hash)
     }
@@ -868,6 +869,7 @@ mod sign_verify_tests {
                 signature: sig,
                 pk,
                 msg_hash,
+                msg: Bytes::new(),
             });
         }
 

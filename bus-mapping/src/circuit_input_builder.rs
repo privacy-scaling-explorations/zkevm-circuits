@@ -36,6 +36,7 @@ use eth_types::{
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+    PrecompileEvent, PrecompileEvents, N_BYTES_PER_PAIR, N_PAIRING_PER_OP,
 };
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
@@ -93,7 +94,7 @@ pub struct FixedCParams {
     ///
     pub total_chunks: usize,
     /// Maximum number of rw operations in the state circuit (RwTable length /
-    /// nummber of rows). This must be at least the number of rw operations
+    /// number of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
     pub max_rws: usize,
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
@@ -122,6 +123,11 @@ pub struct FixedCParams {
     /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
+    /// This number indicate what 100% usage means, for example if we can support up to 2
+    /// ecPairing inside circuit, and max_vertical_circuit_rows is set to 1_000_000,
+    /// then if there is 1 ecPairing in the input, we will return 500_000 as the "row usage"
+    /// for the ec circuit.
+    pub max_vertical_circuit_rows: usize,
 }
 
 /// Unset Circuits Parameters
@@ -187,6 +193,7 @@ impl Default for FixedCParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_vertical_circuit_rows: 0,
         }
     }
 }
@@ -225,7 +232,7 @@ pub struct CircuitInputBuilder<C: CircuitsParams> {
     pub block_ctx: BlockContext,
     /// Chunk Context
     pub chunk_ctx: ChunkContext,
-    /// Circuit Params before chunking
+    /// Circuits Setup Parameters before chunking
     pub circuits_params: C,
     /// Feature config
     pub feature_config: FeatureConfig,
@@ -922,6 +929,7 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             max_bytecode,
             max_evm_rows,
             max_keccak_rows,
+            max_vertical_circuit_rows: 0,
         }
     }
 }
@@ -1019,7 +1027,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
 }
 
 /// Generate the keccak inputs required by the SignVerify Chip from the
-/// signature datas.
+/// signature data.
 pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     let mut inputs = Vec::new();
     for sig in sigs {

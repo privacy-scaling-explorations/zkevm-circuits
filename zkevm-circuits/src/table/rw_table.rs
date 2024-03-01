@@ -36,13 +36,13 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key: word::Word<Column<Advice>>,
+    pub storage_key: WordLoHi<Column<Advice>>,
     /// Value
-    pub value: word::Word<Column<Advice>>,
+    pub value: WordLoHi<Column<Advice>>,
     /// Value Previous
-    pub value_prev: word::Word<Column<Advice>>,
+    pub value_prev: WordLoHi<Column<Advice>>,
     /// InitVal (Committed Value)
-    pub init_val: word::Word<Column<Advice>>,
+    pub init_val: WordLoHi<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -95,19 +95,19 @@ impl RwTable {
             id: meta.unblinded_advice_column(),
             address: meta.unblinded_advice_column(),
             field_tag: meta.unblinded_advice_column(),
-            storage_key: word::Word::new([
+            storage_key: WordLoHi::new([
                 meta.unblinded_advice_column(),
                 meta.unblinded_advice_column(),
             ]),
-            value: word::Word::new([
+            value: WordLoHi::new([
                 meta.unblinded_advice_column(),
                 meta.unblinded_advice_column(),
             ]),
-            value_prev: word::Word::new([
+            value_prev: WordLoHi::new([
                 meta.unblinded_advice_column(),
                 meta.unblinded_advice_column(),
             ]),
-            init_val: word::Word::new([
+            init_val: WordLoHi::new([
                 meta.unblinded_advice_column(),
                 meta.unblinded_advice_column(),
             ]),
@@ -460,12 +460,12 @@ fn batch_invert_assigned<F: Field + WithSmallOrderMulGroup<3>>(
 
     assigned
         .iter()
-        .zip(assigned_denominators.into_iter())
+        .zip(assigned_denominators)
         .map(|(poly, inv_denoms)| {
             let inv_denoms = inv_denoms.into_iter().map(|d| d.unwrap_or(F::ONE));
             domain.lagrange_from_vec(
                 poly.iter()
-                    .zip(inv_denoms.into_iter())
+                    .zip(inv_denoms)
                     .map(|(a, inv_den)| a.numerator() * inv_den)
                     .collect(),
             )

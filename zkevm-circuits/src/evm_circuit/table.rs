@@ -3,7 +3,7 @@
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
-    util::word::Word,
+    util::word::WordLoHi,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
@@ -47,7 +47,7 @@ pub enum FixedTableTag {
     Pow2,
     /// Lookup constant gas cost for opcodes
     ConstantGasCost,
-    /// Preocmpile information
+    /// Precompile information
     PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
@@ -141,7 +141,7 @@ impl FixedTableTag {
             ),
             Self::PrecompileInfo => Box::new(
                 vec![
-                    PrecompileCalls::ECRecover,
+                    PrecompileCalls::Ecrecover,
                     PrecompileCalls::Sha256,
                     PrecompileCalls::Ripemd160,
                     PrecompileCalls::Identity,
@@ -191,6 +191,8 @@ pub enum Table {
     Keccak,
     /// Lookup for exp table
     Exp,
+    /// Lookup for sig table
+    Sig,
     /// Lookup for chunk context
     ChunkCtx,
 }
@@ -209,13 +211,13 @@ pub(crate) struct RwValues<F> {
     /// the cell value of the [`bus_mapping::operation::Target`]
     field_tag: Expression<F>,
     /// Storage key of two limbs
-    storage_key: Word<Expression<F>>,
+    storage_key: WordLoHi<Expression<F>>,
     /// The current storage value
-    value: Word<Expression<F>>,
+    value: WordLoHi<Expression<F>>,
     /// The previous storage value
-    value_prev: Word<Expression<F>>,
+    value_prev: WordLoHi<Expression<F>>,
     /// The initial storage value before the current transaction
-    init_val: Word<Expression<F>>,
+    init_val: WordLoHi<Expression<F>>,
 }
 
 impl<F: Field> RwValues<F> {
@@ -225,10 +227,10 @@ impl<F: Field> RwValues<F> {
         id: Expression<F>,
         address: Expression<F>,
         field_tag: Expression<F>,
-        storage_key: Word<Expression<F>>,
-        value: Word<Expression<F>>,
-        value_prev: Word<Expression<F>>,
-        init_val: Word<Expression<F>>,
+        storage_key: WordLoHi<Expression<F>>,
+        value: WordLoHi<Expression<F>>,
+        value_prev: WordLoHi<Expression<F>>,
+        init_val: WordLoHi<Expression<F>>,
     ) -> Self {
         Self {
             id,
@@ -253,7 +255,7 @@ impl<F: Field> RwValues<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
-    /// Lookup to fixed table, which contains serveral pre-built tables such as
+    /// Lookup to fixed table, which contains several pre-built tables such as
     /// range tables or bitwise tables.
     Fixed {
         /// Tag to specify which table to lookup.
@@ -271,7 +273,7 @@ pub(crate) enum Lookup<F> {
         /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
         /// Value of the field.
-        value: Word<Expression<F>>,
+        value: WordLoHi<Expression<F>>,
     },
     /// Lookup to read-write table, which contains read-write access records of
     /// time-aware data.
@@ -291,7 +293,7 @@ pub(crate) enum Lookup<F> {
     /// contract code.
     Bytecode {
         /// Hash to specify which code to read.
-        hash: Word<Expression<F>>,
+        hash: WordLoHi<Expression<F>>,
         /// Tag to specify whether its the bytecode length or byte value in the
         /// bytecode.
         tag: Expression<F>,
@@ -311,18 +313,18 @@ pub(crate) enum Lookup<F> {
         /// should be set to 0.
         number: Expression<F>,
         /// Value of the field.
-        value: Word<Expression<F>>,
+        value: WordLoHi<Expression<F>>,
     },
     /// Lookup to copy table.
     CopyTable {
         /// Whether the row is the first row of the copy event.
         is_first: Expression<F>,
         /// The source ID for the copy event.
-        src_id: Word<Expression<F>>,
+        src_id: WordLoHi<Expression<F>>,
         /// The source tag for the copy event.
         src_tag: Expression<F>,
         /// The destination ID for the copy event.
-        dst_id: Word<Expression<F>>,
+        dst_id: WordLoHi<Expression<F>>,
         /// The destination tag for the copy event.
         dst_tag: Expression<F>,
         /// The source address where bytes are copied from.
@@ -351,7 +353,7 @@ pub(crate) enum Lookup<F> {
         input_len: Expression<F>,
         /// Output (hash) until this state. hash will be split into multiple expression in little
         /// endian.
-        output: Word<Expression<F>>,
+        output: WordLoHi<Expression<F>>,
     },
     /// Lookup to exponentiation table.
     ExpTable {
@@ -361,6 +363,14 @@ pub(crate) enum Lookup<F> {
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
     },
+    SigTable {
+        msg_hash: WordLoHi<Expression<F>>,
+        sig_v: Expression<F>,
+        sig_r: WordLoHi<Expression<F>>,
+        sig_s: WordLoHi<Expression<F>>,
+        recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
+    },
     /// Lookup to block table, which contains constants of this block.
     ChunkCtx {
         /// Tag to specify which field to read.
@@ -368,6 +378,7 @@ pub(crate) enum Lookup<F> {
         /// value
         value: Expression<F>,
     },
+
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -388,6 +399,7 @@ impl<F: Field> Lookup<F> {
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
+            Self::SigTable { .. } => Table::Sig,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -506,9 +518,26 @@ impl<F: Field> Lookup<F> {
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
             ],
-            Self::ChunkCtx { field_tag, value } => {
-                vec![field_tag.clone(), value.clone()]
-            }
+            Self::SigTable {
+                msg_hash,
+                sig_v,
+                sig_r,
+                sig_s,
+                recovered_addr,
+                is_valid,
+            } => vec![
+                1.expr(), // q_enable
+                msg_hash.lo(),
+                msg_hash.hi(),
+                sig_v.clone(),
+                sig_r.lo(),
+                sig_r.hi(),
+                sig_s.lo(),
+                sig_s.hi(),
+                recovered_addr.clone(),
+                is_valid.clone(),
+            ],
+            Self::ChunkCtx { field_tag, value } => vec![field_tag.clone(), value.clone()],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
                 .into_iter()
