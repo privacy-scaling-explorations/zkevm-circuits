@@ -1,5 +1,8 @@
 use halo2_proofs::{
-    halo2curves::bn256::{Fq, Fr, G1Affine},
+    halo2curves::{
+        bls12_381::Scalar,
+        bn256::{Fq, Fr, G1Affine},
+    },
     plonk::{Column, ConstraintSystem, Instance},
 };
 use snark_verifier::{
@@ -17,6 +20,7 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    barycentric::BarycentricEvaluationConfig,
     constants::{BITS, LIMBS},
     param::ConfigParams,
     RlcConfig,
@@ -37,7 +41,10 @@ pub struct AggregationConfig {
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)
     /// - the number of valid SNARKs (1 element)
+    /// - random point z for blob consistency check
+    /// - y = blob(z)
     pub instance: Column<Instance>,
+    pub barycentric: BarycentricEvaluationConfig,
 }
 
 impl AggregationConfig {
@@ -83,6 +90,10 @@ impl AggregationConfig {
             params.degree as usize,
         );
 
+        // let barycentric =
+        // BarycentricEvaluationConfig::construct(base_field_config.range.clone());
+        let barycentric = BarycentricEvaluationConfig::configure(meta);
+
         let columns = keccak_circuit_config.cell_manager.columns();
         log::info!("keccak uses {} columns", columns.len(),);
 
@@ -109,6 +120,7 @@ impl AggregationConfig {
             rlc_config,
             keccak_circuit_config,
             instance,
+            barycentric,
         }
     }
 

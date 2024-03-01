@@ -1,7 +1,10 @@
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::{
+        bls12_381::Scalar,
+        bn256::{Bn256, Fr, G1Affine},
+    },
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -51,6 +54,7 @@ pub struct AggregationCircuit {
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
     pub batch_hash: BatchHash,
+    // pub point_evaluation: BarycentricEvaluationConfig,
 }
 
 impl AggregationCircuit {
@@ -371,6 +375,24 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
+
+        layouter.assign_region(
+            || "blob consistency checks",
+            |mut region| -> Result<(), Error> {
+                let mut context = Context::new(
+                    region,
+                    ContextParams {
+                        max_rows: config.barycentric.scalar.range.gate.max_rows,
+                        num_context_ids: 1,
+                        fixed_columns: config.barycentric.scalar.range.gate.constants.clone(),
+                    },
+                );
+                config
+                    .barycentric
+                    .assign(&mut context, [Scalar::one(); 4096], Scalar::from(2));
+                Ok(())
+            },
+        )?;
 
         end_timer!(witness_time);
         Ok(())

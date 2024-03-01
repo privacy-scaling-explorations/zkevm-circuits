@@ -3,14 +3,17 @@ use scalar_field_element::ScalarFieldElement;
 
 use crate::constants::{BITS, LIMBS, LOG_DEGREE};
 use eth_types::U256;
-use halo2_base::utils::{fe_to_biguint, modulus};
+use halo2_base::{
+    gates::range::RangeConfig,
+    utils::{fe_to_biguint, modulus},
+};
 use halo2_ecc::{
     bigint::CRTInteger,
     fields::{
         fp::{FpConfig, FpStrategy},
         FieldChip,
     },
-    halo2_base::{AssignedValue, Context},
+    halo2_base::{AssignedValue, Context, ContextParams},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -35,8 +38,9 @@ static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
         .unwrap()
 });
 
-struct BarycentricEvaluationConfig {
-    scalar: FpConfig<Fr, Scalar>,
+#[derive(Clone, Debug)]
+pub struct BarycentricEvaluationConfig {
+    pub scalar: FpConfig<Fr, Scalar>,
 }
 
 impl BarycentricEvaluationConfig {
@@ -48,14 +52,21 @@ impl BarycentricEvaluationConfig {
             &[17],
             1,
             13,
-            BITS,
-            LIMBS,
+            BITS,  // on
+            LIMBS, //
             modulus::<Scalar>(),
             0,
             LOG_DEGREE.try_into().unwrap(),
         );
 
         Self { scalar }
+    }
+
+    // TODO: figure out why using this doesn't work?
+    pub fn construct(range: RangeConfig<Fr>) -> Self {
+        Self {
+            scalar: FpConfig::construct(range, BITS, LIMBS, modulus::<Scalar>()),
+        }
     }
 
     pub fn assign(
@@ -73,8 +84,11 @@ impl BarycentricEvaluationConfig {
                 .map(ScalarFieldElement::constant)
                 .iter()
                 .zip_eq(blob.map(ScalarFieldElement::private))
-                .map(|(root, f)| (root.clone() / (z.clone() - root.clone())).carry())
-                .reduce(|a, b| a + b) // TODO: can 4096 additions happen without overflow?
+                .map(|(root, f)| f * (root.clone() / (z.clone() - root.clone())).carry())
+                .reduce(|a, b| (a + b).carry()) // TODO: can 4096 additions happen without overflow, yes but you need to add this in
+                // a divide and conquer way. you need to add these in a tree like
+                // manner so that it's clear to the context that the number of bits is not too
+                // large....
                 .unwrap()
                 .carry()
             / blob_width;
