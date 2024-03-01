@@ -55,22 +55,5 @@ impl<F: Field> ExecutionGadget<F> for BeginChunkGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::bytecode;
-    use mock::TestContext;
-
-    fn test_ok(bytecode: bytecode::Bytecode) {
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-        )
-        .run()
-    }
-
-    #[test]
-    fn begin_chunk_test() {
-        let bytecode = bytecode! {
-            STOP
-        };
-        test_ok(bytecode);
-    }
+    // begin_chunk unittest covered by end_chunk
 }

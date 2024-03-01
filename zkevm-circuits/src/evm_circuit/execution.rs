@@ -1180,10 +1180,6 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(std::iter::once((&dummy_tx, &cur_chunk_last_call, padding)))
                     .peekable();
 
-                tx_call_steps
-                    .clone()
-                    .for_each(|step| println!("assigned_step step {:?}", step.2));
-
                 let evm_rows = chunk.fixed_param.max_evm_rows;
 
                 let mut assign_padding_or_step = |cur_tx_call_step: TxCallStep,

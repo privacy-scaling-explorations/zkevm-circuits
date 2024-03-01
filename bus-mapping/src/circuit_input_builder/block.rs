@@ -17,7 +17,7 @@ use std::collections::HashMap;
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
-    pub rwc: RWCounter,
+    pub(crate) rwc: RWCounter,
     /// Map call_id to (tx_index, call_index) (where tx_index is the index used
     /// in Block.txs and call_index is the index used in Transaction.
     /// calls).

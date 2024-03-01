@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use bus_mapping::mock::BlockData;
+    use bus_mapping::{circuit_input_builder::FixedCParams, mock::BlockData};
     use env_logger::Env;
     use eth_types::{bytecode, geth_types::GethData, Word};
     use halo2_proofs::{
@@ -119,7 +119,7 @@ mod tests {
     }
 
     fn generate_full_events_block(
-        _degree: u32,
+        degree: u32,
         base: Word,
         exponent: Word,
     ) -> (Block<Fr>, Chunk<Fr>) {
@@ -138,17 +138,16 @@ mod tests {
         )
         .unwrap();
         let block: GethData = test_ctx.into();
-        // let mut builder = BlockData::new_from_geth_data_with_params(
-        //     block.clone(),
-        //     FixedCParams {
-        //         max_rws: 1 << (degree - 1),
-        //         ..Default::default()
-        //     },
-        // )
-        let builder = BlockData::new_from_geth_data(block.clone())
-            .new_circuit_input_builder()
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+        let builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            FixedCParams {
+                max_rws: 1 << (degree - 1),
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder()
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
         let block = block_convert(&builder).unwrap();
         let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
         (block, chunk)

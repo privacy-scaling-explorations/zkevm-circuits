@@ -304,9 +304,9 @@ impl<F: Field> StateCircuitConfig<F> {
                         assert_eq!(state_root, old_root);
                         state_root = new_root;
                     }
-                    // if matches!(row.tag(), Target::CallContext) && !row.is_write() {
-                    //     assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
-                    // }
+                    if matches!(row.tag(), Target::CallContext) && !row.is_write() {
+                        assert_eq!(row.value_assignment(), 0.into(), "{:?}", row);
+                    }
                 }
             }
 
