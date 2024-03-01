@@ -475,6 +475,14 @@ impl<'a> StepRws<'a> {
         self.offset += 1;
         rw
     }
+    /// Return the next rw operations over the next `n` steps.
+    pub(crate) fn next_n(&mut self, n: usize) -> Vec<Rw> {
+        let mut rws = Vec::with_capacity(n);
+        for _ in 0..n {
+            rws.push(self.next());
+        }
+        rws
+    }
 }
 
 #[cfg(test)]

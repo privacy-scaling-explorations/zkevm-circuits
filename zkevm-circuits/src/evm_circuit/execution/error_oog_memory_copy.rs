@@ -11,7 +11,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
                 MemoryExpansionGadget,
             },
-            or, select, AccountAddress, CachedRegion, Cell,
+            or, select, AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -156,6 +156,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let opcode = step.opcode().unwrap();
         let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
 
+        let mut rws = StepRws::new(block, step);
+
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
             opcode,
@@ -165,16 +167,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let (is_warm, external_address) = if is_extcodecopy {
             (
-                block.get_rws(step, 1).tx_access_list_value_pair().0,
-                block.get_rws(step, 2).stack_value(),
+                rws.next().tx_access_list_value_pair().0,
+                rws.next().stack_value(),
             )
         } else {
             (false, U256::zero())
         };
 
-        let rw_offset = if is_extcodecopy { 3 } else { 0 };
-        let [dst_offset, src_offset, copy_size] = [rw_offset, rw_offset + 1, rw_offset + 2]
-            .map(|index| block.get_rws(step, index).stack_value());
+        if is_extcodecopy {
+            rws.next(); // Skip external address
+        }
+
+        let dst_offset = rws.next().stack_value();
+        let src_offset = rws.next().stack_value();
+        let copy_size = rws.next().stack_value();
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;

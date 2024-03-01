@@ -13,7 +13,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            not, select, AccountAddress, CachedRegion, Cell,
+            not, select, AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -182,8 +182,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        let mut rws = StepRws::new(block, step);
+
         let [external_address, memory_offset, code_offset, memory_length] =
-            [0, 1, 2, 3].map(|idx| block.get_rws(step, idx).stack_value());
+            [0, 1, 2, 3].map(|_| rws.next().stack_value());
         self.external_address_word
             .assign_u256(region, offset, external_address)?;
         let memory_address =
@@ -199,11 +201,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.get_rws(step, 7).tx_access_list_value_pair();
+        rws.offset_add(3);
+
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 8).account_codehash_pair().0;
+        let code_hash = rws.next().account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists.assign_u256(region, offset, code_hash)?;
 
