@@ -619,6 +619,7 @@ checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 [[package]]
 name = "bls12_381"
 version = "0.8.0"
+source = "git+https://github.com/scroll-tech/bls12_381?branch=feat/impl_scalar_field#2c515f73a2462fef8681c8e884edf1710f52b22a"
 dependencies = [
  "ff 0.13.0",
  "group 0.13.0",
@@ -2526,6 +2527,7 @@ checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
+source = "git+https://github.com/z2trillion/halo2-lib?branch=feat/bls_scalar#817cace374a9f4b2eca682b1cc36f143255ea25f"
 dependencies = [
  "ff 0.13.0",
  "halo2_proofs",
@@ -2540,6 +2542,7 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
+source = "git+https://github.com/z2trillion/halo2-lib?branch=feat/bls_scalar#817cace374a9f4b2eca682b1cc36f143255ea25f"
 dependencies = [
  "ff 0.13.0",
  "group 0.13.0",
