@@ -12,7 +12,7 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, sum, CachedRegion, Cell,
+            not, sum, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -201,7 +201,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let [memory_start, msize] = [0, 1].map(|_| rws.next().stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;
@@ -221,9 +223,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             // It takes 6 + is_persistent reads or writes to reach the topic stack write section.
             // Each topic takes at least 1 stack read. They take an additional tx log write if the
             // call is persistent.
-            block
-                .get_rws(step, 6 + is_persistent + topic * (1 + is_persistent))
-                .stack_value()
+            rws.offset_add(6 + is_persistent + topic * (1 + is_persistent));
+            rws.next().stack_value()
         });
         for i in 0..4 {
             let topic = topics.next();
