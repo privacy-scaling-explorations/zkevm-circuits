@@ -295,6 +295,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let mut rws = StepRws::new(block, step);
 
         let [memory_offset, length] = [0, 1].map(|_| rws.next().stack_value());
+
         let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
@@ -349,6 +350,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             .assign(region, offset, F::from(copy_rw_increase))?;
 
         let is_contract_deployment = call.is_create() && call.is_success && !length.is_zero();
+
+        rws.next();
 
         let init_code_first_byte = if is_contract_deployment {
             rws.next().memory_value()
