@@ -187,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             (4, CallContextFieldTag::LastCalleeReturnDataOffset),
             (5, CallContextFieldTag::LastCalleeReturnDataLength),
         ]
-        .map(|(i, tag)| {
+        .map(|(_, tag)| {
             let rw = rws.next();
             assert_eq!(rw.field_tag(), Some(tag as u64));
             rw.call_context_value()
