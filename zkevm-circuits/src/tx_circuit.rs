@@ -1861,38 +1861,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             },
         );
 
-        meta.create_gate(
-            "Chunk bytes accumulation only happens in the fixed section of tx_table",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_zero(
-                    "chunk_txbytes_len_acc = 0",
-                    meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-                );
-                cb.require_zero(
-                    "chunk_txbytes_rlc = 0",
-                    meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-                );
-                cb.require_zero(
-                    "chunk_txbytes_hash = 0",
-                    meta.query_advice(chunk_txbytes_hash, Rotation::cur()),
-                );
-                cb.require_zero(
-                    "pow_of_rand = 0",
-                    meta.query_advice(pow_of_rand, Rotation::cur()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    sum::expr([
-                        meta.query_advice(is_calldata, Rotation::cur()),
-                        meta.query_advice(is_access_list, Rotation::cur()),
-                    ]),
-                ]))
-            },
-        );
-
         log_deg("tx_circuit", meta);
 
         Self {
