@@ -1726,6 +1726,27 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         //////////////////////////////////////////////////////////
         //// EIP4844: Accumulation and Hashing of Chunk Bytes  ///
         //////////////////////////////////////////////////////////
+        meta.create_gate("Degree reduction column: is_chunk_bytes", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_chunk_bytes = (tx_type != L1Msg && !padding)",
+                meta.query_advice(is_chunk_bytes, Rotation::cur()),
+                and::expr([
+                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                    not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
+                ]),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
+                not::expr(meta.query_advice(is_access_list, Rotation::cur())),
+            ]))
+        });
+
+
         meta.create_gate("Chunk len acc and hash RLC acc starts at 0", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1744,64 +1765,65 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        // 4844_debug
-        // meta.create_gate("Chunk Bytes RLC", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("Chunk Bytes RLC", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     // Accumulate hash length
-        //     cb.require_equal(
-        //         "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev + HashLength",
-        //         meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-        //         meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32)))
-        //                 // the previous row in fixed tx_table is the signed RLP length of current tx
-        //                 + meta.query_advice(tx_table.value, Rotation::prev()),
-        //     );
+            // Accumulate hash length
+            cb.require_equal(
+                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev + HashLength",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32)))
+                        // the previous row in fixed tx_table is the signed RLP length of current tx
+                        + meta.query_advice(tx_table.value, Rotation::prev()),
+            );
 
-        //     // Accumulate chunk bytes RLC
-        //     cb.require_equal(
-        //         "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev * pow_of_rand(HashLength) + HashRLC",
-        //         meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-        //         meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32)))
-        //                 * meta.query_advice(pow_of_rand, Rotation::cur())
-        //                 + meta.query_advice(tx_table.value, Rotation::cur()),
-        //     );
+            // Accumulate chunk bytes RLC
+            cb.require_equal(
+                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev * pow_of_rand(HashLength) + HashRLC",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32)))
+                        * meta.query_advice(pow_of_rand, Rotation::cur())
+                        + meta.query_advice(tx_table.value, Rotation::cur()),
+            );
+        
+            // The chunk bytes len is the same as the HashLen field in tx_table (in the prev row)
+            cb.require_equal(
+                "chunk_bytes_len = HashLen",
+                meta.query_advice(chunk_bytes_len, Rotation::cur()),
+                meta.query_advice(tx_table.value, Rotation::prev()),
+            );
 
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         // Only l2 signed bytes are accumulated
-        //         not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-        //         not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
-        //         is_hash_rlc(meta)
-        //     ]))
-        // });
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                // Only l2 signed bytes are accumulated
+                meta.query_advice(is_chunk_bytes, Rotation::cur()),
+                is_hash_rlc(meta),
+            ]))
+        });
 
-        // 4844_debug
-        // meta.create_gate("Chunk Bytes RLC stays same for l1 msg and padding txs", |meta| {
-        //     let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("Chunk Bytes RLC stays same for l1 msg and padding txs", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
 
-        //     // Check hash length is unchanged
-        //     cb.require_equal(
-        //         "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
-        //         meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-        //         meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
-        //     );
+            // Check hash length is unchanged
+            cb.require_equal(
+                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
+            );
 
-        //     // Check chunk RLC is unchanged
-        //     cb.require_equal(
-        //         "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
-        //         meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-        //         meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
-        //     );
+            // Check chunk RLC is unchanged
+            cb.require_equal(
+                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
+            );
 
-        //     cb.gate(and::expr([
-        //         meta.query_fixed(q_enable, Rotation::cur()),
-        //         sum::expr([
-        //             meta.query_advice(is_l1_msg, Rotation::cur()),
-        //             meta.query_advice(is_padding_tx, Rotation::cur()),
-        //         ]),
-        //         is_hash_rlc(meta)
-        //     ]))
-        // });
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_chunk_bytes, Rotation::cur())),
+                is_hash_rlc(meta)
+            ]))
+        });
 
         meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
             let enable = and::expr(vec![
