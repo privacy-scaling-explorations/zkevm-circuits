@@ -133,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             // No extra constraint being used here.
             // Correctness will be enforced in build_tx_access_list_account_constraints
-            is_caller_callee_equal.expr(), // And value_prev = is_caller_callee_equal
+            is_caller_callee_equal.expr(),
             None,
         ); // rwc_delta += 1
 
