@@ -110,7 +110,7 @@ impl ChunkHash {
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,
-            tx_bytes,
+            tx_bytes: tx_bytes.to_vec(),
             is_padding,
         }
     }
@@ -140,7 +140,7 @@ impl ChunkHash {
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
-            tx_bytes,
+            tx_bytes: tx_bytes.to_vec(),
             is_padding: false,
         }
     }
@@ -158,7 +158,7 @@ impl ChunkHash {
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
             data_hash: previous_chunk.data_hash,
-            tx_bytes: previous_chunk.tx_bytes,
+            tx_bytes: previous_chunk.tx_bytes.clone(),
             is_padding: true,
         }
     }
