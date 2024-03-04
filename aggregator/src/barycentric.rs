@@ -1,17 +1,10 @@
 use halo2_base::{gates::range::RangeConfig, utils::modulus};
-use halo2_ecc::{
-    bigint::CRTInteger,
-    fields::fp::{FpConfig, FpStrategy},
-    halo2_base::Context,
-};
-use halo2_proofs::{
-    halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
-    plonk::ConstraintSystem,
-};
+use halo2_ecc::{bigint::CRTInteger, fields::fp::FpConfig, halo2_base::Context};
+use halo2_proofs::halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
 use itertools::Itertools;
 use std::sync::LazyLock;
 
-use crate::constants::{BITS, LIMBS, LOG_DEGREE};
+use crate::constants::{BITS, LIMBS};
 
 mod scalar_field_element;
 use scalar_field_element::ScalarFieldElement;
