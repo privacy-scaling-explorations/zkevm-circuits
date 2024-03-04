@@ -348,7 +348,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // Chunk bytes accumulator
         let chunk_txbytes_rlc = meta.advice_column_in(SecondPhase);
-        let chunk_txbytes_hash = meta.advice_column();
+        let chunk_txbytes_hash = meta.advice_column_in(SecondPhase);
         let chunk_txbytes_len_acc = meta.advice_column();
         let pow_of_rand = meta.advice_column_in(SecondPhase);
 
