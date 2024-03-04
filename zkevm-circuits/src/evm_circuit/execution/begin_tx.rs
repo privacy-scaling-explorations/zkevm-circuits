@@ -190,6 +190,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.caller_address.to_word(),
             create.caller_address(),
         );
+
+        cb.require_equal(
+            "tx nonce equivalence",
+            tx.nonce.expr(),
+            create.caller_nonce(),
+        );
+
+        // 1. Handle contract creation transaction.
         cb.condition(tx.is_create.expr(), |cb| {
             cb.require_equal_word(
                 "call callee address equivalence",
@@ -202,20 +210,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 )
                 .to_word(),
             );
-        });
-        cb.require_equal(
-            "tx nonce equivalence",
-            tx.nonce.expr(),
-            create.caller_nonce(),
-        );
-
-        // 1. Handle contract creation transaction.
-        cb.condition(tx.is_create.expr(), |cb| {
             cb.keccak_table_lookup(
                 create.input_rlc(cb),
                 create.input_length(),
                 caller_nonce_hash_bytes.to_word(),
             );
+
+            // cb.keccak_table_lookup(input_rlc, input_len, output);
 
             cb.account_write(
                 call_callee_address.to_word(),
