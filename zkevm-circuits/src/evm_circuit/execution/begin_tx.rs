@@ -216,7 +216,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 caller_nonce_hash_bytes.to_word(),
             );
 
-            // cb.keccak_table_lookup(input_rlc, input_len, output);
+            cb.keccak_table_lookup(
+                create.code_hash_keccak_rlc(cb),
+                32.expr(),
+                cb.curr.state.code_hash.to_word(),
+            );
+            cb.require_equal_word(
+                "code hash equivalence",
+                code_hash.to_word(),
+                create.code_hash().to_word(),
+            );
 
             cb.account_write(
                 call_callee_address.to_word(),
