@@ -1743,6 +1743,34 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 meta.query_fixed(q_enable, Rotation::cur()),
                 // Only l2 signed bytes are accumulated
                 not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
+                is_hash_rlc(meta)
+            ]))
+        });
+
+        meta.create_gate("Chunk Bytes RLC stays same for l1 msg and padding txs", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // Check hash length is unchanged
+            cb.require_equal(
+                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
+            );
+
+            // Check chunk RLC is unchanged
+            cb.require_equal(
+                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                sum::expr([
+                    meta.query_advice(is_l1_msg, Rotation::cur()),
+                    meta.query_advice(is_padding_tx, Rotation::cur()),
+                ]),
                 is_hash_rlc(meta)
             ]))
         });
