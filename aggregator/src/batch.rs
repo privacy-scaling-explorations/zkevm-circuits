@@ -22,7 +22,7 @@ pub struct BatchHash {
     /// chunks with padding.
     /// - the first [0..number_of_valid_chunks) are real ones
     /// - the last [number_of_valid_chunks, MAX_AGG_SNARKS) are padding
-    pub(crate) chunks_with_padding: [ChunkHash; MAX_AGG_SNARKS],
+    pub(crate) chunks_with_padding: Vec<ChunkHash>,
     /// The batch data hash:
     /// - keccak256([chunk.hash for chunk in batch])
     pub(crate) data_hash: H256,
@@ -97,8 +97,8 @@ impl BatchHash {
                     chunks_with_padding[i].data_hash
                 );
                 assert_eq!(
-                    chunks_with_padding[i + 1].tx_data_hash,
-                    chunks_with_padding[i].tx_data_hash,
+                    chunks_with_padding[i + 1].tx_bytes_hash(),
+                    chunks_with_padding[i].tx_bytes_hash(),
                 );
             } else {
                 assert_eq!(
@@ -146,7 +146,7 @@ impl BatchHash {
 
         Self {
             chain_id: chunks_with_padding[0].chain_id,
-            chunks_with_padding: chunks_with_padding.try_into().unwrap(), // safe unwrap
+            chunks_with_padding: chunks_with_padding.to_vec(),
             data_hash: batch_data_hash.into(),
             z,
             y,
@@ -162,6 +162,8 @@ impl BatchHash {
     /// - batch_public_input_hash
     /// - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
     /// - batch_data_hash_preimage
+    /// - chunk\[i\].tx_bytes for i in \[0, number_of_valid_chunks)
+    /// - flattened tx_bytes for all txs in batch (used as pre-image for z)
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
 
@@ -209,6 +211,27 @@ impl BatchHash {
             .cloned()
             .collect();
         res.push(batch_data_hash_preimage);
+
+        // flattened RLP-signed tx bytes for all L2 txs in chunk.
+        //
+        // This is eventually used in the chunk PI hash (defined above).
+        for chunk in self.chunks_with_padding.iter() {
+            if !chunk.is_padding {
+                res.push(chunk.tx_bytes.clone());
+            }
+        }
+
+        // flattened RLP-signed tx bytes for all L2 txs in batch.
+        //
+        // This is used to compute the random challenge point z, where:
+        // z = keccak256([tx.rlp_signed for tx in chunk for chunk in batch])
+        res.push(
+            self.chunks_with_padding
+                .iter()
+                .filter(|chunk| !chunk.is_padding)
+                .flat_map(|chunk| chunk.tx_bytes.clone())
+                .collect::<Vec<u8>>(),
+        );
 
         res
     }

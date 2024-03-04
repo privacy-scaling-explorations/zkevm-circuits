@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::iter;
 use zkevm_circuits::witness::Block;
 
-#[derive(Default, Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 /// A chunk is a set of continuous blocks.
 /// A ChunkHash consists of 5 hashes, representing the changes incurred by this chunk of blocks:
 /// - state root before this chunk
@@ -27,9 +27,8 @@ pub struct ChunkHash {
     pub withdraw_root: H256,
     /// the data hash of this chunk
     pub data_hash: H256,
-    /// the hash of RLP-encoded transaction bytes, flattened over all L2 txs in this chunk.
-    /// keccak256([tx.rlp_signed for tx in chunk])
-    pub tx_data_hash: H256,
+    /// Flattened L2 tx bytes (RLP-signed) in this chunk.
+    pub tx_bytes: Vec<u8>,
     /// if the chunk is a padded chunk
     pub is_padding: bool,
 }
@@ -91,18 +90,12 @@ impl ChunkHash {
             hex::encode(data_hash.to_fixed_bytes())
         );
 
-        let tx_data_hash = H256(keccak256(
-            block
-                .txs
-                .iter()
-                .filter(|tx| !tx.tx_type.is_l1_msg())
-                .flat_map(|tx| tx.rlp_signed.clone())
-                .collect::<Vec<u8>>(),
-        ));
-        log::debug!(
-            "chunk-hash: tx data hash = {}",
-            hex::encode(tx_data_hash.to_fixed_bytes()),
-        );
+        let tx_bytes = block
+            .txs
+            .iter()
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .flat_map(|tx| tx.rlp_signed.to_vec())
+            .collect::<Vec<u8>>();
 
         let post_state_root = block
             .context
@@ -117,9 +110,15 @@ impl ChunkHash {
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,
-            tx_data_hash,
+            tx_bytes,
             is_padding,
         }
+    }
+
+    /// The keccak256 hash of the flattened RLP-encoded signed tx bytes over all L2 txs in this
+    /// chunk.
+    pub(crate) fn tx_bytes_hash(&self) -> H256 {
+        H256(keccak256(&self.tx_bytes))
     }
 
     /// Sample a chunk hash from random (for testing)
@@ -133,15 +132,15 @@ impl ChunkHash {
         r.fill_bytes(&mut withdraw_root);
         let mut data_hash = [0u8; 32];
         r.fill_bytes(&mut data_hash);
-        let mut tx_data_hash = [0u8; 32];
-        r.fill_bytes(&mut tx_data_hash);
+        let mut tx_bytes = [0u8; 1024];
+        r.fill_bytes(&mut tx_bytes);
         Self {
             chain_id: 0,
             prev_state_root: prev_state_root.into(),
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
-            tx_data_hash: tx_data_hash.into(),
+            tx_bytes,
             is_padding: false,
         }
     }
@@ -159,7 +158,7 @@ impl ChunkHash {
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
             data_hash: previous_chunk.data_hash,
-            tx_data_hash: previous_chunk.tx_data_hash,
+            tx_bytes: previous_chunk.tx_bytes,
             is_padding: true,
         }
     }
@@ -195,7 +194,7 @@ impl ChunkHash {
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),
             self.data_hash.as_bytes(),
-            self.tx_data_hash.as_bytes(),
+            self.tx_bytes_hash().as_bytes(),
         ]
         .concat()
     }
