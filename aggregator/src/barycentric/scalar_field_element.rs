@@ -97,3 +97,31 @@ impl Div for ScalarFieldElement {
         Self::Div(Box::new(self), Box::new(other))
     }
 }
+
+impl std::iter::Sum for ScalarFieldElement {
+    fn sum<I: Iterator<Item = Self>>(iterator: I) -> Self {
+        let result = add_odds_to_evens(iterator);
+        if result.len() > 1 {
+            result.into_iter().sum()
+        } else {
+            result
+                .into_iter()
+                .next()
+                .map_or_else(|| ScalarFieldElement::constant(Scalar::zero()), Self::carry)
+        }
+    }
+}
+
+fn add_odds_to_evens(
+    iterator: impl Iterator<Item = ScalarFieldElement>,
+) -> Vec<ScalarFieldElement> {
+    let mut result = vec![];
+    for (i, e) in iterator.enumerate() {
+        if i % 2 == 0 {
+            result.push(e);
+        } else {
+            result[i / 2] = result[i / 2].clone() + e;
+        }
+    }
+    result
+}
