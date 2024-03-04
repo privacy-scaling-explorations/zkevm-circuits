@@ -155,6 +155,32 @@ impl BatchHash {
         }
     }
 
+    /// Convert a batch of chunks to blob data.
+    pub(crate) fn to_blob_data(&self) -> Vec<u8> {
+        let blob_bytes = std::iter::empty()
+            .chain(std::iter::once(self.number_of_valid_chunks as u8))
+            .chain(self.chunks_with_padding.iter().flat_map(|chunk| {
+                let chunk_size = chunk.tx_bytes.len() as u16;
+                chunk_size.to_le_bytes()
+            }))
+            .chain(
+                self.chunks_with_padding
+                    .iter()
+                    .flat_map(|chunk| chunk.tx_bytes.clone()),
+            )
+            .collect::<Vec<u8>>();
+        assert!(blob_bytes.len() < 4096 * 31);
+
+        // TODO: use constants
+        let mut blob_data = Vec::with_capacity(4096 * 32);
+        for chunk in blob_bytes.chunks(31) {
+            blob_data.push(0);
+            blob_data.extend_from_slice(chunk);
+        }
+        blob_data.resize(4096 * 32, 0);
+        blob_data
+    }
+
     /// Extract all the hash inputs that will ever be used.
     /// There are MAX_AGG_SNARKS + 2 hashes.
     ///
@@ -163,7 +189,7 @@ impl BatchHash {
     /// - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
     /// - batch_data_hash_preimage
     /// - chunk\[i\].tx_bytes for i in \[0, number_of_valid_chunks)
-    /// - flattened tx_bytes for all txs in batch (used as pre-image for z)
+    /// - blob data (used as pre-image or z)
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
 
@@ -225,13 +251,7 @@ impl BatchHash {
         //
         // This is used to compute the random challenge point z, where:
         // z = keccak256([tx.rlp_signed for tx in chunk for chunk in batch])
-        res.push(
-            self.chunks_with_padding
-                .iter()
-                .filter(|chunk| !chunk.is_padding)
-                .flat_map(|chunk| chunk.tx_bytes.clone())
-                .collect::<Vec<u8>>(),
-        );
+        res.push(self.to_blob_data());
 
         res
     }

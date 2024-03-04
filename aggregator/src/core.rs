@@ -247,6 +247,8 @@ pub(crate) fn extract_hash_cells(
     //      chunk[i].tx_data_hash)
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
+    // (4) chunk[i].tx_bytes
+    // (5) blob data
     // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, keccak_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
