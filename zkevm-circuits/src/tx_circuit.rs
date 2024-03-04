@@ -946,6 +946,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         Self::configure_lookups(
             meta,
             q_enable,
+            q_calldata_first,
             rlp_tag,
             tx_value_rlc,
             tx_value_length,
@@ -1934,6 +1935,7 @@ impl<F: Field> TxCircuitConfig<F> {
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
+        q_calldata_first: Column<Fixed>,
         rlp_tag: Column<Advice>,
         tx_value_rlc: Column<Advice>,
         tx_value_length: Column<Advice>,
@@ -2504,20 +2506,15 @@ impl<F: Field> TxCircuitConfig<F> {
             // Isolate the last row in the fixed section, which belongs to the last tx in the chunk
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_calldata, Rotation::cur())),
-                not::expr(meta.query_advice(is_access_list, Rotation::cur())),
-                sum::expr([
-                    meta.query_advice(is_calldata, Rotation::next()),
-                    meta.query_advice(is_access_list, Rotation::next()),
-                ]),
+                meta.query_fixed(q_calldata_first, Rotation::cur()),
             ]);
 
             vec![
                 1.expr(),                                                  // q_enable
                 1.expr(),                                                  // is_final
-                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),    // input_rlc
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()), // input_len
-                meta.query_advice(chunk_txbytes_hash, Rotation::cur()),        // output_rlc
+                meta.query_advice(chunk_txbytes_rlc, Rotation::prev()),    // input_rlc
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::prev()), // input_len
+                meta.query_advice(chunk_txbytes_hash, Rotation::prev()),        // output_rlc
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
