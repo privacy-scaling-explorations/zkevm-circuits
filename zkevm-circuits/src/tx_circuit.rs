@@ -1736,62 +1736,64 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("Chunk Bytes RLC", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        // 4844_debug
+        // meta.create_gate("Chunk Bytes RLC", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
 
-            // Accumulate hash length
-            cb.require_equal(
-                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev + HashLength",
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32)))
-                        // the previous row in fixed tx_table is the signed RLP length of current tx
-                        + meta.query_advice(tx_table.value, Rotation::prev()),
-            );
+        //     // Accumulate hash length
+        //     cb.require_equal(
+        //         "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev + HashLength",
+        //         meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+        //         meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32)))
+        //                 // the previous row in fixed tx_table is the signed RLP length of current tx
+        //                 + meta.query_advice(tx_table.value, Rotation::prev()),
+        //     );
 
-            // Accumulate chunk bytes RLC
-            cb.require_equal(
-                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev * pow_of_rand(HashLength) + HashRLC",
-                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32)))
-                        * meta.query_advice(pow_of_rand, Rotation::cur())
-                        + meta.query_advice(tx_table.value, Rotation::cur()),
-            );
+        //     // Accumulate chunk bytes RLC
+        //     cb.require_equal(
+        //         "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev * pow_of_rand(HashLength) + HashRLC",
+        //         meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+        //         meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32)))
+        //                 * meta.query_advice(pow_of_rand, Rotation::cur())
+        //                 + meta.query_advice(tx_table.value, Rotation::cur()),
+        //     );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                // Only l2 signed bytes are accumulated
-                not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-                not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
-                is_hash_rlc(meta)
-            ]))
-        });
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         // Only l2 signed bytes are accumulated
+        //         not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+        //         not::expr(meta.query_advice(is_padding_tx, Rotation::cur())),
+        //         is_hash_rlc(meta)
+        //     ]))
+        // });
 
-        meta.create_gate("Chunk Bytes RLC stays same for l1 msg and padding txs", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        // 4844_debug
+        // meta.create_gate("Chunk Bytes RLC stays same for l1 msg and padding txs", |meta| {
+        //     let mut cb = BaseConstraintBuilder::default();
 
-            // Check hash length is unchanged
-            cb.require_equal(
-                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
-            );
+        //     // Check hash length is unchanged
+        //     cb.require_equal(
+        //         "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
+        //         meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+        //         meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
+        //     );
 
-            // Check chunk RLC is unchanged
-            cb.require_equal(
-                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
-                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
-            );
+        //     // Check chunk RLC is unchanged
+        //     cb.require_equal(
+        //         "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
+        //         meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+        //         meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
+        //     );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                sum::expr([
-                    meta.query_advice(is_l1_msg, Rotation::cur()),
-                    meta.query_advice(is_padding_tx, Rotation::cur()),
-                ]),
-                is_hash_rlc(meta)
-            ]))
-        });
+        //     cb.gate(and::expr([
+        //         meta.query_fixed(q_enable, Rotation::cur()),
+        //         sum::expr([
+        //             meta.query_advice(is_l1_msg, Rotation::cur()),
+        //             meta.query_advice(is_padding_tx, Rotation::cur()),
+        //         ]),
+        //         is_hash_rlc(meta)
+        //     ]))
+        // });
 
         meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
             let enable = and::expr(vec![
@@ -2505,17 +2507,17 @@ impl<F: Field> TxCircuitConfig<F> {
                 not::expr(meta.query_advice(is_calldata, Rotation::cur())),
                 not::expr(meta.query_advice(is_access_list, Rotation::cur())),
                 sum::expr([
-                    meta.query_advice(is_calldata, Rotation::cur()),
-                    meta.query_advice(is_access_list, Rotation::cur()),
+                    meta.query_advice(is_calldata, Rotation::next()),
+                    meta.query_advice(is_access_list, Rotation::next()),
                 ]),
             ]);
 
             vec![
                 1.expr(),                                                  // q_enable
                 1.expr(),                                                  // is_final
-                meta.query_advice(chunk_txbytes_rlc, Rotation::next()),    // input_rlc
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),    // input_rlc
                 meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()), // input_len
-                meta.query_advice(chunk_txbytes_hash, Rotation(2)),        // output_rlc
+                meta.query_advice(chunk_txbytes_hash, Rotation::cur()),        // output_rlc
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
