@@ -1,10 +1,7 @@
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::{
-        bls12_381::Scalar,
-        bn256::{Bn256, Fr, G1Affine},
-    },
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error, Selector},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -194,9 +191,11 @@ impl Circuit<Fr> for AggregationCircuit {
                         },
                     );
 
-                    config
-                        .barycentric
-                        .assign(&mut ctx, [Scalar::one(); 4096], Scalar::from(2));
+                    config.barycentric.assign(
+                        &mut ctx,
+                        self.batch_hash.blob.coefficients,
+                        self.batch_hash.blob.z,
+                    );
 
                     let ecc_chip = config.ecc_chip();
                     let loader = Halo2Loader::new(ecc_chip, ctx);
@@ -261,10 +260,13 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_public_input_hash
             // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
             // - batch_data_hash_preimage
+            // - z
+            // - y
+            // - blob_hash?
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                MAX_AGG_SNARKS + 2,
+                MAX_AGG_SNARKS + 5,
                 "error extracting preimages"
             );
             end_timer!(timer);

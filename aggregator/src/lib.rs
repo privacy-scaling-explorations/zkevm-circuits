@@ -7,6 +7,8 @@ mod barycentric;
 /// This module implements `Batch` related data types.
 /// A batch is a list of chunk.
 mod batch;
+/// blob struct and constants
+mod blob;
 // This module implements `Chunk` related data types.
 // A chunk is a list of blocks.
 mod chunk;

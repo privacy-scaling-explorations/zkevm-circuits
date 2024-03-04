@@ -4,13 +4,14 @@ use halo2_proofs::halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
 use itertools::Itertools;
 use std::sync::LazyLock;
 
-use crate::constants::{BITS, LIMBS};
+use crate::{
+    blob::{BLOB_WIDTH, LOG_BLOG_WIDTH},
+    constants::{BITS, LIMBS},
+};
 
 mod scalar_field_element;
 use scalar_field_element::ScalarFieldElement;
 
-const BLOB_WIDTH: usize = 4096;
-const LOG_BLOG_WIDTH: usize = 12;
 static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
     let primitive_root_of_unity = Scalar::ROOT_OF_UNITY.pow(&[2u64.pow(20), 0, 0, 0]);
     (0..BLOB_WIDTH)
@@ -55,6 +56,17 @@ impl BarycentricEvaluationConfig {
             / blob_width;
         p.resolve(ctx, &self.scalar)
     }
+}
+
+pub fn interpolate(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
+    let blob_width = u64::try_from(BLOB_WIDTH).unwrap();
+    (z.pow(&[blob_width, 0, 0, 0]) - Scalar::one())
+        * ROOTS_OF_UNITY
+            .into_iter()
+            .zip_eq(coefficients)
+            .map(|(root, f)| f * root * (z - root).invert().unwrap())
+            .sum::<Scalar>()
+        * Scalar::from(blob_width).invert().unwrap()
 }
 
 #[cfg(test)]

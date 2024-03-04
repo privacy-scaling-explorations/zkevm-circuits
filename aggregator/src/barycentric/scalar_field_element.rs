@@ -66,6 +66,12 @@ impl ScalarFieldElement {
     }
 }
 
+impl From<Scalar> for ScalarFieldElement {
+    fn from(x: Scalar) -> Self {
+        Self::Constant(x)
+    }
+}
+
 impl Add for ScalarFieldElement {
     type Output = Self;
 

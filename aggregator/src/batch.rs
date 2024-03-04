@@ -1,12 +1,14 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{Field, ToBigEndian, H256, U256};
+use eth_types::{Field, H256};
 use ethers_core::utils::keccak256;
 
-use crate::constants::MAX_AGG_SNARKS;
-
-use super::chunk::ChunkHash;
+use crate::{
+    blob::{Blob, BlobAssignments},
+    chunk::ChunkHash,
+    constants::MAX_AGG_SNARKS,
+};
 
 #[derive(Default, Debug, Clone)]
 /// A batch is a set of MAX_AGG_SNARKS num of continuous chunks
@@ -26,27 +28,19 @@ pub struct BatchHash {
     /// The batch data hash:
     /// - keccak256([chunk.hash for chunk in batch])
     pub(crate) data_hash: H256,
-    /// The random challenge point z:
-    /// - keccak256([l2_tx.rlp_signed for l2_tx in batch])
-    pub(crate) z: U256,
-    /// The evaluation of the blob polynomial at z:
-    /// - y = P(z) where P is the blob polynomial
-    pub(crate) y: U256,
     /// The public input hash, as calculated on-chain:
     /// - keccak256( chain_id || prev_state_root || next_state_root || withdraw_trie_root ||
     ///   batch_data_hash || z || y )
     pub(crate) public_input_hash: H256,
     /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
+    pub(crate) blob: BlobAssignments,
 }
 
 impl BatchHash {
     /// Build Batch hash from an ordered list of #MAX_AGG_SNARKS of chunks.
     #[allow(dead_code)]
     pub fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
-        let z = U256::zero();
-        let y = U256::zero();
-
         assert_eq!(
             chunks_with_padding.len(),
             MAX_AGG_SNARKS,
@@ -131,6 +125,10 @@ impl BatchHash {
         //     z ||
         //     y
         // )
+
+        let blob =
+            BlobAssignments::from(&Blob::new(Self::tx_bytes(chunks_with_padding).into_iter()));
+
         let preimage = [
             chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
             chunks_with_padding[0].prev_state_root.as_bytes(),
@@ -141,8 +139,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             batch_data_hash.as_slice(),
-            &z.to_be_bytes(),
-            &y.to_be_bytes(),
+            &blob.z.to_bytes(),
+            &blob.y.to_bytes(),
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
@@ -151,8 +149,7 @@ impl BatchHash {
             chain_id: chunks_with_padding[0].chain_id,
             chunks_with_padding: chunks_with_padding.to_vec(),
             data_hash: batch_data_hash.into(),
-            z,
-            y,
+            blob,
             public_input_hash: public_input_hash.into(),
             number_of_valid_chunks,
         }
@@ -268,5 +265,20 @@ impl BatchHash {
             .iter()
             .map(|&x| F::from(x as u64))
             .collect()]
+    }
+
+    fn tx_bytes(chunks: &[ChunkHash]) -> Vec<u8> {
+        let n_valid_chunks = chunks
+            .iter()
+            .position(|chunk| chunk.is_padding)
+            .unwrap_or(MAX_AGG_SNARKS);
+        std::iter::once(u8::try_from(n_valid_chunks).unwrap())
+            .chain(
+                chunks
+                    .iter()
+                    .flat_map(|chunk| u16::try_from(chunk.tx_bytes.len()).unwrap().to_le_bytes()),
+            )
+            .chain(chunks.iter().flat_map(|chunk| chunk.tx_bytes.clone()))
+            .collect()
     }
 }
