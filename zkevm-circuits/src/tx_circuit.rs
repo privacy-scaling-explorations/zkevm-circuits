@@ -1718,6 +1718,24 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         //////////////////////////////////////////////////////////
         //// EIP4844: Accumulation and Hashing of Chunk Bytes  ///
         //////////////////////////////////////////////////////////
+        meta.create_gate("Chunk len acc and hash RLC acc starts at 0", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "chunk_txbytes_len_acc = 0",
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+            );
+            cb.require_zero(
+                "chunk_txbytes_rlc = 0",
+                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_fixed(q_first, Rotation::cur()),
+            ]))
+        });
+
         meta.create_gate("Chunk Bytes RLC", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
