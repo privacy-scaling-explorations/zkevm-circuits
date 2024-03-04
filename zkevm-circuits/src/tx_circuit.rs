@@ -1842,28 +1842,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate(
-            "One chunk_txbytes_hash for the chunk within the fixed section",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                // chunk_txbytes_hash stays the same for the entire chunk
-                cb.require_equal(
-                    "chunk_txbytes_hash' == chunk_txbytes_hash",
-                    meta.query_advice(chunk_txbytes_hash, Rotation::cur()),
-                    meta.query_advice(chunk_txbytes_hash, Rotation::prev()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                    not::expr(meta.query_fixed(q_first, Rotation::prev())),
-                    not::expr(meta.query_advice(is_calldata, Rotation::cur())),
-                    not::expr(meta.query_advice(is_access_list, Rotation::cur())),
-                ]))
-            },
-        );
-
         log_deg("tx_circuit", meta);
 
         Self {
