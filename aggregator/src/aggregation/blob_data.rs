@@ -37,10 +37,6 @@ pub struct BlobDataConfig {
     /// Column used to store the decoded size (in # of bytes) of a chunk. This has meaningful data
     /// only in the metadata section.
     pub size_chunk: Column<Advice>,
-    /// The hash of all the chunk bytes concatenated.
-    pub chunk_hash_rlc: Column<Advice>,
-    /// The hash of all the blob bytes concatenated.
-    pub blob_hash_rlc: Column<Advice>,
     /// Boolean column to mark right-padded zeroes to blob data.
     pub is_padding: Column<Advice>,
 }
@@ -65,8 +61,6 @@ impl BlobDataConfig {
             chunk_bytes_rlc: meta.advice_column_in(SecondPhase),
             chunk_idx: meta.advice_column(),
             size_chunk: meta.advice_column(),
-            chunk_hash_rlc: meta.advice_column_in(SecondPhase),
-            blob_hash_rlc: meta.advice_column_in(SecondPhase),
             is_padding: meta.advice_column(),
         };
 
@@ -192,10 +186,6 @@ impl BlobDataConfig {
                         - challenge_expr.keccak_input()
                             * meta.query_advice(config.chunk_bytes_rlc, Rotation::prev())
                         - meta.query_advice(config.byte_value, Rotation::cur())),
-                // if cond5: continue chunk_hash
-                cond5.expr()
-                    * (meta.query_advice(config.chunk_hash_rlc, Rotation::next())
-                        - meta.query_advice(config.chunk_hash_rlc, Rotation::cur())),
                 // if cond5: continue chunk_idx
                 cond5.expr()
                     * (meta.query_advice(config.chunk_idx, Rotation::next())
