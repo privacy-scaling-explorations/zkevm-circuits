@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 use std::iter;
 use zkevm_circuits::witness::Block;
 
-#[derive(Default, Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 /// A chunk is a set of continuous blocks.
-/// A ChunkHash consists of 4 hashes, representing the changes incurred by this chunk of blocks:
+/// A ChunkHash consists of 5 hashes, representing the changes incurred by this chunk of blocks:
 /// - state root before this chunk
 /// - state root after this chunk
 /// - the withdraw root after this chunk
 /// - the data hash of this chunk
+/// - the tx data hash of this chunk
 /// - if the chunk is padded (en empty but valid chunk that is padded for aggregation)
 pub struct ChunkHash {
     /// Chain identifier
@@ -26,6 +27,8 @@ pub struct ChunkHash {
     pub withdraw_root: H256,
     /// the data hash of this chunk
     pub data_hash: H256,
+    /// Flattened L2 tx bytes (RLP-signed) in this chunk.
+    pub tx_bytes: Vec<u8>,
     /// if the chunk is a padded chunk
     pub is_padding: bool,
 }
@@ -73,8 +76,12 @@ impl ChunkHash {
                     .chain(b_ctx.gas_limit.to_be_bytes())
                     .chain(num_txs.to_be_bytes())
             }))
-            // Tx Hashes
-            .chain(block.txs.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
+            // Tx Hashes (excluding L2 txs)
+            .chain(block.txs
+                .iter()
+                .filter(|tx| tx.tx_type.is_l1_msg())
+                .flat_map(|tx| tx.hash.to_fixed_bytes())
+            )
             .collect::<Vec<u8>>();
 
         let data_hash = H256(keccak256(data_bytes));
@@ -82,6 +89,13 @@ impl ChunkHash {
             "chunk-hash: data hash = {}",
             hex::encode(data_hash.to_fixed_bytes())
         );
+
+        let tx_bytes = block
+            .txs
+            .iter()
+            .filter(|tx| !tx.tx_type.is_l1_msg())
+            .flat_map(|tx| tx.rlp_signed.to_vec())
+            .collect::<Vec<u8>>();
 
         let post_state_root = block
             .context
@@ -96,8 +110,15 @@ impl ChunkHash {
             post_state_root,
             withdraw_root: H256(block.withdraw_root.to_be_bytes()),
             data_hash,
+            tx_bytes,
             is_padding,
         }
+    }
+
+    /// The keccak256 hash of the flattened RLP-encoded signed tx bytes over all L2 txs in this
+    /// chunk.
+    pub(crate) fn tx_bytes_hash(&self) -> H256 {
+        H256(keccak256(&self.tx_bytes))
     }
 
     /// Sample a chunk hash from random (for testing)
@@ -111,12 +132,15 @@ impl ChunkHash {
         r.fill_bytes(&mut withdraw_root);
         let mut data_hash = [0u8; 32];
         r.fill_bytes(&mut data_hash);
+        let mut tx_bytes = [0u8; 1024];
+        r.fill_bytes(&mut tx_bytes);
         Self {
             chain_id: 0,
             prev_state_root: prev_state_root.into(),
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
+            tx_bytes,
             is_padding: false,
         }
     }
@@ -134,19 +158,35 @@ impl ChunkHash {
             post_state_root: previous_chunk.post_state_root,
             withdraw_root: previous_chunk.withdraw_root,
             data_hash: previous_chunk.data_hash,
+            tx_bytes: previous_chunk.tx_bytes,
             is_padding: true,
         }
     }
 
     /// Public input hash for a given chunk is defined as
-    ///  keccak( chain id || prev state root || post state root || withdraw root || data hash )
+    /// keccak(
+    ///     chain id ||
+    ///     prev state root ||
+    ///     post state root ||
+    ///     withdraw root ||
+    ///     chunk data hash ||
+    ///     chunk txdata hash
+    /// )
     pub fn public_input_hash(&self) -> H256 {
         let preimage = self.extract_hash_preimage();
         keccak256::<&[u8]>(preimage.as_ref()).into()
     }
 
     /// Extract the preimage for the hash
-    ///  chain id || prev state root || post state root || withdraw root || data hash
+    ///
+    /// [
+    ///     chain id ||
+    ///     prev state root ||
+    ///     post state root ||
+    ///     withdraw root ||
+    ///     chunk data hash ||
+    ///     chunk txdata hash
+    /// ]
     pub fn extract_hash_preimage(&self) -> Vec<u8> {
         [
             self.chain_id.to_be_bytes().as_ref(),
@@ -154,6 +194,7 @@ impl ChunkHash {
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),
             self.data_hash.as_bytes(),
+            self.tx_bytes_hash().as_bytes(),
         ]
         .concat()
     }

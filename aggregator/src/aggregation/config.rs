@@ -12,7 +12,7 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::KeccakTable,
+    table::{KeccakTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
 
@@ -20,7 +20,7 @@ use crate::{
     barycentric::BarycentricEvaluationConfig,
     constants::{BITS, LIMBS},
     param::ConfigParams,
-    RlcConfig,
+    BlobDataConfig, RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -34,6 +34,8 @@ pub struct AggregationConfig {
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,    
     /// RLC config
     pub rlc_config: RlcConfig,
+    /// The blob data's config.
+    pub blob_data_config: BlobDataConfig,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)
@@ -55,6 +57,10 @@ impl AggregationConfig {
             params.limb_bits == BITS && params.num_limbs == LIMBS,
             "For now we fix limb_bits = {BITS}, otherwise change code",
         );
+
+        // Blob data.
+        let u8_table = U8Table::construct(meta);
+        let blob_data_config = BlobDataConfig::configure(meta, challenges, u8_table);
 
         // RLC configuration
         let rlc_config = RlcConfig::configure(meta, challenges);
@@ -113,6 +119,7 @@ impl AggregationConfig {
         Self {
             base_field_config,
             rlc_config,
+            blob_data_config,
             keccak_circuit_config,
             instance,
             barycentric,

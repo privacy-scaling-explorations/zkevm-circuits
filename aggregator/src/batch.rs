@@ -1,7 +1,7 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{Field, H256};
+use eth_types::{Field, ToBigEndian, H256, U256};
 use ethers_core::utils::keccak256;
 
 use crate::constants::MAX_AGG_SNARKS;
@@ -17,20 +17,33 @@ use super::chunk::ChunkHash;
 ///   chunk_k-1.withdraw_root || batch_data_hash)
 /// - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
 pub struct BatchHash {
+    /// Chain ID of the network.
     pub(crate) chain_id: u64,
-    // chunks with padding.
-    // - the first [0..number_of_valid_chunks) are real ones
-    // - the last [number_of_valid_chunks, MAX_AGG_SNARKS) are padding
-    pub(crate) chunks_with_padding: [ChunkHash; MAX_AGG_SNARKS],
+    /// chunks with padding.
+    /// - the first [0..number_of_valid_chunks) are real ones
+    /// - the last [number_of_valid_chunks, MAX_AGG_SNARKS) are padding
+    pub(crate) chunks_with_padding: Vec<ChunkHash>,
+    /// The batch data hash:
+    /// - keccak256([chunk.hash for chunk in batch])
     pub(crate) data_hash: H256,
+    /// The random challenge point z:
+    /// - keccak256([l2_tx.rlp_signed for l2_tx in batch])
+    pub(crate) z: U256,
+    /// The evaluation of the blob polynomial at z:
+    /// - y = P(z) where P is the blob polynomial
+    pub(crate) y: U256,
+    /// The public input hash, as calculated on-chain:
+    /// - keccak256( chain_id || prev_state_root || next_state_root || withdraw_trie_root ||
+    ///   batch_data_hash || z || y )
     pub(crate) public_input_hash: H256,
+    /// The number of chunks that contain meaningful data, i.e. not padded chunks.
     pub(crate) number_of_valid_chunks: usize,
 }
 
 impl BatchHash {
     /// Build Batch hash from an ordered list of #MAX_AGG_SNARKS of chunks.
     #[allow(dead_code)]
-    pub fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
+    pub fn construct(chunks_with_padding: &[ChunkHash], z: U256, y: U256) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
             MAX_AGG_SNARKS,
@@ -68,10 +81,6 @@ impl BatchHash {
             );
             if chunks_with_padding[i + 1].is_padding {
                 assert_eq!(
-                    chunks_with_padding[i + 1].data_hash,
-                    chunks_with_padding[i].data_hash
-                );
-                assert_eq!(
                     chunks_with_padding[i + 1].prev_state_root,
                     chunks_with_padding[i].prev_state_root
                 );
@@ -83,6 +92,14 @@ impl BatchHash {
                     chunks_with_padding[i + 1].withdraw_root,
                     chunks_with_padding[i].withdraw_root
                 );
+                assert_eq!(
+                    chunks_with_padding[i + 1].data_hash,
+                    chunks_with_padding[i].data_hash
+                );
+                assert_eq!(
+                    chunks_with_padding[i + 1].tx_bytes_hash(),
+                    chunks_with_padding[i].tx_bytes_hash(),
+                );
             } else {
                 assert_eq!(
                     chunks_with_padding[i].post_state_root,
@@ -92,22 +109,25 @@ impl BatchHash {
         }
 
         // batch's data hash is build as
-        //  keccak( chunk[0].data_hash || ... || chunk[k-1].data_hash)
+        // keccak( chunk[0].data_hash || ... || chunk[k-1].data_hash )
         let preimage = chunks_with_padding
             .iter()
             .take(number_of_valid_chunks)
             .flat_map(|chunk_hash| chunk_hash.data_hash.0.iter())
             .cloned()
             .collect::<Vec<_>>();
-        let data_hash = keccak256(preimage);
+        let batch_data_hash = keccak256(preimage);
 
         // public input hash is build as
-        //  keccak(
-        //      chain_id ||
-        //      chunk[0].prev_state_root ||
-        //      chunk[k-1].post_state_root ||
-        //      chunk[k-1].withdraw_root ||
-        //      batch_data_hash )
+        // keccak(
+        //     chain_id ||
+        //     chunk[0].prev_state_root ||
+        //     chunk[k-1].post_state_root ||
+        //     chunk[k-1].withdraw_root ||
+        //     batch_data_hash ||
+        //     z ||
+        //     y
+        // )
         let preimage = [
             chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
             chunks_with_padding[0].prev_state_root.as_bytes(),
@@ -117,18 +137,48 @@ impl BatchHash {
             chunks_with_padding[MAX_AGG_SNARKS - 1]
                 .withdraw_root
                 .as_bytes(),
-            data_hash.as_slice(),
+            batch_data_hash.as_slice(),
+            &z.to_be_bytes(),
+            &y.to_be_bytes(),
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
 
         Self {
             chain_id: chunks_with_padding[0].chain_id,
-            chunks_with_padding: chunks_with_padding.try_into().unwrap(), // safe unwrap
-            data_hash: data_hash.into(),
+            chunks_with_padding: chunks_with_padding.to_vec(),
+            data_hash: batch_data_hash.into(),
+            z,
+            y,
             public_input_hash: public_input_hash.into(),
             number_of_valid_chunks,
         }
+    }
+
+    /// Convert a batch of chunks to blob data.
+    pub(crate) fn to_blob_data(&self) -> Vec<u8> {
+        let blob_bytes = std::iter::empty()
+            .chain(std::iter::once(self.number_of_valid_chunks as u8))
+            .chain(self.chunks_with_padding.iter().flat_map(|chunk| {
+                let chunk_size = chunk.tx_bytes.len() as u16;
+                chunk_size.to_le_bytes()
+            }))
+            .chain(
+                self.chunks_with_padding
+                    .iter()
+                    .flat_map(|chunk| chunk.tx_bytes.clone()),
+            )
+            .collect::<Vec<u8>>();
+        assert!(blob_bytes.len() < 4096 * 31);
+
+        // TODO: use constants
+        let mut blob_data = Vec::with_capacity(4096 * 32);
+        for chunk in blob_bytes.chunks(31) {
+            blob_data.push(0);
+            blob_data.extend_from_slice(chunk);
+        }
+        blob_data.resize(4096 * 32, 0);
+        blob_data
     }
 
     /// Extract all the hash inputs that will ever be used.
@@ -138,6 +188,8 @@ impl BatchHash {
     /// - batch_public_input_hash
     /// - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
     /// - batch_data_hash_preimage
+    /// - chunk\[i\].tx_bytes for i in \[0, number_of_valid_chunks)
+    /// - blob data (used as pre-image or z)
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
 
@@ -165,19 +217,15 @@ impl BatchHash {
         // compute piHash for each chunk for i in [0..MAX_AGG_SNARKS)
         // chunk[i].piHash =
         // keccak(
-        //        chain id ||
-        //        chunk[i].prevStateRoot || chunk[i].postStateRoot || chunk[i].withdrawRoot ||
-        //        chunk[i].datahash)
+        //     chain id ||
+        //     chunk[i].prevStateRoot ||
+        //     chunk[i].postStateRoot ||
+        //     chunk[i].withdrawRoot ||
+        //     chunk[i].datahash ||
+        //     chunk[i].tx_data_hash
+        // )
         for chunk in self.chunks_with_padding.iter() {
-            let chunk_public_input_hash_preimage = [
-                self.chain_id.to_be_bytes().as_ref(),
-                chunk.prev_state_root.as_bytes(),
-                chunk.post_state_root.as_bytes(),
-                chunk.withdraw_root.as_bytes(),
-                chunk.data_hash.as_bytes(),
-            ]
-            .concat();
-            res.push(chunk_public_input_hash_preimage)
+            res.push(chunk.extract_hash_preimage());
         }
 
         // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
@@ -189,6 +237,21 @@ impl BatchHash {
             .cloned()
             .collect();
         res.push(batch_data_hash_preimage);
+
+        // flattened RLP-signed tx bytes for all L2 txs in chunk.
+        //
+        // This is eventually used in the chunk PI hash (defined above).
+        for chunk in self.chunks_with_padding.iter() {
+            if !chunk.is_padding {
+                res.push(chunk.tx_bytes.clone());
+            }
+        }
+
+        // flattened RLP-signed tx bytes for all L2 txs in batch.
+        //
+        // This is used to compute the random challenge point z, where:
+        // z = keccak256([tx.rlp_signed for tx in chunk for chunk in batch])
+        res.push(self.to_blob_data());
 
         res
     }

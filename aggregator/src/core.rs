@@ -237,13 +237,18 @@ pub(crate) fn extract_hash_cells(
     //      chunk[0].prev_state_root ||
     //      chunk[k-1].post_state_root ||
     //      chunk[k-1].withdraw_root ||
-    //      batch_data_hash)
+    //      batch_data_hash ||
+    //      z ||
+    //      y)
     // (2) chunk[i].piHash preimage =
     //      (chain id ||
     //      chunk[i].prevStateRoot || chunk[i].postStateRoot ||
-    //      chunk[i].withdrawRoot || chunk[i].datahash)
+    //      chunk[i].withdrawRoot || chunk[i].datahash ||
+    //      chunk[i].tx_data_hash)
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
+    // (4) chunk[i].tx_bytes
+    // (5) blob data
     // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, keccak_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
@@ -385,7 +390,10 @@ fn copy_constraints(
                 //      chunk[0].prev_state_root ||
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
-                //      batchData_hash )
+                //      batch_data_hash ||
+                //      z ||
+                //      y
+                //   )
                 //
                 // chunk[i].piHash =
                 //   keccak(
@@ -393,7 +401,9 @@ fn copy_constraints(
                 //        chunk[i].prevStateRoot ||
                 //        chunk[i].postStateRoot ||
                 //        chunk[i].withdrawRoot  ||
-                //        chunk[i].datahash)
+                //        chunk[i].datahash ||
+                //        chunk[i].tx_data_hash
+                //   )
                 //
                 // PREV_STATE_ROOT_INDEX, POST_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
                 // used below are byte positions for
@@ -650,7 +660,10 @@ pub(crate) fn conditional_constraints(
                 //      chunk[0].prev_state_root ||
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
-                //      batch_data_hash )
+                //      batch_data_hash ||
+                //      z ||
+                //      y
+                //  )
                 //
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
                 //
@@ -725,7 +738,9 @@ pub(crate) fn conditional_constraints(
                 //        chunk[i].prevStateRoot ||
                 //        chunk[i].postStateRoot ||
                 //        chunk[i].withdrawRoot  ||
-                //        chunk[i].datahash)
+                //        chunk[i].datahash ||
+                //        chunk[i].tx_data_hash
+                //     )
                 for i in 0..MAX_AGG_SNARKS {
                     for j in 0..DIGEST_LEN {
                         assert_conditional_equal(
