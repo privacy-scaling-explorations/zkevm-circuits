@@ -20,13 +20,13 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag},
+    table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{
         word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
-use bus_mapping::state_db::CodeDB;
+use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
 use eth_types::{evm_types::PRECOMPILE_COUNT, keccak256, Field, OpsIdentity, ToWord, U256};
 use halo2_proofs::{
     circuit::Value,
@@ -216,15 +216,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 caller_nonce_hash_bytes.to_word(),
             );
 
-            cb.keccak_table_lookup(
-                create.code_hash_keccak_rlc(cb),
-                32.expr(),
-                cb.curr.state.code_hash.to_word(),
+            let length = cb.tx_context(tx_id.expr(), TxContextFieldTag::CallDataLength, None);
+            let copy_rwc_inc = cb.query_cell();
+            let rlc_acc = cb.query_cell_phase2();
+            cb.copy_table_lookup(
+                WordLoHi::from_lo_unchecked(tx_id.expr()),
+                CopyDataType::TxCalldata.expr(),
+                WordLoHi::zero(),
+                CopyDataType::RlcAcc.expr(),
+                0.expr(),
+                length.expr(),
+                0.expr(),
+                length.expr(),
+                rlc_acc.expr(),
+                copy_rwc_inc.expr(),
             );
-            cb.require_equal_word(
-                "code hash equivalence",
-                code_hash.to_word(),
-                create.code_hash().to_word(),
+            cb.keccak_table_lookup(
+                rlc_acc.expr(),
+                length.expr(),
+                cb.curr.state.code_hash.to_word(),
             );
 
             cb.account_write(
