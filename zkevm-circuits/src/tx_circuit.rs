@@ -218,6 +218,11 @@ pub struct TxCircuitConfig<F: Field> {
     // works together with section_rlc to ensure
     // no ommittance in access list dynamic section
     field_rlc: Column<Advice>,
+    // column for reducing degree. Excludes L1Msg and padding tx
+    is_chunk_bytes: Column<Advice>, 
+    // A tx's len for the chunk's hash is different from HashLen
+    // A padding tx, for example, has a non-zero HashLen but isn't included in chunk hash.
+    chunk_bytes_len: Column<Advice>,
     // chunk_txbytes_rlc is the rlc of all signed rlp bytes in the chunk
     // used for calculating hash of all chunk bytes
     chunk_txbytes_rlc: Column<Advice>,
@@ -347,6 +352,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let field_rlc = meta.advice_column();
 
         // Chunk bytes accumulator
+        let is_chunk_bytes = meta.advice_column();
+        let chunk_bytes_len = meta.advice_column();
         let chunk_txbytes_rlc = meta.advice_column_in(SecondPhase);
         let chunk_txbytes_hash = meta.advice_column_in(SecondPhase);
         let chunk_txbytes_len_acc = meta.advice_column();
@@ -1805,7 +1812,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             vec![
                 1.expr(),                                           // q_enable
-                meta.query_advice(tx_table.value, Rotation::cur()), // exponent
+                meta.query_advice(chunk_bytes_len, Rotation::cur()), // exponent
                 meta.query_advice(pow_of_rand, Rotation::cur()),    // pow_of_rand
             ]
             .into_iter()
@@ -1897,6 +1904,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_access_list_address,
             is_access_list_storage_key,
             field_rlc,
+            is_chunk_bytes,
+            chunk_bytes_len,
             chunk_txbytes_rlc,
             chunk_txbytes_len_acc,
             chunk_txbytes_hash,
@@ -2558,7 +2567,14 @@ impl<F: Field> TxCircuitConfig<F> {
             access_list_size(&tx.access_list);
 
         // Only bytes from L2 txs are accumulated for chunk bytes hash
-        let hash_len = if tx.tx_type != TxType::L1Msg {
+        let is_chunk_bytes = (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero();
+
+        // 4844_debug
+        log::trace!("=> is_chunk_bytes: {:?}", is_chunk_bytes);
+        log::trace!("=> tx.tx_type: {:?}", tx.tx_type);
+        log::trace!("=> tx.caller_address: {:?}", tx.caller_address);
+
+        let hash_len = if is_chunk_bytes {
             tx.rlp_signed.len()
         } else {
             0
@@ -2570,7 +2586,7 @@ impl<F: Field> TxCircuitConfig<F> {
             }
         }
         let pow_of_rand = pows_of_rand[hash_len];
-        let chunk_txbytes_rlc = if tx.tx_type != TxType::L1Msg {
+        let chunk_txbytes_rlc = if is_chunk_bytes {
             chunk_txbytes_rlc_acc.mul(pow_of_rand).add(tx_hash_rlc)
         } else {
             chunk_txbytes_rlc_acc
@@ -2900,6 +2916,16 @@ impl<F: Field> TxCircuitConfig<F> {
                     "is_tag_caller_addr",
                     self.is_caller_address,
                     F::from((tx_tag == CallerAddress) as u64),
+                ),
+                (
+                    "is_chunk_bytes",
+                    self.is_chunk_bytes,
+                    F::from(is_chunk_bytes as u64),
+                ),
+                (
+                    "chunk_bytes_len",
+                    self.chunk_bytes_len,
+                    F::from(hash_len as u64),
                 ),
             ] {
                 region.assign_advice(|| col_anno, col, *offset, || Value::known(col_val))?;
@@ -3542,7 +3568,7 @@ impl<F: Field> TxCircuit<F> {
         let chunk_hash_bytes = self
             .txs
             .iter()
-            .filter(|&tx| tx.tx_type != TxType::L1Msg)
+            .filter(|&tx| (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero())
             .flat_map(|tx| tx.rlp_signed.clone())
             .collect::<Vec<u8>>();
         inputs.extend_from_slice(&[chunk_hash_bytes]);
@@ -3684,12 +3710,20 @@ impl<F: Field> TxCircuit<F> {
 
                 let mut chunk_bytes: Vec<u8> = vec![];
                 for i in 0..sigs.len() {
-                    chunk_bytes.extend_from_slice(&get_tx(i).rlp_signed);
+                    let tx = get_tx(i);
+                    if (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero() {
+                        chunk_bytes.extend_from_slice(&tx.rlp_signed);
+                    }
                 }
 
                 let chunk_txbytes_hash = keccak256(chunk_bytes.as_slice());
                 let evm_word = challenges.evm_word();
                 let chunk_txbytes_hash = rlc_be_bytes(&chunk_txbytes_hash, evm_word);
+
+                // 4844_debug
+                log::trace!("=> chunk_txbytes_hash, calculated: {:?}", chunk_txbytes_hash);
+                log::trace!("=> chunk_txbytes_len, calculated: {:?}", chunk_bytes.len());
+
 
                 let mut tx_value_cells = vec![];
                 let mut chunk_txbytes_rlc_acc = Value::known(F::zero());
@@ -3778,6 +3812,10 @@ impl<F: Field> TxCircuit<F> {
 
                     chunk_txbytes_rlc_acc = supplemental_data[0];
                     chunk_txbytes_len_acc = supplemental_data[1];
+
+                    // 4844_debug
+                    log::trace!("=> chunk_txbytes_rlc_acc, in circuit: {:?}", chunk_txbytes_rlc_acc);
+                    log::trace!("=> chunk_txbytes_len_acc, in circuit: {:?}", chunk_txbytes_len_acc);
 
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
