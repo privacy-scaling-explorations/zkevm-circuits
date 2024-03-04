@@ -74,15 +74,10 @@ impl BarycentricEvaluationConfig {
         let p = ((0..LOG_BLOG_WIDTH).fold(z.clone(), |square, _| square.clone() * square) - one)
             * ROOTS_OF_UNITY
                 .map(ScalarFieldElement::constant)
-                .iter()
+                .into_iter()
                 .zip_eq(blob.map(ScalarFieldElement::private))
-                .map(|(root, f)| f * (root.clone() / (z.clone() - root.clone())).carry())
-                .reduce(|a, b| (a + b).carry()) // TODO: can 4096 additions happen without overflow, yes but you need to add this in
-                // a divide and conquer way. you need to add these in a tree like
-                // manner so that it's clear to the context that the number of bits is not too
-                // large....
-                .unwrap()
-                .carry()
+                .map(|(root, f)| f * (root.clone() / (z.clone() - root)).carry())
+                .sum()
             / blob_width;
         p.resolve(ctx, &self.scalar)
     }
