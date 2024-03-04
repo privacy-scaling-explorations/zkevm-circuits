@@ -87,9 +87,7 @@ impl AggregationConfig {
             params.degree as usize,
         );
 
-        // let barycentric =
-        // BarycentricEvaluationConfig::construct(base_field_config.range.clone());
-        let barycentric = BarycentricEvaluationConfig::configure(meta);
+        let barycentric = BarycentricEvaluationConfig::construct(base_field_config.range.clone());
 
         let columns = keccak_circuit_config.cell_manager.columns();
         log::info!("keccak uses {} columns", columns.len(),);

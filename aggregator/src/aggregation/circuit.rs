@@ -185,7 +185,7 @@ impl Circuit<Fr> for AggregationCircuit {
                     let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
                     // stores public inputs for all snarks, including the padded ones
                     let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
-                    let ctx = Context::new(
+                    let mut ctx = Context::new(
                         region,
                         ContextParams {
                             max_rows: config.flex_gate().max_rows,
@@ -193,6 +193,10 @@ impl Circuit<Fr> for AggregationCircuit {
                             fixed_columns: config.flex_gate().constants.clone(),
                         },
                     );
+
+                    config
+                        .barycentric
+                        .assign(&mut ctx, [Scalar::one(); 4096], Scalar::from(2));
 
                     let ecc_chip = config.ecc_chip();
                     let loader = Halo2Loader::new(ecc_chip, ctx);
@@ -375,24 +379,6 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
-
-        layouter.assign_region(
-            || "blob consistency checks",
-            |region| -> Result<(), Error> {
-                let mut context = Context::new(
-                    region,
-                    ContextParams {
-                        max_rows: config.barycentric.scalar.range.gate.max_rows,
-                        num_context_ids: 1,
-                        fixed_columns: config.barycentric.scalar.range.gate.constants.clone(),
-                    },
-                );
-                config
-                    .barycentric
-                    .assign(&mut context, [Scalar::one(); 4096], Scalar::from(2));
-                Ok(())
-            },
-        )?;
 
         end_timer!(witness_time);
         Ok(())

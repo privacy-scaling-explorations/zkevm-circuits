@@ -36,25 +36,6 @@ pub struct BarycentricEvaluationConfig {
 }
 
 impl BarycentricEvaluationConfig {
-    pub fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
-        let scalar = FpConfig::configure(
-            meta,
-            FpStrategy::Simple,
-            &[35],
-            &[17],
-            1,
-            13,
-            BITS,  // on
-            LIMBS, //
-            modulus::<Scalar>(),
-            0,
-            LOG_DEGREE.try_into().unwrap(),
-        );
-
-        Self { scalar }
-    }
-
-    // TODO: figure out why using this doesn't work?
     pub fn construct(range: RangeConfig<Fr>) -> Self {
         Self {
             scalar: FpConfig::construct(range, BITS, LIMBS, modulus::<Scalar>()),
