@@ -126,8 +126,7 @@ impl BatchHash {
         //     y
         // )
 
-        let blob =
-            BlobAssignments::from(&Blob::new(Self::tx_bytes(chunks_with_padding).into_iter()));
+        let blob = BlobAssignments::from(&Blob::new(chunks_with_padding));
 
         let preimage = [
             chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
@@ -265,20 +264,5 @@ impl BatchHash {
             .iter()
             .map(|&x| F::from(x as u64))
             .collect()]
-    }
-
-    fn tx_bytes(chunks: &[ChunkHash]) -> Vec<u8> {
-        let n_valid_chunks = chunks
-            .iter()
-            .position(|chunk| chunk.is_padding)
-            .unwrap_or(MAX_AGG_SNARKS);
-        std::iter::once(u8::try_from(n_valid_chunks).unwrap())
-            .chain(
-                chunks
-                    .iter()
-                    .flat_map(|chunk| u16::try_from(chunk.tx_bytes.len()).unwrap().to_le_bytes()),
-            )
-            .chain(chunks.iter().flat_map(|chunk| chunk.tx_bytes.clone()))
-            .collect()
     }
 }
