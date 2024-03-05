@@ -219,7 +219,7 @@ pub struct TxCircuitConfig<F: Field> {
     // no ommittance in access list dynamic section
     field_rlc: Column<Advice>,
     // column for reducing degree. Excludes L1Msg and padding tx
-    is_chunk_bytes: Column<Advice>, 
+    is_chunk_bytes: Column<Advice>,
     // A tx's len for the chunk's hash is different from HashLen
     // A padding tx, for example, has a non-zero HashLen but isn't included in chunk hash.
     chunk_bytes_len: Column<Advice>,
@@ -1746,7 +1746,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-
         meta.create_gate("Chunk len acc and hash RLC acc starts at 0", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1785,7 +1784,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                         * meta.query_advice(pow_of_rand, Rotation::cur())
                         + meta.query_advice(tx_table.value, Rotation::cur()),
             );
-        
+
             // The chunk bytes len is the same as the HashLen field in tx_table (in the prev row)
             cb.require_equal(
                 "chunk_bytes_len = HashLen",
@@ -1801,29 +1800,32 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        meta.create_gate("Chunk Bytes RLC stays same for l1 msg and padding txs", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "Chunk Bytes RLC stays same for l1 msg and padding txs",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            // Check hash length is unchanged
-            cb.require_equal(
-                "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
-            );
+                // Check hash length is unchanged
+                cb.require_equal(
+                    "chunk_txbytes_len_acc::cur == chunk_txbytes_len_acc::prev",
+                    meta.query_advice(chunk_txbytes_len_acc, Rotation::cur()),
+                    meta.query_advice(chunk_txbytes_len_acc, Rotation(-(HASH_RLC_OFFSET as i32))),
+                );
 
-            // Check chunk RLC is unchanged
-            cb.require_equal(
-                "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
-                meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
-                meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
-            );
+                // Check chunk RLC is unchanged
+                cb.require_equal(
+                    "chunk_txbytes_rlc::cur == chunk_txbytes_rlc::prev",
+                    meta.query_advice(chunk_txbytes_rlc, Rotation::cur()),
+                    meta.query_advice(chunk_txbytes_rlc, Rotation(-(HASH_RLC_OFFSET as i32))),
+                );
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_advice(is_chunk_bytes, Rotation::cur())),
-                is_hash_rlc(meta)
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_advice(is_chunk_bytes, Rotation::cur())),
+                    is_hash_rlc(meta),
+                ]))
+            },
+        );
 
         meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
             let enable = and::expr(vec![
@@ -1833,9 +1835,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                           // q_enable
+                1.expr(),                                            // q_enable
                 meta.query_advice(chunk_bytes_len, Rotation::cur()), // exponent
-                meta.query_advice(pow_of_rand, Rotation::cur()),    // pow_of_rand
+                meta.query_advice(pow_of_rand, Rotation::cur()),     // pow_of_rand
             ]
             .into_iter()
             .zip(pow_of_rand_table.table_exprs(meta))
@@ -2519,11 +2521,11 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                                  // q_enable
-                1.expr(),                                                  // is_final
-                meta.query_advice(chunk_txbytes_rlc, Rotation::prev()),    // input_rlc
+                1.expr(),                                                   // q_enable
+                1.expr(),                                                   // is_final
+                meta.query_advice(chunk_txbytes_rlc, Rotation::prev()),     // input_rlc
                 meta.query_advice(chunk_txbytes_len_acc, Rotation::prev()), // input_len
-                meta.query_advice(chunk_txbytes_hash, Rotation::prev()),        // output_rlc
+                meta.query_advice(chunk_txbytes_hash, Rotation::prev()),    // output_rlc
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))
