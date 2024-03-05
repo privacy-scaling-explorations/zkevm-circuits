@@ -421,7 +421,9 @@ impl<F: Field> TransferToGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         rws: &mut StepRws,
-        (receiver_exists, value, is_create): (bool, U256, bool),
+        receiver_exists: bool,
+        value: U256,
+        is_create: bool,
     ) -> Result<(), Error> {
         if !receiver_exists && (!value.is_zero() || is_create) {
             // receiver's code_hash
@@ -533,7 +535,9 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         rws: &mut StepRws,
-        (receiver_exists, value, is_create): (bool, U256, bool),
+        receiver_exists: bool,
+        value: U256,
+        is_create: bool,
         gas_fee: Option<U256>,
     ) -> Result<(), Error> {
         if WITH_FEE {
@@ -559,7 +563,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
             sender_balance_sub_value.0,
         )?;
         self.receiver
-            .assign(region, offset, rws, (receiver_exists, value, is_create))?;
+            .assign(region, offset, rws, receiver_exists, value, is_create)?;
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
         Ok(())

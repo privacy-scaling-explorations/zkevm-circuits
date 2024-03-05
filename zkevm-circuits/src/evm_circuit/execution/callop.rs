@@ -868,13 +868,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // conditionally assign
         if is_call && is_precheck_ok {
-            self.transfer.assign(
-                region,
-                offset,
-                &mut rws,
-                (callee_exists, value, false),
-                None,
-            )?;
+            self.transfer
+                .assign(region, offset, &mut rws, callee_exists, value, false, None)?;
         }
 
         self.opcode

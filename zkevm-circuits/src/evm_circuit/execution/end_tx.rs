@@ -212,7 +212,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             &mut rws,
-            (!coinbase_code_hash_prev.is_zero(), coinbase_reward, false),
+            !coinbase_code_hash_prev.is_zero(),
+            coinbase_reward,
+            false,
         )?;
         self.is_persistent.assign(
             region,

@@ -470,7 +470,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             &mut rws,
-            (callee_exists, tx.value, tx.is_create()),
+            callee_exists,
+            tx.value,
+            tx.is_create(),
             Some(gas_fee),
         )?;
         self.begin_tx.assign(region, offset, tx)?;

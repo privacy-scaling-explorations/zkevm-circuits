@@ -643,7 +643,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     region,
                     offset,
                     &mut rws,
-                    (!callee_prev_code_hash.is_zero(), value, true),
+                    !callee_prev_code_hash.is_zero(),
+                    value,
+                    true,
                     None,
                 )?;
             }
