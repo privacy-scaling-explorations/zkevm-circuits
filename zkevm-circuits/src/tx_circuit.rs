@@ -2591,11 +2591,6 @@ impl<F: Field> TxCircuitConfig<F> {
         // Only bytes from L2 txs are accumulated for chunk bytes hash
         let is_chunk_bytes = (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero();
 
-        // 4844_debug
-        log::trace!("=> is_chunk_bytes: {:?}", is_chunk_bytes);
-        log::trace!("=> tx.tx_type: {:?}", tx.tx_type);
-        log::trace!("=> tx.caller_address: {:?}", tx.caller_address);
-
         let hash_len = if is_chunk_bytes {
             tx.rlp_signed.len()
         } else {
@@ -3742,11 +3737,6 @@ impl<F: Field> TxCircuit<F> {
                 let evm_word = challenges.evm_word();
                 let chunk_txbytes_hash = rlc_be_bytes(&chunk_txbytes_hash, evm_word);
 
-                // 4844_debug
-                log::trace!("=> chunk_txbytes_hash, calculated: {:?}", chunk_txbytes_hash);
-                log::trace!("=> chunk_txbytes_len, calculated: {:?}", chunk_bytes.len());
-
-
                 let mut tx_value_cells = vec![];
                 let mut chunk_txbytes_rlc_acc = Value::known(F::zero());
                 let mut chunk_txbytes_len_acc = Value::known(F::zero());
@@ -3834,10 +3824,6 @@ impl<F: Field> TxCircuit<F> {
 
                     chunk_txbytes_rlc_acc = supplemental_data[0];
                     chunk_txbytes_len_acc = supplemental_data[1];
-
-                    // 4844_debug
-                    log::trace!("=> chunk_txbytes_rlc_acc, in circuit: {:?}", chunk_txbytes_rlc_acc);
-                    log::trace!("=> chunk_txbytes_len_acc, in circuit: {:?}", chunk_txbytes_len_acc);
 
                     // set next tx's total_l1_popped_before
                     total_l1_popped_before = total_l1_popped_after;
