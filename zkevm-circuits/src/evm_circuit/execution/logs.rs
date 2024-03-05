@@ -402,10 +402,10 @@ mod test {
         code.write_op(cur_op_code);
 
         // second log op code
-        // prepare additinal bytes for memory reading
+        // prepare additional bytes for memory reading
         code.append(&prepare_code(&pushdata, 0x20));
         mstart = 0x00usize;
-        // when mszie > 0x20 (32) needs multi copy steps
+        // when msize > 0x20 (32) needs multi copy steps
         msize = 0x30usize;
         for topic in topics {
             code.push(32, *topic);

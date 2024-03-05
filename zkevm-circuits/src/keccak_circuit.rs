@@ -296,7 +296,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         // that allows reusing the same parts in an optimal way for the chi step.
         // We can save quite a few columns by not recombining the parts after rho/pi and
         // re-splitting the words again before chi. Instead we do chi directly
-        // on the output parts of rho/pi. For rho/pi specically we do
+        // on the output parts of rho/pi. For rho/pi specially we do
         // `s[j][2 * i + 3 * j) % 5] = normalize(rot(s[i][j], RHOM[i][j]))`.
         cell_manager.get_strategy().start_region();
         let mut lookup_counter = 0;
@@ -1005,7 +1005,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
         keccak_unusable_rows()
     }
 
-    /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
+    /// The `block.circuits_params.keccak_padding` parameter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.
     fn new_from_block(block: &witness::Block<F>) -> Self {

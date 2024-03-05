@@ -37,7 +37,7 @@ impl Instrument {
         self.states.push((execution_state, sizes));
     }
 
-    /// Dissasembles the instrumentation data and returns a collection of
+    /// Disassembles the instrumentation data and returns a collection of
     /// `ExecStateReport`s. One for each EVM `ExecutionState`.
     pub fn analyze(&self) -> Vec<ExecStateReport> {
         let mut report_collection = vec![];
@@ -116,7 +116,7 @@ impl Instrument {
 }
 
 /// Struct which contains a Cost/ColumnType report for a particular EVM
-/// `ExecutionStep`.
+/// [`ExecStep`](bus_mapping::circuit_input_builder::ExecStep).
 #[derive(Clone, Debug, Default)]
 pub struct ExecStateReport {
     pub state: ExecutionState,

@@ -69,6 +69,8 @@ pub struct CopyCircuitConfig<F> {
     /// The Copy Table contains the columns that are exposed via the lookup
     /// expressions
     pub copy_table: CopyTable,
+    /// BinaryNumber config out of the tag bits from `copy_table`
+    copy_table_tag: BinaryNumberConfig<CopyDataType, 3>,
     /// Lt chip to check: src_addr < src_addr_end.
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
@@ -128,7 +130,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let rlc_acc = copy_table.rlc_acc;
         let rw_counter = copy_table.rw_counter;
         let rwc_inc_left = copy_table.rwc_inc_left;
-        let tag = copy_table.tag;
+        let tag_bits = copy_table.tag;
 
         // annotate table columns
         tx_table.annotate_columns(meta);
@@ -136,6 +138,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         bytecode_table.annotate_columns(meta);
         copy_table.annotate_columns(meta);
 
+        let tag = BinaryNumberChip::configure(meta, tag_bits, q_enable, None);
         let addr_lt_addr_end = LtChip::configure(
             meta,
             |meta| meta.query_selector(q_step),
@@ -428,7 +431,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        meta.create_gate("id_hi === 0 when Momory", |meta| {
+        meta.create_gate("id_hi === 0 when Memory", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             let cond = tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
@@ -471,6 +474,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             q_enable,
             addr_lt_addr_end,
             copy_table,
+            copy_table_tag: tag,
             tx_table,
             rw_table,
             bytecode_table,
@@ -526,7 +530,11 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .zip_eq(table_row)
             {
                 // Leave sr_addr_end and bytes_left unassigned when !is_read
-                if !is_read && (label == "src_addr_end" || label == "bytes_left") {
+                // Leave tag_bit columns unassigned, since they are already assigned via
+                // `tag_chip.assign`
+                if (!is_read && (label == "src_addr_end" || label == "bytes_left"))
+                    || label == "tag_bit"
+                {
                 } else {
                     region.assign_advice(
                         || format!("{} at row: {}", label, offset),
@@ -605,7 +613,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         );
         let filler_rows = max_copy_rows - copy_rows_needed - DISABLED_ROWS;
 
-        let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
+        let tag_chip = BinaryNumberChip::construct(self.copy_table_tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
         lt_chip.load(layouter)?;

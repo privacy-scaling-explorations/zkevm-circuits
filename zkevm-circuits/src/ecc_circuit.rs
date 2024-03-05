@@ -570,7 +570,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
 
         ecc_chip.assert_equal(ctx, &rand_point, &sum3);
 
-        log::trace!("[ECC] EcAdd Assignmnet END:");
+        log::trace!("[ECC] EcAdd Assignment END:");
         log_context_cursor!(ctx);
 
         EcAddDecomposed {
@@ -602,7 +602,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         powers_of_256: &[QuantumCell<F>],
         op: &EcMulOp,
     ) -> EcMulDecomposed<F> {
-        log::trace!("[ECC] ==> EcMul Assignmnet START:");
+        log::trace!("[ECC] ==> EcMul Assignment START:");
         log_context_cursor!(ctx);
 
         let (px, px_cells, px_valid, px_is_zero) =
@@ -653,7 +653,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
         let point_r_got = ecc_chip.select(ctx, &point_r_got, &infinity, &is_valid);
         ecc_chip.assert_equal(ctx, &point_r.ec_point, &point_r_got);
 
-        log::trace!("[ECC] EcMul Assignmnet END:");
+        log::trace!("[ECC] EcMul Assignment END:");
         log_context_cursor!(ctx);
 
         EcMulDecomposed {

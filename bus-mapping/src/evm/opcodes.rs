@@ -115,8 +115,7 @@ pub use crate::precompile::PrecompileCallArgs;
 
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
-/// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending
-/// of the [`OpcodeId`] it contains.
+/// or multiple [`ExecStep`] depending of the [`OpcodeId`] it contains.
 pub trait Opcode: Debug {
     /// Generate the associated [`MemoryOp`](crate::operation::MemoryOp)s,
     /// [`StackOp`](crate::operation::StackOp)s, and

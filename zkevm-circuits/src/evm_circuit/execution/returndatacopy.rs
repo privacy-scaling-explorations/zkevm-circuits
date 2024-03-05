@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             WordLoHi::from_lo_unchecked(return_data_size.expr()),
         );
 
-        // 3. contraints for copy: copy overflow check
+        // 3. constraints for copy: copy overflow check
         // i.e., offset + size <= return_data_size
         let in_bound_check = RangeCheckGadget::construct(
             cb,
