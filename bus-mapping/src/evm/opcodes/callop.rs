@@ -195,6 +195,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 callee_exists,
                 false,
                 call.value,
+                None,
             )?;
         }
 
