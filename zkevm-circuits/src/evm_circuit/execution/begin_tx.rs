@@ -217,7 +217,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
 
             let length = cb.tx_context(tx_id.expr(), TxContextFieldTag::CallDataLength, None);
-            let copy_rwc_inc = cb.query_cell();
             let rlc_acc = cb.query_cell_phase2();
             cb.copy_table_lookup(
                 WordLoHi::from_lo_unchecked(tx_id.expr()),
@@ -229,7 +228,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 0.expr(),
                 length.expr(),
                 rlc_acc.expr(),
-                copy_rwc_inc.expr(),
+                0.expr(),
             );
             cb.keccak_table_lookup(
                 rlc_acc.expr(),
