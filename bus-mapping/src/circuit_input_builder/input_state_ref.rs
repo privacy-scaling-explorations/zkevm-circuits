@@ -565,7 +565,7 @@ impl<'a> CircuitInputStateRef<'a> {
         sender: Address,
         receiver: Address,
         receiver_exists: bool,
-        opcode_is_create: bool,
+        is_create: bool,
         value: Word,
         fee: Option<Word>,
     ) -> Result<(), Error> {
@@ -621,14 +621,7 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
         }
 
-        self.transfer_to(
-            step,
-            receiver,
-            receiver_exists,
-            opcode_is_create,
-            value,
-            true,
-        )?;
+        self.transfer_to(step, receiver, receiver_exists, is_create, value, true)?;
 
         Ok(())
     }
@@ -639,11 +632,11 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         receiver: Address,
         receiver_exists: bool,
-        opcode_is_create: bool,
+        is_create: bool,
         value: Word,
         reversible: bool,
     ) -> Result<(), Error> {
-        if !receiver_exists && (!value.is_zero() || opcode_is_create) {
+        if !receiver_exists && (!value.is_zero() || is_create) {
             self.account_write(
                 step,
                 receiver,

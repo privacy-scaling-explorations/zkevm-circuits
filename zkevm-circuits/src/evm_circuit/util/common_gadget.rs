@@ -370,7 +370,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 pub(crate) struct TransferToGadget<F> {
     receiver_balance: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
-    opcode_is_create: Expression<F>,
+    is_create: Expression<F>,
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
@@ -380,7 +380,7 @@ impl<F: Field> TransferToGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        opcode_is_create: Expression<F>,
+        is_create: Expression<F>,
         value: Word32Cell<F>,
         mut reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
@@ -391,7 +391,7 @@ impl<F: Field> TransferToGadget<F> {
         cb.condition(
             and::expr([
                 not::expr(receiver_exists.expr()),
-                or::expr([not::expr(value_is_zero.expr()), opcode_is_create.expr()]),
+                or::expr([not::expr(value_is_zero.expr()), is_create.expr()]),
             ]),
             |cb| {
                 cb.account_write(
@@ -411,7 +411,7 @@ impl<F: Field> TransferToGadget<F> {
         Self {
             receiver_balance,
             receiver_exists,
-            opcode_is_create,
+            is_create,
             value_is_zero,
         }
     }
@@ -421,9 +421,9 @@ impl<F: Field> TransferToGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         rws: &mut StepRws,
-        (receiver_exists, value, opcode_is_create): (bool, U256, bool),
+        (receiver_exists, value, is_create): (bool, U256, bool),
     ) -> Result<(), Error> {
-        if !receiver_exists && (!value.is_zero() || opcode_is_create) {
+        if !receiver_exists && (!value.is_zero() || is_create) {
             // receiver's code_hash
             rws.next().account_codehash_pair();
         }
@@ -449,7 +449,7 @@ impl<F: Field> TransferToGadget<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         and::expr([
             not::expr(self.receiver_exists.expr()),
-            or::expr([not::expr(self.value_is_zero.expr()), self.opcode_is_create.expr()])
+            or::expr([not::expr(self.value_is_zero.expr()), self.is_create.expr()])
         ])+
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr())
@@ -478,7 +478,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
         sender_address: WordLoHi<Expression<F>>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        opcode_is_create: Expression<F>,
+        is_create: Expression<F>,
         value: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
         gas_fee: Option<Word32Cell<F>>,
@@ -497,7 +497,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
             cb,
             receiver_address,
             receiver_exists,
-            opcode_is_create,
+            is_create,
             value,
             Some(reversion_info),
         );
@@ -533,7 +533,7 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         rws: &mut StepRws,
-        (receiver_exists, value, opcode_is_create): (bool, U256, bool),
+        (receiver_exists, value, is_create): (bool, U256, bool),
         gas_fee: Option<U256>,
     ) -> Result<(), Error> {
         if WITH_FEE {
@@ -558,12 +558,8 @@ impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
             vec![value],
             sender_balance_sub_value.0,
         )?;
-        self.receiver.assign(
-            region,
-            offset,
-            rws,
-            (receiver_exists, value, opcode_is_create),
-        )?;
+        self.receiver
+            .assign(region, offset, rws, (receiver_exists, value, is_create))?;
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
         Ok(())
