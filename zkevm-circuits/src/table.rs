@@ -50,6 +50,7 @@ pub(crate) mod wd_table;
 
 pub use block_table::{BlockContextFieldTag, BlockTable};
 pub use bytecode_table::{BytecodeFieldTag, BytecodeTable};
+pub use chunk_ctx_table::ChunkCtxTable;
 pub use copy_table::CopyTable;
 pub use exp_table::ExpTable;
 pub use keccak_table::KeccakTable;
