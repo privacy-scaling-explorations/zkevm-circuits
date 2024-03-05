@@ -368,7 +368,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferToGadget<F> {
-    receiver: UpdateBalanceGadget<F, 2, true>,
+    receiver_balance: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     opcode_is_create: Expression<F>,
     value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
@@ -404,12 +404,12 @@ impl<F: Field> TransferToGadget<F> {
             },
         );
 
-        let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
+        let receiver_balance = cb.condition(not::expr(value_is_zero.expr()), |cb| {
             cb.increase_balance(receiver_address, value.clone(), reversion_info)
         });
 
         Self {
-            receiver,
+            receiver_balance,
             receiver_exists,
             opcode_is_create,
             value_is_zero,
@@ -433,7 +433,7 @@ impl<F: Field> TransferToGadget<F> {
         } else {
             (0.into(), 0.into())
         };
-        self.receiver.assign(
+        self.receiver_balance.assign(
             region,
             offset,
             receiver_balance_prev,
