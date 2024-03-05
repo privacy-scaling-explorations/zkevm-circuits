@@ -387,6 +387,7 @@ impl<F: Field> TransferToGadget<F> {
         let value_is_zero = cb.is_zero_word(&value);
 
         // Create account
+        // See https://github.com/ethereum/go-ethereum/pull/28666 for the context of this check.
         cb.condition(
             and::expr([
                 not::expr(receiver_exists.expr()),
