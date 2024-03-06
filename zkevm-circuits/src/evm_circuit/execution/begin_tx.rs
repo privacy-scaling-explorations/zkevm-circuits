@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::TransferWithGasFeeGadget,
+            common_gadget::TransferGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
@@ -42,7 +42,7 @@ pub(crate) struct BeginTxGadget<F> {
     call_callee_address: AccountAddress<F>,
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
-    transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
+    transfer_with_gas_fee: TransferGadget<F, true>,
     code_hash: WordLoHiCell<F>,
     is_empty_code_hash: IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
     caller_nonce_hash_bytes: Word32Cell<F>,
@@ -174,17 +174,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-
         // Transfer value from caller to callee, creating account if necessary.
-        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+        let transfer_with_gas_fee = TransferGadget::construct(
             cb,
             tx.caller_address.to_word(),
             tx.callee_address.to_word(),
             not::expr(callee_not_exists.expr()),
-            or::expr([tx.is_create.expr(), callee_not_exists.expr()]),
+            tx.is_create.expr(),
             tx.value.clone(),
-            tx.mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
+            Some(tx.mul_gas_fee_by_gas.product().clone()),
         );
 
         let caller_nonce_hash_bytes = cb.query_word32();
@@ -509,18 +508,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
         let callee_exists =
             is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
-        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
-        let must_create = tx.is_create();
-        if !callee_exists && (!tx.value.is_zero() || must_create) {
-            callee_code_hash = rws.next().account_codehash_pair().1;
-        }
-        let mut caller_balance_sub_value_pair = (zero, zero);
-        let mut callee_balance_pair = (zero, zero);
-        if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_balance_pair();
-            callee_balance_pair = rws.next().account_balance_pair();
-        };
-
+        self.transfer_with_gas_fee.assign(
+            region,
+            offset,
+            &mut rws,
+            callee_exists,
+            tx.value,
+            tx.is_create(),
+            Some(gas_fee),
+        )?;
         self.begin_tx.assign(region, offset, tx)?;
         self.tx.assign(region, offset, tx)?;
 
@@ -544,15 +540,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas() - step.gas_cost))?;
-        self.transfer_with_gas_fee.assign(
-            region,
-            offset,
-            caller_balance_sub_fee_pair,
-            caller_balance_sub_value_pair,
-            callee_balance_pair,
-            tx.value,
-            gas_fee,
-        )?;
         self.code_hash
             .assign_u256(region, offset, callee_code_hash)?;
         self.is_empty_code_hash.assign_u256(

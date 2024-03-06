@@ -124,7 +124,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     // Transfer with fee
-    state.transfer_with_fee(
+    state.transfer(
         &mut exec_step,
         call.caller_address,
         call.address,
