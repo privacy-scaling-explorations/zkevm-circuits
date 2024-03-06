@@ -533,8 +533,15 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 	if err != nil {
 		panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
 	}
-	if err = s.trie.TryUpdateAlwaysHash(addr[:], data); err != nil {
-		s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
+	
+	if !oracle.PreventHashingInSecureTrie {
+		if err = s.trie.TryUpdateAlwaysHash(addr[:], data); err != nil {
+			s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
+		}
+	} else {
+		if err = s.trie.TryUpdate(addr[:], data); err != nil {
+			s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
+		}
 	}
 
 	// If state snapshotting is active, cache the data til commit. Note, this

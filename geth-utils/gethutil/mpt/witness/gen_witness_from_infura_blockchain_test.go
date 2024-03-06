@@ -2335,7 +2335,7 @@ func TestStorageDoesNotExistOnlySProof(t *testing.T) {
 	prepareWitness("StorageDoesNotExistOnlySProof", trieModifications, statedb)
 }
 
-func TestWrongExtensionNode(t *testing.T) {
+func TestStorageWrongExtensionNode(t *testing.T) {
 	blockNum := 0
 	blockNumberParent := big.NewInt(int64(blockNum))
 	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
@@ -2372,7 +2372,7 @@ func TestWrongExtensionNode(t *testing.T) {
 	}
 	trieModifications := []TrieModification{trieMod}
 
-	prepareWitness("WrongExtensionNode", trieModifications, statedb)
+	prepareWitness("StorageWrongExtensionNode", trieModifications, statedb)
 
 	oracle.PreventHashingInSecureTrie = false
 }

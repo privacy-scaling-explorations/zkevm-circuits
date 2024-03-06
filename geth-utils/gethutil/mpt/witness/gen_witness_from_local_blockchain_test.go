@@ -978,3 +978,38 @@ func TestExtensionIntoBranch(t *testing.T) {
 
 	oracle.PreventHashingInSecureTrie = false
 }
+
+func TestAccountWrongExtensionNode(t *testing.T) {
+	SkipIfNoGeth(t)
+	oracle.NodeUrl = oracle.LocalUrl
+
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+
+	addr1 := common.HexToAddress("0x0023000000000000000000000000000000000000")
+	addr2 := common.HexToAddress("0x0023100000000000000000000000000000000000")
+
+	statedb.CreateAccount(addr1)
+	statedb.CreateAccount(addr2)
+	statedb.IntermediateRoot(false)
+
+	// Returns extension node
+	addr3 := common.HexToAddress("0x0021000000000000000000000000000000000000")
+
+	trieMod := TrieModification{
+		Type:    AccountDoesNotExist,
+		Address:     addr3,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("AccountWrongExtensionNode", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}
