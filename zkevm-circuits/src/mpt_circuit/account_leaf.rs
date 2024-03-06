@@ -700,12 +700,15 @@ impl<F: Field> AccountLeafConfig<F> {
         )?;
 
         // Wrong leaf / extension node handling
-        let key_data_prev = self.key_data_prev.witness_load(
-            region,
-            offset,
-            &mut memory[key_memory(false)],
-            2, // 2 instead of 1 because default values have already been stored above
-        )?;
+        let mut key_data_prev = KeyDataWitness::default();
+        if offset > 2 {
+            key_data_prev = self.key_data_prev.witness_load(
+                region,
+                offset,
+                &mut memory[key_memory(false)],
+                2, // 2 instead of 1 because default values have already been stored above
+            )?;
+        }
         self.wrong.assign(
             region,
             offset,
@@ -716,7 +719,7 @@ impl<F: Field> AccountLeafConfig<F> {
             true,
             parent_data[1].is_extension,
             key_data[true.idx()].clone(),
-             key_data_prev,
+            key_data_prev,
             region.key_r,
         )?;
 
