@@ -12,9 +12,10 @@ use crate::{
             },
             is_precompiled,
             math_gadget::{
-                ContractCreateGadget, IsEqualWordGadget, IsZeroWordGadget, RangeCheckGadget,
+                ContractCreateGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
+                RangeCheckGadget,
             },
-            not, or,
+            not, or, rlc,
             tx::{BeginTxHelperGadget, TxDataGadget},
             AccountAddress, CachedRegion, Cell, StepRws,
         },
@@ -45,6 +46,9 @@ pub(crate) struct BeginTxGadget<F> {
     code_hash: WordLoHiCell<F>,
     is_empty_code_hash: IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
     caller_nonce_hash_bytes: Word32Cell<F>,
+    calldata_length: Cell<F>,
+    calldata_length_is_zero: IsZeroGadget<F>,
+    calldata_rlc: Cell<F>,
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroWordGadget<F, WordLoHiCell<F>>,
     is_caller_callee_equal: Cell<F>,
@@ -184,6 +188,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
 
         let caller_nonce_hash_bytes = cb.query_word32();
+        let calldata_length = cb.query_cell();
+        let calldata_length_is_zero = cb.is_zero(calldata_length.expr());
+        let calldata_rlc = cb.query_cell_phase2();
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal_word(
             "tx caller address equivalence",
@@ -216,23 +223,36 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 caller_nonce_hash_bytes.to_word(),
             );
 
-            let length = cb.tx_context(tx_id.expr(), TxContextFieldTag::CallDataLength, None);
-            let rlc_acc = cb.query_cell_phase2();
-            cb.copy_table_lookup(
-                WordLoHi::from_lo_unchecked(tx_id.expr()),
-                CopyDataType::TxCalldata.expr(),
-                WordLoHi::zero(),
-                CopyDataType::RlcAcc.expr(),
-                0.expr(),
-                length.expr(),
-                0.expr(),
-                length.expr(),
-                rlc_acc.expr(),
-                0.expr(),
+            cb.tx_context_lookup(
+                tx_id.expr(),
+                TxContextFieldTag::CallDataLength,
+                None,
+                WordLoHi::from_lo_unchecked(calldata_length.expr()),
             );
+            // If calldata_length > 0 we use the copy circuit to calculate the calldata_rlc for the
+            // keccack input.
+            cb.condition(not::expr(calldata_length_is_zero.expr()), |cb| {
+                cb.copy_table_lookup(
+                    WordLoHi::from_lo_unchecked(tx_id.expr()),
+                    CopyDataType::TxCalldata.expr(),
+                    WordLoHi::zero(),
+                    CopyDataType::RlcAcc.expr(),
+                    0.expr(),
+                    calldata_length.expr(),
+                    0.expr(),
+                    calldata_length.expr(),
+                    calldata_rlc.expr(),
+                    0.expr(),
+                )
+            });
+            // If calldata_length == 0, the copy circuit will not contain any entry, so we skip the
+            // lookup and instead force calldata_rlc to be 0 for the keccack input.
+            cb.condition(calldata_length_is_zero.expr(), |cb| {
+                cb.require_equal("calldata_rlc = 0", calldata_rlc.expr(), 0.expr());
+            });
             cb.keccak_table_lookup(
-                rlc_acc.expr(),
-                length.expr(),
+                calldata_rlc.expr(),
+                calldata_length.expr(),
                 cb.curr.state.code_hash.to_word(),
             );
 
@@ -454,6 +474,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_hash,
             is_empty_code_hash,
             caller_nonce_hash_bytes,
+            calldata_length,
+            calldata_length_is_zero,
+            calldata_rlc,
             create,
             callee_not_exists,
             is_caller_callee_equal,
@@ -554,6 +577,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             U256::from_big_endian(&untrimmed_contract_addr),
         )?;
+        self.calldata_length.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.call_data.len() as u64)),
+        )?;
+        self.calldata_length_is_zero
+            .assign(region, offset, F::from(tx.call_data.len() as u64))?;
+        let calldata_rlc = region
+            .challenges()
+            .keccak_input()
+            .map(|randomness| rlc::value(tx.call_data.iter().rev(), randomness));
+        self.calldata_rlc.assign(region, offset, calldata_rlc)?;
         self.create.assign(
             region,
             offset,
