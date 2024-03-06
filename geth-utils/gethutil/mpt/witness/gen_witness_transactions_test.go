@@ -97,6 +97,12 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 
 	rlp_last_tx, _ := txs[n-1].MarshalBinary()
 	last_proofC := proofs[len(proofs)-1].GetProofC()
+
+	// Proof of the first tx is appended at the end of the proofs if len(tx) < 0x80
+	// That's why we minus 2 here.
+	if len(txs) > 1 && len(txs) < 256 {
+		last_proofC = proofs[len(proofs)-2].GetProofC()
+	}
 	last_leaf_proof := last_proofC[len(last_proofC)-1]
 
 	if !bytes.Equal(last_leaf_proof, rlp_last_tx) {
@@ -174,7 +180,7 @@ func batchedTransactionsStackTrieProofTemplate(n int) {
 		return
 	}
 
-	fmt.Println(proofS)
+	fmt.Println("proofS", proofS)
 	fmt.Println("===")
 }
 
