@@ -360,10 +360,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let pow_of_rand = meta.advice_column_in(SecondPhase);
 
         // 4844_debug
-        // meta.enable_equality(chunk_bytes_len);
-        // meta.enable_equality(chunk_txbytes_rlc);
-        // meta.enable_equality(chunk_txbytes_hash);
-        // meta.enable_equality(chunk_txbytes_len_acc);
+        meta.enable_equality(chunk_bytes_len);
+        meta.enable_equality(chunk_txbytes_rlc);
+        meta.enable_equality(chunk_txbytes_hash);
+        meta.enable_equality(chunk_txbytes_len_acc);
         meta.enable_equality(pow_of_rand);
 
         // TODO: add lookup to SignVerify table for sv_address
@@ -2962,12 +2962,14 @@ impl<F: Field> TxCircuitConfig<F> {
                 *offset,
                 || chunk_txbytes_len,
             )?;
-            tx_value_cells.push(region.assign_advice(
-                || "chunk_txbytes_hash",
-                self.chunk_txbytes_hash,
-                *offset,
-                || chunk_txbytes_hash,
-            )?);
+            
+            // 4844_debug
+            // tx_value_cells.push(region.assign_advice(
+            //     || "chunk_txbytes_hash",
+            //     self.chunk_txbytes_hash,
+            //     *offset,
+            //     || chunk_txbytes_hash,
+            // )?);
 
             // 2nd phase columns
             for (col_anno, col, col_val) in [
