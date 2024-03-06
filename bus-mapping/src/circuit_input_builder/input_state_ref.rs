@@ -559,13 +559,13 @@ impl<'a> CircuitInputStateRef<'a> {
     /// balance by `value`. If `fee` is existing (not None), also need to push 1
     /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
     #[allow(clippy::too_many_arguments)]
-    pub fn transfer_with_fee(
+    pub fn transfer(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
         receiver_exists: bool,
-        must_create: bool,
+        is_create: bool,
         value: Word,
         fee: Option<Word>,
     ) -> Result<(), Error> {
@@ -608,68 +608,22 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance_prev,
             sender_balance
         );
-        // If receiver doesn't exist, create it
-        if !receiver_exists && (!value.is_zero() || must_create) {
+
+        if !value.is_zero() {
             self.push_op_reversible(
                 step,
                 AccountOp {
-                    address: receiver,
-                    field: AccountField::CodeHash,
-                    value: CodeDB::empty_code_hash().to_word(),
-                    value_prev: Word::zero(),
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
                 },
             )?;
         }
-        if value.is_zero() {
-            // Skip transfer if value == 0
-            return Ok(());
-        }
 
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
-
-        let (_found, receiver_account) = self.sdb.get_account(&receiver);
-        let receiver_balance_prev = receiver_account.balance;
-        let receiver_balance = receiver_account.balance + value;
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_balance,
-                value_prev: receiver_balance_prev,
-            },
-        )?;
+        self.transfer_to(step, receiver, receiver_exists, is_create, value, true)?;
 
         Ok(())
-    }
-
-    /// Same functionality with `transfer_with_fee` but with `fee` set zero.
-    pub fn transfer(
-        &mut self,
-        step: &mut ExecStep,
-        sender: Address,
-        receiver: Address,
-        receiver_exists: bool,
-        must_create: bool,
-        value: Word,
-    ) -> Result<(), Error> {
-        self.transfer_with_fee(
-            step,
-            sender,
-            receiver,
-            receiver_exists,
-            must_create,
-            value,
-            None,
-        )
     }
 
     /// Transfer to an address. Create an account if it is not existed before.
@@ -678,12 +632,11 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         receiver: Address,
         receiver_exists: bool,
-        must_create: bool,
+        is_create: bool,
         value: Word,
         reversible: bool,
     ) -> Result<(), Error> {
-        // If receiver doesn't exist, create it
-        if (!receiver_exists && !value.is_zero()) || must_create {
+        if !receiver_exists && (!value.is_zero() || is_create) {
             self.account_write(
                 step,
                 receiver,
