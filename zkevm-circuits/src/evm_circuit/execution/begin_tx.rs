@@ -15,7 +15,7 @@ use crate::{
                 ContractCreateGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
                 RangeCheckGadget,
             },
-            not, or, rlc,
+            not, rlc,
             tx::{BeginTxHelperGadget, TxDataGadget},
             AccountAddress, CachedRegion, Cell, StepRws,
         },
