@@ -1232,33 +1232,54 @@ impl<F: Field> WrongGadget<F> {
         is_placeholder: Expression<F>,
         is_parent_extension: Expression<F>,
         key_data: KeyData<F>,
+        key_data_prev: KeyData<F>,
         r: &Expression<F>,
     ) -> Self {
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
             // Get the previous key data
-            ifx! {and::expr(&[is_non_existing, not!(is_placeholder), not!(is_parent_extension)]) => {
-                // Calculate the key
+            ifx! {and::expr(&[is_non_existing, not!(is_placeholder)]) => { 
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
-                let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
-                    cb,
-                    config.wrong_rlp_key.key_value.clone(),
-                    key_data.mult.expr(),
-                    key_data.is_odd.expr(),
-                    r,
-                );
-                // Check that it's the key as expected
-                require!(key_rlc_wrong => expected_key);
 
-                // Now make sure this address is different than the one of the leaf
-                config.is_key_equal = IsEqualGadget::construct(
-                    &mut cb.base,
-                    key_rlc.expr(),
-                    expected_key,
-                );
-                require!(config.is_key_equal.expr() => false);
-                // Make sure the lengths of the keys are the same
-                require!(config.wrong_rlp_key.key_value.len() => key_value.len());
+                ifx! {not!(is_parent_extension) => {
+                    let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
+                        cb,
+                        config.wrong_rlp_key.key_value.clone(),
+                        key_data.mult.expr(),
+                        key_data.is_odd.expr(),
+                        r,
+                    );
+                    // Check that it's the key as expected
+                    require!(key_rlc_wrong => expected_key.clone());
+
+                    // Now make sure this address is different than the one of the leaf
+                    config.is_key_equal = IsEqualGadget::construct(
+                        &mut cb.base,
+                        key_rlc.expr(),
+                        expected_key.clone(),
+                    );
+                    require!(config.is_key_equal.expr() => false);
+                    // Make sure the lengths of the keys are the same
+                    require!(config.wrong_rlp_key.key_value.len() => key_value.len());
+                } elsex {
+                    let key_rlc_wrong = key_data_prev.rlc.expr() + config.wrong_rlp_key.key.expr(
+                        cb,
+                        config.wrong_rlp_key.key_value.clone(),
+                        key_data_prev.mult.expr(),
+                        key_data_prev.is_odd.expr(),
+                        r,
+                    );
+                    // Check that it's the key as expected
+                    require!(key_rlc_wrong => expected_key.clone());
+
+                    // We don't need to check `is_key_equal = false` because we have the extension node
+                    // above, not the leaf - the two nodes are different without checking the key.
+
+                    // We don't need to check that the lengths of the keys are the same because
+                    // they are actually different in this case - one leaf is in the extension node's
+                    // branch (and its path is longer due to extension nibbles), one ("wrong", but with
+                    // the correct address/key) is not in the extension node's branch.
+                }}
             }}
             config
         })
@@ -1274,19 +1295,31 @@ impl<F: Field> WrongGadget<F> {
         list_bytes: &[u8],
         expected_item: &RLPItemWitness,
         for_placeholder_s: bool,
+        is_parent_extension: bool,
         key_data: KeyDataWitness<F>,
+        key_data_prev: KeyDataWitness<F>,
         r: F,
     ) -> Result<(F, F), Error> {
         if is_non_existing {
             let wrong_witness =
                 self.wrong_rlp_key
                     .assign(region, offset, list_bytes, expected_item)?;
-            let (key_rlc_wrong, _) = wrong_witness.key.key(
-                wrong_witness.key_item.clone(),
-                key_data.rlc,
-                key_data.mult,
-                r,
-            );
+            let key_rlc_wrong: F;
+            if !is_parent_extension {
+                (key_rlc_wrong, _) = wrong_witness.key.key(
+                    wrong_witness.key_item.clone(),
+                    key_data.rlc,
+                    key_data.mult,
+                    r,
+                );
+            } else {
+                (key_rlc_wrong, _) = wrong_witness.key.key(
+                    wrong_witness.key_item.clone(),
+                    key_data_prev.rlc,
+                    key_data_prev.mult,
+                    r,
+                );
+            }
 
             let is_key_equal_witness = self.is_key_equal.assign(
                 region,

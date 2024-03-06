@@ -38,6 +38,7 @@ use crate::{
 pub(crate) struct AccountLeafConfig<F> {
     main_data: MainData<F>,
     key_data: [KeyData<F>; 2],
+    key_data_prev: KeyData<F>,
     parent_data: [ParentData<F>; 2],
     rlp_key: [ListKeyGadget<F>; 2],
     value_rlp_bytes: [[Cell<F>; 2]; 2],
@@ -163,6 +164,8 @@ impl<F: Field> AccountLeafConfig<F> {
             parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
             // Constraint 4:
             parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
+
+            config.key_data_prev = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 1.expr());
 
             let key_data = &mut config.key_data;
             // Constraint 5:
@@ -364,7 +367,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &cb.key_r.expr(),
             );
 
-            // Wrong leaf handling
+            // Wrong leaf / extension node handling
             config.wrong = WrongGadget::construct(
                 cb,
                 key_item.hash_rlc(),
@@ -375,6 +378,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_placeholder_leaf[true.idx()].expr(),
                 config.parent_data[true.idx()].is_extension.expr(),
                 config.key_data[true.idx()].clone(),
+                config.key_data_prev.clone(),
                 &cb.key_r.expr(),
             );
 
@@ -695,7 +699,13 @@ impl<F: Field> AccountLeafConfig<F> {
             region.key_r,
         )?;
 
-        // Wrong leaf handling
+        // Wrong leaf / extension node handling
+        let key_data_prev = self.key_data_prev.witness_load(
+            region,
+            offset,
+            &mut memory[key_memory(false)],
+            2, // 2 instead of 1 because default values have already been stored above
+        )?;
         self.wrong.assign(
             region,
             offset,
@@ -704,7 +714,9 @@ impl<F: Field> AccountLeafConfig<F> {
             &account.wrong_rlp_bytes,
             &expected_item,
             true,
+            parent_data[1].is_extension,
             key_data[true.idx()].clone(),
+             key_data_prev,
             region.key_r,
         )?;
 

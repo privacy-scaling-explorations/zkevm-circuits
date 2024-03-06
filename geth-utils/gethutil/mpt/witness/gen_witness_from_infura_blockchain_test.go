@@ -2360,9 +2360,6 @@ func TestWrongExtensionNode(t *testing.T) {
 
 	statedb.IntermediateRoot(false)
 
-	// Returns extension node and branch
-	// key3 := common.HexToHash("0x1238000000000000000000000000000000000000000000000000000000000000")
-	
 	// Returns extension node
 	key3 := common.HexToHash("0x1200000000000000000000000000000000000000000000000000000000000000")
 

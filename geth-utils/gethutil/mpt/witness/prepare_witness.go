@@ -525,10 +525,28 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
 					nodes = append(nodes, node)
 				} else {
+					/*
+					Let's say we have an extension node E1 at the following path [3, 5, 8].
+					Let's say E1 has nibbles [1, 2, 3]. Let's say we want to prove there does not exist
+					a leaf at [3, 5, 8, 1, 2, 4] (because there is overlapping path with E1).
+
+					We need to construct a leaf L1 that will have the key equal to the queried key.
+					This means the nibbles are the same as in the path to E1 (without extension nibbles).
+
+					In the circuit, the leaf L1 will have the same key as the queried key once
+					the KeyData will be queried with offset 1 (to get the accumulated key RLC up until E1).
+					The nibbles stored in L1 will be added to the RLC and compared with the queried
+					key (has to be the same).
+					*/
 					nibbles := getNibbles(proof2[len(proof2)-1])
 					newKey := make([]byte, len(key))
 					copy(newKey, key)
 
+					/*
+					Following the above example, the queried key `key` is [3, 5, 8, 1, 2, 4].
+					The path to E1 and its nibbles is [3, 5, 8, 1, 2, 3].
+					We construct the key `newKey` to get the underlying branch of E1.
+					*/
 					for i := 0; i < len(nibbles); i++ {
 						n := nibbles[i]
 						if key[i] != n {
@@ -536,8 +554,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 						}
 					}
 
-					// The last nibble should be the one that gets one of the leaves
-					// in the branch (not nil):
+					/*
+					The last nibble should be the one that gets one of the leaves in the branch (not nil) -
+					to get the leaf in branch as well.
+					*/
 					var proof [][]byte
 					var err error
 					for i := 0; i < 16; i++ {
@@ -559,24 +579,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 						key[keyIndex], key[keyIndex], false, false, isExtension)
 					nodes = append(nodes, bNode)
 
-					/*
-					Let's say we have an extension node E1 at the following path [3, 5, 8].
-					Let's say E1 has nibbles [1, 2, 3]. Let's say we want to prove there does not exist
-					a leaf at [3, 5, 8, 1, 2] (because there is E1 there).
-
-					We need to construct a leaf L1 that will have the key equal to the queried key.
-					This means the nibbles are the same as in the path to E1 (without extension nibbles).
-
-					In the circuit, the leaf L1 will have the same key as the queried key once
-					the KeyData will be queried with offset 1 (to get the accumulated key RLC up until E1).
-					The nibbles stored in L1 will be added to the RLC and compared with the queried
-					key (has to be the same).
-					*/
-
+					// Let's construct the leaf L1 that will have the correct key (the queried one)
 					l := keyIndex - len(nibbles)
-					path := make([]byte, l) // Up to the E1 nibbles (without them)
+					// path will have nibbles up to the E1 nibbles (but without them) - in our example [3 5 8]
+					path := make([]byte, l)
 					copy(path, key[:l])
-					// The remaining `key` nibbles are to be stored in the constructed leaf.
+					// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
 
 					compact := trie.HexToCompact(key[l:])
 					// Add RLP:
@@ -587,7 +595,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
 
 					// Add dummy value:
-					constructedLeaf = append(constructedLeaf, 1)
+					constructedLeaf = append(constructedLeaf, 0)
 
 					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 					nodes = append(nodes, node)
