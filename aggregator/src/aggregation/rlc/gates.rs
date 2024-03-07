@@ -40,13 +40,13 @@ impl RlcConfig {
             || Value::known(Fr::from(256)),
         )?;
 
-        let empty_keccak = keccak256(&[]);
-        for i in 0..32 {
+        let empty_keccak = keccak256([]);
+        for (i, &byte) in empty_keccak.iter().enumerate() {
             region.assign_fixed(
                 || "const empty_keccak[i]",
                 self.fixed,
                 10 + i,
-                || Value::known(Fr::from(empty_keccak[i] as u64)),
+                || Value::known(Fr::from(byte as u64)),
             )?;
         }
 
@@ -143,16 +143,12 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn empty_keccak_cells(&self, region_index: RegionIndex) -> [Cell; 32] {
-        (0..32)
-            .map(|i| Cell {
-                region_index,
-                row_offset: 10 + i,
-                column: self.fixed.into(),
-            })
-            .collect::<Vec<Cell>>()
-            .try_into()
-            .unwrap()
+    pub(crate) fn empty_keccak_cell_i(&self, region_index: RegionIndex, index: usize) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 10 + index,
+            column: self.fixed.into(),
+        }
     }
 
     pub(crate) fn load_private(

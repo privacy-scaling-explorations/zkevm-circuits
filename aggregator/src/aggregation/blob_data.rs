@@ -1,3 +1,4 @@
+use ethers_core::utils::keccak256;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
@@ -11,7 +12,10 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    batch::{N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA, N_ROWS_METADATA},
+    batch::{
+        N_BYTES_32, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA, N_ROWS_DIGEST_BYTES, N_ROWS_DIGEST_RLC,
+        N_ROWS_METADATA,
+    },
     BatchHash, RlcConfig, MAX_AGG_SNARKS,
 };
 
@@ -185,12 +189,14 @@ impl BlobDataConfig {
             let hash_section_table = vec![
                 meta.query_selector(config.hash_selector),
                 meta.query_advice(config.chunk_idx, Rotation::cur()),
+                meta.query_advice(config.accumulator, Rotation::cur()),
                 meta.query_advice(config.digest_rlc, Rotation::cur()),
             ];
             [
-                1.expr(),                                              // hash section
-                meta.query_advice(config.chunk_idx, Rotation::cur()),  // chunk idx
-                meta.query_advice(config.digest_rlc, Rotation::cur()), // digest rlc
+                1.expr(),                                               // hash section
+                meta.query_advice(config.chunk_idx, Rotation::cur()),   // chunk idx
+                meta.query_advice(config.accumulator, Rotation::cur()), // chunk len
+                meta.query_advice(config.digest_rlc, Rotation::cur()),  // digest rlc
             ]
             .into_iter()
             .zip(hash_section_table)
@@ -340,6 +346,7 @@ impl BlobDataConfig {
                     zero
                 };
                 let mut is_empty_chunks = Vec::with_capacity(MAX_AGG_SNARKS);
+                let mut chunk_sizes = Vec::with_capacity(MAX_AGG_SNARKS);
                 for i in 0..MAX_AGG_SNARKS {
                     let rows = assigned_rows
                         .iter()
@@ -395,8 +402,181 @@ impl BlobDataConfig {
                         &mut rlc_config_offset,
                     )?;
                     is_empty_chunks.push(is_empty_chunk);
+                    chunk_sizes.push(chunk_size);
                 }
                 region.constrain_equal(num_nonempty_chunks.cell(), num_chunks.cell())?;
+
+                ////////////////////////////////////////////////////////////////////////////////
+                ////////////////////////////////// CHUNK_DATA //////////////////////////////////
+                ////////////////////////////////////////////////////////////////////////////////
+
+                // the first data row has a length (accumulator) of 1.
+                let row = assigned_rows.get(N_ROWS_METADATA).unwrap();
+                let one = {
+                    let one =
+                        rlc_config.load_private(&mut region, &Fr::one(), &mut rlc_config_offset)?;
+                    let one_cell = rlc_config.one_cell(one.cell().region_index);
+                    region.constrain_equal(one.cell(), one_cell)?;
+                    one
+                };
+                let is_one = rlc_config.is_equal(
+                    &mut region,
+                    &row.accumulator,
+                    &one,
+                    &mut rlc_config_offset,
+                )?;
+                let is_not_one = rlc_config.not(&mut region, &is_one, &mut rlc_config_offset)?;
+                rlc_config.enforce_zero(&mut region, &is_not_one)?;
+
+                let rows = assigned_rows
+                    .iter()
+                    .skip(N_ROWS_METADATA)
+                    .take(N_ROWS_DATA)
+                    .collect::<Vec<_>>();
+                let mut num_lookups = {
+                    let zero = rlc_config.load_private(
+                        &mut region,
+                        &Fr::zero(),
+                        &mut rlc_config_offset,
+                    )?;
+                    let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
+                    region.constrain_equal(zero.cell(), zero_cell)?;
+                    zero
+                };
+                for row in rows.iter() {
+                    num_lookups = rlc_config.add(
+                        &mut region,
+                        &row.is_boundary,
+                        &num_lookups,
+                        &mut rlc_config_offset,
+                    )?;
+                }
+                region.constrain_equal(num_lookups.cell(), num_chunks.cell())?;
+
+                ////////////////////////////////////////////////////////////////////////////////
+                ////////////////////////////////// DIGEST RLC //////////////////////////////////
+                ////////////////////////////////////////////////////////////////////////////////
+
+                let rows = assigned_rows
+                    .iter()
+                    .skip(N_ROWS_METADATA + N_ROWS_DATA)
+                    .take(N_ROWS_DIGEST_RLC)
+                    .collect::<Vec<_>>();
+
+                // rows have chunk_idx set from 0 (metadata) -> MAX_AGG_SNARKS.
+                rlc_config.enforce_zero(&mut region, &rows[0].chunk_idx)?;
+                let mut i_val = {
+                    let zero = rlc_config.load_private(
+                        &mut region,
+                        &Fr::zero(),
+                        &mut rlc_config_offset,
+                    )?;
+                    let zero_cell = rlc_config.zero_cell(zero.cell().region_index);
+                    region.constrain_equal(one.cell(), zero_cell)?;
+                    zero
+                };
+                for row in rows.iter().skip(1).take(MAX_AGG_SNARKS) {
+                    i_val = rlc_config.add(&mut region, &i_val, &one, &mut rlc_config_offset)?;
+                    let diff = rlc_config.sub(
+                        &mut region,
+                        &row.chunk_idx,
+                        &i_val,
+                        &mut rlc_config_offset,
+                    )?;
+                    rlc_config.enforce_zero(&mut region, &diff)?;
+                }
+
+                let r = rlc_config.read_challenge(
+                    &mut region,
+                    challenge_value,
+                    &mut rlc_config_offset,
+                )?;
+                let r32 = {
+                    let r2 = rlc_config.mul(&mut region, &r, &r, &mut rlc_config_offset)?;
+                    let r4 = rlc_config.mul(&mut region, &r2, &r2, &mut rlc_config_offset)?;
+                    let r8 = rlc_config.mul(&mut region, &r4, &r4, &mut rlc_config_offset)?;
+                    let r16 = rlc_config.mul(&mut region, &r8, &r8, &mut rlc_config_offset)?;
+                    rlc_config.mul(&mut region, &r16, &r16, &mut rlc_config_offset)?
+                };
+                let mut empty_digest_cells = Vec::with_capacity(N_BYTES_32);
+                for (i, &byte) in keccak256([]).iter().enumerate() {
+                    let cell = rlc_config.load_private(
+                        &mut region,
+                        &Fr::from(byte as u64),
+                        &mut rlc_config_offset,
+                    )?;
+                    let fixed_cell = rlc_config.empty_keccak_cell_i(cell.cell().region_index, i);
+                    region.constrain_equal(cell.cell(), fixed_cell)?;
+                    empty_digest_cells.push(cell);
+                }
+                let empty_digest_rlc =
+                    rlc_config.rlc(&mut region, &empty_digest_cells, &r, &mut rlc_config_offset)?;
+
+                let blob_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
+                let metadata_digest_rlc_computed =
+                    &assigned_rows.get(N_ROWS_METADATA).unwrap().preimage_rlc;
+                let metadata_digest_rlc_specified = &rows.first().unwrap().preimage_rlc;
+                region.constrain_equal(
+                    metadata_digest_rlc_computed.cell(),
+                    metadata_digest_rlc_specified.cell(),
+                )?;
+                let mut blob_preimage_rlc_computed = metadata_digest_rlc_specified.clone();
+                for ((row, chunk_size_decoded), is_empty) in rows
+                    .iter()
+                    .skip(1)
+                    .take(MAX_AGG_SNARKS)
+                    .zip_eq(chunk_sizes)
+                    .zip_eq(is_empty_chunks)
+                {
+                    // compute running RLC of digest RLCs.
+                    blob_preimage_rlc_computed = rlc_config.mul_add(
+                        &mut region,
+                        &blob_preimage_rlc_computed,
+                        &r32,
+                        &row.preimage_rlc,
+                        &mut rlc_config_offset,
+                    )?;
+
+                    // constrain chunk size specified here against decoded in metadata.
+                    let chunk_size_specified = &row.accumulator;
+                    let diff = rlc_config.sub(
+                        &mut region,
+                        chunk_size_specified,
+                        &chunk_size_decoded,
+                        &mut rlc_config_offset,
+                    )?;
+                    rlc_config.enforce_zero(&mut region, &diff)?;
+
+                    // constrain digest_rlcs of chunks that are empty.
+                    rlc_config.conditional_enforce_equal(
+                        &mut region,
+                        &row.digest_rlc,
+                        &empty_digest_rlc,
+                        &is_empty,
+                        &mut rlc_config_offset,
+                    )?;
+                }
+                region.constrain_equal(
+                    blob_preimage_rlc_computed.cell(),
+                    blob_preimage_rlc_specified.cell(),
+                )?;
+
+                ////////////////////////////////////////////////////////////////////////////////
+                ///////////////////////////////// DIGEST BYTES /////////////////////////////////
+                ////////////////////////////////////////////////////////////////////////////////
+
+                let rows = assigned_rows
+                    .iter()
+                    .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC)
+                    .take(N_ROWS_DIGEST_BYTES)
+                    .collect::<Vec<_>>();
+                for i in 0..2 + MAX_AGG_SNARKS {
+                    let digest_rows = rows
+                        .iter()
+                        .skip(N_BYTES_32 * i)
+                        .take(N_BYTES_32)
+                        .collect::<Vec<_>>();
+                }
 
                 Ok(())
             },
