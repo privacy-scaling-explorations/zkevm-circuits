@@ -242,7 +242,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let hash_digest_cells = {
+        let (hash_digest_cells, rlc_config_offset) = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -253,10 +253,12 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_public_input_hash
             // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
             // - batch_data_hash_preimage
+            // - chunk[i].tx_bytes for i in \[0, MAX_AGG_SNARKS)
+            // - preimage for z
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                MAX_AGG_SNARKS + 2,
+                2 * MAX_AGG_SNARKS + 3,
                 "error extracting preimages"
             );
             end_timer!(timer);
@@ -268,7 +270,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 .iter()
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
-            let hash_digest_cells = assign_batch_hashes(
+            let (hash_digest_cells, rlc_config_offset) = assign_batch_hashes(
                 &config,
                 &mut layouter,
                 challenges,
@@ -277,7 +279,7 @@ impl Circuit<Fr> for AggregationCircuit {
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
-            hash_digest_cells
+            (hash_digest_cells, rlc_config_offset)
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
@@ -371,6 +373,15 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
+
+        // blob data config
+        config.blob_data_config.assign(
+            &mut layouter,
+            challenges,
+            rlc_config_offset,
+            &config.rlc_config,
+            &self.batch_hash,
+        )?;
 
         end_timer!(witness_time);
         Ok(())

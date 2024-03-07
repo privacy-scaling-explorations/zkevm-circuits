@@ -12,7 +12,7 @@ use snark_verifier::{
 };
 use zkevm_circuits::{
     keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
-    table::{KeccakTable, U8Table},
+    table::{KeccakTable, RangeTable, U8Table},
     util::{Challenges, SubCircuitConfig},
 };
 
@@ -54,24 +54,23 @@ impl AggregationConfig {
             "For now we fix limb_bits = {BITS}, otherwise change code",
         );
 
-        // Blob data.
-        let u8_table = U8Table::construct(meta);
-        let blob_data_config = BlobDataConfig::configure(meta, challenges, u8_table);
-
         // RLC configuration
         let rlc_config = RlcConfig::configure(meta, challenges);
 
         // hash configuration for aggregation circuit
-        let keccak_circuit_config = {
+        let (keccak_table, keccak_circuit_config) = {
             let keccak_table = KeccakTable::construct(meta);
 
             let challenges_exprs = challenges.exprs(meta);
             let keccak_circuit_config_args = KeccakCircuitConfigArgs {
-                keccak_table,
+                keccak_table: keccak_table.clone(),
                 challenges: challenges_exprs,
             };
 
-            KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
+            (
+                keccak_table,
+                KeccakCircuitConfig::new(meta, keccak_circuit_config_args),
+            )
         };
 
         // base field configuration for aggregation circuit
@@ -102,6 +101,13 @@ impl AggregationConfig {
         meta.enable_equality(keccak_circuit_config.keccak_table.input_len);
         // enable equality for the is_final column
         meta.enable_equality(keccak_circuit_config.keccak_table.is_final);
+
+        // Blob data.
+        let u8_table = U8Table::construct(meta);
+        let range_table = RangeTable::construct(meta);
+        let challenges_expr = challenges.exprs(meta);
+        let blob_data_config =
+            BlobDataConfig::configure(meta, challenges_expr, u8_table, range_table, &keccak_table);
 
         // Instance column stores public input column
         // - the accumulator

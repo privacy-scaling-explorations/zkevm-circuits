@@ -1,3 +1,4 @@
+use ethers_core::utils::keccak256;
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, RegionIndex, Value},
@@ -32,6 +33,23 @@ impl RlcConfig {
             8,
             || Value::known(Fr::from(1 << 32)),
         )?;
+        region.assign_fixed(
+            || "const 256",
+            self.fixed,
+            9,
+            || Value::known(Fr::from(256)),
+        )?;
+
+        let empty_keccak = keccak256(&[]);
+        for i in 0..32 {
+            region.assign_fixed(
+                || "const empty_keccak[i]",
+                self.fixed,
+                10 + i,
+                || Value::known(Fr::from(empty_keccak[i] as u64)),
+            )?;
+        }
+
         Ok(())
     }
 
@@ -113,6 +131,28 @@ impl RlcConfig {
             row_offset: 8,
             column: self.fixed.into(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn two_hundred_and_fifty_size_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 9,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn empty_keccak_cells(&self, region_index: RegionIndex) -> [Cell; 32] {
+        (0..32)
+            .map(|i| Cell {
+                region_index,
+                row_offset: 10 + i,
+                column: self.fixed.into(),
+            })
+            .collect::<Vec<Cell>>()
+            .try_into()
+            .unwrap()
     }
 
     pub(crate) fn load_private(
