@@ -375,7 +375,6 @@ fn trace_config_to_witness_block_l1(
             ..eth_types::Transaction::default()
         })
         .collect();
-
     let eth_block = eth_types::Block {
         author: Some(trace_config.block_constants.coinbase),
         timestamp: trace_config.block_constants.timestamp,
