@@ -85,6 +85,7 @@ impl Default for BlobAssignments {
 mod tests {
     use super::*;
     use crate::barycentric::ROOTS_OF_UNITY;
+    use hex;
     use reth_primitives::{
         constants::eip4844::MAINNET_KZG_TRUSTED_SETUP,
         kzg::{Blob as RethBlob, KzgProof},
@@ -106,80 +107,97 @@ mod tests {
         let z = blob.random_point();
         let y = interpolate(z, blob.coefficients());
 
-        let mut z_bytes = z.to_bytes();
-        z_bytes.reverse();
-
-        let reth_blob = RethBlob::new([0; 131072]);
-        let (proof, y) =
-            KzgProof::compute_kzg_proof(&reth_blob, &z_bytes.into(), &MAINNET_KZG_TRUSTED_SETUP)
-                .unwrap();
-
         assert_eq!(
-            Scalar::from_bytes(&y).unwrap(),
-            interpolate(z, blob.coefficients())
+            z,
+            from_str("4848d14b5080aacc030c6a2178eda978125553b177d80992ff96a9e164bcc989")
         );
-        assert_eq!(Scalar::from_bytes(&y).unwrap(), Scalar::zero(),);
+        assert_eq!(y, Scalar::zero());
     }
 
     #[test]
-    fn identity_polynomial() {
-        let reth_blob = RethBlob::from_bytes(
-            &ROOTS_OF_UNITY
+    fn generic_blob() {
+        let blob = Blob(vec![
+            vec![30; 56],
+            vec![200; 100],
+            vec![0; 340],
+            vec![10; 23],
+            vec![14; 23],
+            vec![255; 23],
+        ]);
+
+        let z = blob.random_point();
+        let y = interpolate(z, blob.coefficients());
+
+        assert_eq!(
+            z,
+            from_str("17feb47df94b20c6da69f871c980459a7a834adad6a564304a0e8cd8a09bcb27")
+        );
+        assert_eq!(
+            y,
+            from_str("061f4f5d9005302ca556a0847d27f456cad82c6883a588fde6d48088fb4ec6a7")
+        );
+    }
+
+    #[test]
+    fn interpolate_matches_reth_implementation() {
+        let blob = Blob(vec![
+            vec![30; 56],
+            vec![200; 100],
+            vec![0; 340],
+            vec![10; 23],
+        ]);
+
+        for z in 0..10 {
+            let z = Scalar::from(u64::try_from(13241234 + z).unwrap());
+            assert_eq!(
+                reth_point_evaluation(z, blob.coefficients()),
+                interpolate(z, blob.coefficients())
+            );
+        }
+    }
+
+    fn reth_point_evaluation(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
+        let blob = RethBlob::from_bytes(
+            &coefficients
                 .into_iter()
                 .flat_map(|x| to_be_bytes(x))
                 .collect::<Vec<_>>(),
         )
         .unwrap();
-        let z = to_be_bytes(Scalar::from(2341234));
-        let (_, y) =
-            KzgProof::compute_kzg_proof(&reth_blob, &z.into(), &MAINNET_KZG_TRUSTED_SETUP).unwrap();
-
-        assert_eq!(y, z.into());
+        let (_proof, y) =
+            KzgProof::compute_kzg_proof(&blob, &to_be_bytes(z).into(), &MAINNET_KZG_TRUSTED_SETUP)
+                .unwrap();
+        from_canonical_be_bytes(*y)
     }
 
-    // #[test]
-    // fn mason() {
-    //     let blob = Blob(vec![
-    //         vec![30; 56],
-    //         vec![200; 100],
-    //         vec![0; 340],
-    //         vec![10; 23],
-    //     ]);
-
-    //     let z = blob.random_point();
-    //     let y = interpolate(z, blob.coefficients());
-
-    //     let mut z_bytes = z.to_bytes();
-    //     z_bytes.reverse();
-
-    //     let reth_blob = RethBlob::from_bytes(
-    //         &blob
-    //             .coefficients()
-    //             .iter()
-    //             .flat_map(|x| {
-    //                 let mut bytes = x.to_bytes();
-    //                 bytes.reverse();
-    //                 bytes
-    //             })
-    //             .collect::<Vec<_>>(),
-    //     )
-    //     .unwrap();
-    //     let (proof, y) =
-    //         KzgProof::compute_kzg_proof(&reth_blob, &z_bytes.into(), &MAINNET_KZG_TRUSTED_SETUP)
-    //             .unwrap();
-
-    //     assert_eq!(
-    //         Scalar::from_bytes(&y).unwrap(),
-    //         interpolate(z, blob.coefficients())
-    //     );
-    //     assert_eq!(Scalar::from_bytes(&y).unwrap(), Scalar::zero(),);
-    //     // assert_eq!(Scalar::from_bytes(&y).unwrap(), Scalar::one(),);
-    // }
+    #[test]
+    fn reth_kzg_implementation() {
+        // check that we are calling the reth implementation correctly
+        for z in 0..10 {
+            let z = Scalar::from(u64::try_from(z).unwrap());
+            assert_eq!(reth_point_evaluation(z, *ROOTS_OF_UNITY), z)
+        }
+    }
 
     fn to_be_bytes(x: Scalar) -> [u8; 32] {
         let mut bytes = x.to_bytes();
         bytes.reverse();
         bytes
+    }
+
+    fn from_canonical_be_bytes(bytes: [u8; 32]) -> Scalar {
+        let mut bytes = bytes;
+        bytes.reverse();
+        Scalar::from_bytes(&bytes).expect("non-canonical bytes")
+    }
+
+    fn from_str(x: &str) -> Scalar {
+        let mut bytes: [u8; 32] = hex::decode(x)
+            .expect("bad hex string")
+            .try_into()
+            .expect("need 32 bytes");
+        bytes.reverse();
+        Scalar::from_bytes(&bytes).expect("non-canonical representation")
     }
 
     #[test]
