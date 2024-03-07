@@ -84,12 +84,11 @@ impl Default for BlobAssignments {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::barycentric::ROOTS_OF_UNITY;
     use reth_primitives::{
         constants::eip4844::MAINNET_KZG_TRUSTED_SETUP,
         kzg::{Blob as RethBlob, KzgProof},
     };
-    use std::iter::repeat;
-    use crate::barycentric::ROOTS_OF_UNITY;
 
     #[test]
     fn empty_chunks_random_point() {
@@ -129,7 +128,8 @@ mod tests {
                 .into_iter()
                 .flat_map(|x| to_be_bytes(x))
                 .collect::<Vec<_>>(),
-        ).unwrap();
+        )
+        .unwrap();
         let z = to_be_bytes(Scalar::from(2341234));
         let (_, y) =
             KzgProof::compute_kzg_proof(&reth_blob, &z.into(), &MAINNET_KZG_TRUSTED_SETUP).unwrap();
@@ -180,12 +180,6 @@ mod tests {
         let mut bytes = x.to_bytes();
         bytes.reverse();
         bytes
-    }
-
-    fn from_canonical_be_bytes(bytes: [u8; 32]) -> Scalar {
-        let mut bytes = bytes;
-        bytes.reverse();
-        Scalar::from_bytes(&bytes).unwrap()
     }
 
     #[test]

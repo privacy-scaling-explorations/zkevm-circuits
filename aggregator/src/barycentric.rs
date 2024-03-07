@@ -3,7 +3,7 @@ use halo2_base::{gates::range::RangeConfig, utils::modulus};
 use halo2_ecc::{bigint::CRTInteger, fields::fp::FpConfig, halo2_base::Context};
 use halo2_proofs::halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
 use itertools::Itertools;
-use std::sync::LazyLock;
+use std::{iter::successors, sync::LazyLock};
 
 use crate::{
     blob::{BLOB_WIDTH, LOG_BLOG_WIDTH},
@@ -13,18 +13,16 @@ use crate::{
 mod scalar_field_element;
 use scalar_field_element::ScalarFieldElement;
 
-const PRIMITY_ROOT_OF_
 pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
+    // https://github.com/ethereum/consensus-specs/blob/dev/specs/deneb/polynomial-commitments.md#constants
+    let primitive_root_of_unity = Scalar::from(7);
     let modulus = U256::from_str_radix(Scalar::MODULUS, 16).unwrap();
-    let exponent = (modulus - U256::one()) / U256::from(4096);
 
-    let root_of_unity = Scalar::from(7).pow(&exponent.0);
-    let ascending_order: Vec<_> = (0..BLOB_WIDTH)
-        .scan(Scalar::one(), |root_of_unity, _| {
-            let result = Some(*root_of_unity);
-            *root_of_unity *= primitive_root_of_unity;
-            result
-        })
+    let exponent = (modulus - U256::one()) / U256::from(4096);
+    let root_of_unity = primitive_root_of_unity.pow(&exponent.0);
+
+    let ascending_order: Vec<_> = successors(Some(Scalar::one()), |x| Some(*x * root_of_unity))
+        .take(BLOB_WIDTH)
         .collect();
     let bit_reversed_order: Vec<_> = (0..BLOB_WIDTH)
         .map(|i| {
