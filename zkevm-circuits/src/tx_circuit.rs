@@ -2576,6 +2576,7 @@ impl<F: Field> TxCircuitConfig<F> {
         chunk_txbytes_len_acc: Value<F>,
         chunk_txbytes_hash: Value<F>,
         pows_of_rand: &mut Vec<Value<F>>,
+        is_last_tx: bool,
         challenges: &Challenges<Value<F>>,
     ) -> Result<FixedRowsAssignmentResult<F>, Error> {
         let keccak_input = challenges.keccak_input();
@@ -2961,13 +2962,16 @@ impl<F: Field> TxCircuitConfig<F> {
                 *offset,
                 || chunk_txbytes_len,
             )?;
-            tx_value_cells.push(region.assign_advice(
+            let txbytes_hash_assignment = region.assign_advice(
                 || "chunk_txbytes_hash",
                 self.chunk_txbytes_hash,
                 *offset,
                 || chunk_txbytes_hash,
-            )?);
-
+            )?;
+            if is_last_tx {
+                tx_value_cells.push(txbytes_hash_assignment);
+            }
+            
             // 2nd phase columns
             for (col_anno, col, col_val) in [
                 ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc),
@@ -3823,6 +3827,7 @@ impl<F: Field> TxCircuit<F> {
                         chunk_txbytes_len_acc,
                         chunk_txbytes_hash,
                         &mut pows_of_rand,
+                        is_last_tx,
                         challenges,
                     )?;
 
