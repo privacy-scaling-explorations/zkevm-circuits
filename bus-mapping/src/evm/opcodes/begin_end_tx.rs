@@ -611,7 +611,11 @@ pub fn gen_end_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         .get(&state.tx.block_num)
         .unwrap()
         .clone();
-    let effective_tip = state.tx.gas_price - block_info.base_fee;
+    let effective_tip = if cfg!(feature = "scroll") {
+        state.tx.gas_price
+    } else {
+        state.tx.gas_price - block_info.base_fee
+    };
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
     let coinbase_reward = if state.tx.tx_type.is_l1_msg() {
         Word::zero()
