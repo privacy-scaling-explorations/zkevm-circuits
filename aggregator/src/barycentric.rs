@@ -55,13 +55,16 @@ impl BarycentricEvaluationConfig {
         let blob_width = ScalarFieldElement::constant(u64::try_from(BLOB_WIDTH).unwrap().into());
 
         let z = ScalarFieldElement::private(z);
-        let p = ((0..LOG_BLOG_WIDTH).fold(z.clone(), |square, _| square.clone() * square) - one) // use std::iter::successors here
-            * ROOTS_OF_UNITY
-                .map(ScalarFieldElement::constant)
-                .into_iter()
-                .zip_eq(blob.map(ScalarFieldElement::private))
-                .map(|(root, f)| f * (root.clone() / (z.clone() - root)).carry())
-                .sum()
+        let z_to_blob_width = successors(Some(z.clone()), |z| Some(z.clone() * z.clone()))
+            .take(LOG_BLOG_WIDTH)
+            .last()
+            .unwrap();
+        let p =(z_to_blob_width - one) * ROOTS_OF_UNITY
+            .map(ScalarFieldElement::constant)
+            .into_iter()
+            .zip_eq(blob.map(ScalarFieldElement::private))
+            .map(|(root, f)| f * (root.clone() / (z.clone() - root)).carry())
+            .sum()
             / blob_width;
         p.resolve(ctx, &self.scalar)
     }
