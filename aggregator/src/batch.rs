@@ -435,7 +435,7 @@ impl BlobData {
                 )
             })
             .chain(std::iter::repeat(BlobDataRow::padding_row()))
-            .take(4096 * 32)
+            .take(N_ROWS_DATA)
             .collect()
     }
 
