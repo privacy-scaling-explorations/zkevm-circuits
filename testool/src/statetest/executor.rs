@@ -86,6 +86,7 @@ pub struct CircuitsConfig {
 fn check_post(
     builder: &CircuitInputBuilder,
     post: &HashMap<Address, AccountMatch>,
+    st: &StateTest,
 ) -> Result<(), StateTestError> {
     log::trace!("check post");
     // check if the generated account data is the expected one
@@ -93,11 +94,16 @@ fn check_post(
         let (_, actual) = builder.sdb.get_account(address);
 
         if expected.balance.map(|v| v == actual.balance) == Some(false) {
-            log::error!("balance mismatch, expected {expected:?} actual {actual:?}");
-            return Err(StateTestError::BalanceMismatch {
-                expected: expected.balance.unwrap(),
-                found: actual.balance,
-            });
+            log::warn!(
+                "balance mismatch, expected {expected:?} actual {actual:?}, addr {address:?}"
+            );
+            if *address != st.env.current_coinbase {
+                // Scroll EVM will not burn basefee
+                return Err(StateTestError::BalanceMismatch {
+                    expected: expected.balance.unwrap(),
+                    found: actual.balance,
+                });
+            }
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
@@ -722,7 +728,7 @@ pub fn run_test(
                 }
             }
         }
-        check_post(&builder, &post)?;
+        check_post(&builder, &post, &st)?;
     }
     log::info!("{test_id}: run-test END");
     Ok(())
