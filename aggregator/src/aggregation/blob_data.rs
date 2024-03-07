@@ -513,6 +513,7 @@ impl BlobDataConfig {
                     rlc_config.rlc(&mut region, &empty_digest_cells, &r, &mut rlc_config_offset)?;
 
                 let blob_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
+                let blob_digest_rlc_specified = &rows.last().unwrap().digest_rlc;
                 let metadata_digest_rlc_computed =
                     &assigned_rows.get(N_ROWS_METADATA).unwrap().preimage_rlc;
                 let metadata_digest_rlc_specified = &rows.first().unwrap().preimage_rlc;
@@ -520,6 +521,7 @@ impl BlobDataConfig {
                     metadata_digest_rlc_computed.cell(),
                     metadata_digest_rlc_specified.cell(),
                 )?;
+                let mut chunk_digest_rlcs = Vec::with_capacity(MAX_AGG_SNARKS);
                 let mut blob_preimage_rlc_computed = metadata_digest_rlc_specified.clone();
                 for ((row, chunk_size_decoded), is_empty) in rows
                     .iter()
@@ -533,7 +535,7 @@ impl BlobDataConfig {
                         &mut region,
                         &blob_preimage_rlc_computed,
                         &r32,
-                        &row.preimage_rlc,
+                        &row.digest_rlc,
                         &mut rlc_config_offset,
                     )?;
 
@@ -555,6 +557,8 @@ impl BlobDataConfig {
                         &is_empty,
                         &mut rlc_config_offset,
                     )?;
+
+                    chunk_digest_rlcs.push(&row.digest_rlc);
                 }
                 region.constrain_equal(
                     blob_preimage_rlc_computed.cell(),
@@ -570,12 +574,29 @@ impl BlobDataConfig {
                     .skip(N_ROWS_METADATA + N_ROWS_DATA + N_ROWS_DIGEST_RLC)
                     .take(N_ROWS_DIGEST_BYTES)
                     .collect::<Vec<_>>();
-                for i in 0..2 + MAX_AGG_SNARKS {
+                for (i, digest_rlc) in std::iter::once(metadata_digest_rlc_specified)
+                    .chain(chunk_digest_rlcs)
+                    .chain(std::iter::once(blob_digest_rlc_specified))
+                    .enumerate()
+                {
                     let digest_rows = rows
                         .iter()
                         .skip(N_BYTES_32 * i)
                         .take(N_BYTES_32)
                         .collect::<Vec<_>>();
+                    let digest_bytes = digest_rows
+                        .iter()
+                        .map(|row| row.byte.clone())
+                        .collect::<Vec<_>>();
+                    let digest_rlc_computed =
+                        rlc_config.rlc(&mut region, &digest_bytes, &r, &mut rlc_config_offset)?;
+                    let diff = rlc_config.sub(
+                        &mut region,
+                        digest_rlc,
+                        &digest_rlc_computed,
+                        &mut rlc_config_offset,
+                    )?;
+                    rlc_config.enforce_zero(&mut region, &diff)?;
                 }
 
                 Ok(())
