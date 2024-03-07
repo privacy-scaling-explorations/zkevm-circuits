@@ -11,7 +11,7 @@ use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
+use eth_types::{geth_types::TxType, Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
@@ -178,6 +178,7 @@ impl PublicData {
             .chain(
                 self.transactions
                     .iter()
+                    .filter(|&tx| tx.tx_type == TxType::L1Msg)
                     .flat_map(|tx| tx.hash.to_fixed_bytes()),
             )
             .collect::<Vec<u8>>();
@@ -943,12 +944,12 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // Assign tx hash values.
-        let n_txs = public_data.transactions.len();
+        let transactions = public_data.transactions.iter().filter(|&tx| tx.tx_type == TxType::L1Msg).collect::<Vec<&Transaction>>();
+        let n_txs = transactions.len();
         let mut tx_copy_cells = vec![];
         let mut data_bytes_rlc = None;
         let mut data_bytes_length = None;
-        for (i, tx_hash) in public_data
-            .transactions
+        for (i, tx_hash) in transactions
             .iter()
             .map(|tx| tx.hash)
             .chain(std::iter::repeat(get_dummy_tx_hash()))
