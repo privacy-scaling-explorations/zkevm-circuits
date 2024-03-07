@@ -49,12 +49,11 @@ pub struct BlobDataConfig {
     hash_selector: Selector,
 }
 
-pub struct AssignedBlobDataConfig {
+struct AssignedBlobDataConfig {
     pub byte: AssignedCell<Fr, Fr>,
     pub accumulator: AssignedCell<Fr, Fr>,
     pub chunk_idx: AssignedCell<Fr, Fr>,
     pub is_boundary: AssignedCell<Fr, Fr>,
-    pub is_padding: AssignedCell<Fr, Fr>,
     pub preimage_rlc: AssignedCell<Fr, Fr>,
     pub digest_rlc: AssignedCell<Fr, Fr>,
 }
@@ -274,7 +273,7 @@ impl BlobDataConfig {
                         i,
                         || Value::known(Fr::from(row.is_boundary as u64)),
                     )?;
-                    let is_padding = region.assign_advice(
+                    let _is_padding = region.assign_advice(
                         || "",
                         self.is_padding,
                         i,
@@ -289,7 +288,6 @@ impl BlobDataConfig {
                         accumulator,
                         chunk_idx,
                         is_boundary,
-                        is_padding,
                         preimage_rlc,
                         digest_rlc,
                     });
