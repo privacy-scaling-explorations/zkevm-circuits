@@ -26,6 +26,7 @@ snark-verifier.workspace = true
 snark-verifier-sdk.workspace = true
 
 reth-primitives.workspace = true
+revm-precompile.workspace = true
 c-kzg.workspace = true
 
 

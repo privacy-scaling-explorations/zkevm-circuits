@@ -1,3 +1,4 @@
+use eth_types::U256;
 use halo2_base::{gates::range::RangeConfig, utils::modulus};
 use halo2_ecc::{bigint::CRTInteger, fields::fp::FpConfig, halo2_base::Context};
 use halo2_proofs::halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField};
@@ -12,16 +13,26 @@ use crate::{
 mod scalar_field_element;
 use scalar_field_element::ScalarFieldElement;
 
-static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
-    let primitive_root_of_unity = Scalar::ROOT_OF_UNITY.pow(&[2u64.pow(20), 0, 0, 0]);
-    (0..BLOB_WIDTH)
+const PRIMITY_ROOT_OF_
+pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
+    let modulus = U256::from_str_radix(Scalar::MODULUS, 16).unwrap();
+    let exponent = (modulus - U256::one()) / U256::from(4096);
+
+    let root_of_unity = Scalar::from(7).pow(&exponent.0);
+    let ascending_order: Vec<_> = (0..BLOB_WIDTH)
         .scan(Scalar::one(), |root_of_unity, _| {
+            let result = Some(*root_of_unity);
             *root_of_unity *= primitive_root_of_unity;
-            Some(*root_of_unity)
+            result
         })
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap()
+        .collect();
+    let bit_reversed_order: Vec<_> = (0..BLOB_WIDTH)
+        .map(|i| {
+            let j = u16::try_from(i).unwrap().reverse_bits() >> (16 - LOG_BLOG_WIDTH);
+            ascending_order[usize::try_from(j).unwrap()]
+        })
+        .collect();
+    bit_reversed_order.try_into().unwrap()
 });
 
 #[derive(Clone, Debug)]
@@ -46,7 +57,7 @@ impl BarycentricEvaluationConfig {
         let blob_width = ScalarFieldElement::constant(u64::try_from(BLOB_WIDTH).unwrap().into());
 
         let z = ScalarFieldElement::private(z);
-        let p = ((0..LOG_BLOG_WIDTH).fold(z.clone(), |square, _| square.clone() * square) - one)
+        let p = ((0..LOG_BLOG_WIDTH).fold(z.clone(), |square, _| square.clone() * square) - one) // use std::iter::successors here
             * ROOTS_OF_UNITY
                 .map(ScalarFieldElement::constant)
                 .into_iter()
@@ -72,7 +83,6 @@ pub fn interpolate(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eth_types::U256;
     use std::collections::BTreeSet;
 
     #[test]
