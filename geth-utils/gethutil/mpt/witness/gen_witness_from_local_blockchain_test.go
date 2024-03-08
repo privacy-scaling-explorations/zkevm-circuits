@@ -995,13 +995,15 @@ func TestAccountWrongExtensionNode(t *testing.T) {
 
 	addr1 := common.HexToAddress("0x0023000000000000000000000000000000000000")
 	addr2 := common.HexToAddress("0x0023100000000000000000000000000000000000")
+	addr4 := common.HexToAddress("0x0023200000000000000000000000000000000000")
 
 	statedb.CreateAccount(addr1)
 	statedb.CreateAccount(addr2)
+	statedb.CreateAccount(addr4)
 	statedb.IntermediateRoot(false)
 
 	// Returns extension node
-	addr3 := common.HexToAddress("0x0021000000000000000000000000000000000000")
+	addr3 := common.HexToAddress("0x0018100000000000000000000000000000000000")
 
 	trieMod := TrieModification{
 		Type:    AccountDoesNotExist,

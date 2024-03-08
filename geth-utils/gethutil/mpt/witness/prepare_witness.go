@@ -70,6 +70,10 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 
 	addr := tMod.Address
 	addrh := crypto.Keccak256(addr.Bytes())
+	if oracle.PreventHashingInSecureTrie {
+		addrh = addr.Bytes()
+		addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+	}
 	accountAddr := trie.KeybytesToHex(addrh)
 
 	// This needs to be called before oracle.PrefetchAccount, otherwise oracle.PrefetchAccount
@@ -520,86 +524,81 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				// to obtain the underlying branch to be able to finally add (besides this branch)
 				// the placeholder leaf. So we need to query getProof again with one of the leaves that is
 				// actually in this extension node.
-				if isAccountProof {
-					// TODO
-					node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
-					nodes = append(nodes, node)
-				} else {
-					/*
-					Let's say we have an extension node E1 at the following path [3, 5, 8].
-					Let's say E1 has nibbles [1, 2, 3]. Let's say we want to prove there does not exist
-					a leaf at [3, 5, 8, 1, 2, 4] (because there is overlapping path with E1).
 
-					We need to construct a leaf L1 that will have the key equal to the queried key.
-					This means the nibbles are the same as in the path to E1 (without extension nibbles).
+				/*
+				Let's say we have an extension node E1 at the following path [3, 5, 8].
+				Let's say E1 has nibbles [1, 2, 3]. Let's say we want to prove there does not exist
+				a leaf at [3, 5, 8, 1, 2, 4] (because there is overlapping path with E1).
 
-					In the circuit, the leaf L1 will have the same key as the queried key once
-					the KeyData will be queried with offset 1 (to get the accumulated key RLC up until E1).
-					The nibbles stored in L1 will be added to the RLC and compared with the queried
-					key (has to be the same).
-					*/
-					nibbles := getNibbles(proof2[len(proof2)-1])
-					newKey := make([]byte, len(key))
-					copy(newKey, key)
+				We need to construct a leaf L1 that will have the key equal to the queried key.
+				This means the nibbles are the same as in the path to E1 (without extension nibbles).
 
-					/*
-					Following the above example, the queried key `key` is [3, 5, 8, 1, 2, 4].
-					The path to E1 and its nibbles is [3, 5, 8, 1, 2, 3].
-					We construct the key `newKey` to get the underlying branch of E1.
-					*/
-					for i := 0; i < len(nibbles); i++ {
-						n := nibbles[i]
-						if key[i] != n {
-							newKey[i] = n
-						}
+				In the circuit, the leaf L1 will have the same key as the queried key once
+				the KeyData will be queried with offset 1 (to get the accumulated key RLC up until E1).
+				The nibbles stored in L1 will be added to the RLC and compared with the queried
+				key (has to be the same).
+				*/
+				nibbles := getNibbles(proof2[len(proof2)-1])
+				newKey := make([]byte, len(key))
+				copy(newKey, key)
+
+				/*
+				Following the above example, the queried key `key` is [3, 5, 8, 1, 2, 4].
+				The path to E1 and its nibbles is [3, 5, 8, 1, 2, 3].
+				We construct the key `newKey` to get the underlying branch of E1.
+				*/
+				for i := 0; i < len(nibbles); i++ {
+					n := nibbles[i]
+					if key[i] != n {
+						newKey[i] = n
 					}
-
-					/*
-					The last nibble should be the one that gets one of the leaves in the branch (not nil) -
-					to get the leaf in branch as well.
-					*/
-					var proof [][]byte
-					var err error
-					for i := 0; i < 16; i++ {
-						newKey[keyIndex] = byte(i)
-						k := trie.HexToKeybytes(newKey)
-						ky := common.BytesToHash(k)
-						proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
-						check(err)
-						if !isBranch(proof[len(proof)-1]) {
-							break
-						}
-					}
-
-					branchRlp := proof[len(proof)-2] // the last element has to be a leaf
-					isExtension := true
-
-					extNode := proof2[len(proof2)-1] // Let's name it E1
-					bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
-						key[keyIndex], key[keyIndex], false, false, isExtension)
-					nodes = append(nodes, bNode)
-
-					// Let's construct the leaf L1 that will have the correct key (the queried one)
-					l := keyIndex - len(nibbles)
-					// path will have nibbles up to the E1 nibbles (but without them) - in our example [3 5 8]
-					path := make([]byte, l)
-					copy(path, key[:l])
-					// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
-
-					compact := trie.HexToCompact(key[l:])
-					// Add RLP:
-					compactLen := byte(len(compact))
-					rlp2 := 128 + compactLen
-					rlp1 := 192 + compactLen + 1
-					// Constructed leaf L1:
-					constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
-
-					// Add dummy value:
-					constructedLeaf = append(constructedLeaf, 0)
-
-					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
-					nodes = append(nodes, node)
 				}
+
+				/*
+				The last nibble should be the one that gets one of the leaves in the branch (not nil) -
+				to get the leaf in branch as well.
+				*/
+				var proof [][]byte
+				var err error
+				for i := 0; i < 16; i++ {
+					newKey[keyIndex] = byte(i)
+					k := trie.HexToKeybytes(newKey)
+					ky := common.BytesToHash(k)
+					proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
+					check(err)
+					if !isBranch(proof[len(proof)-1]) {
+						break
+					}
+				}
+
+				branchRlp := proof[len(proof)-2] // the last element has to be a leaf
+				isExtension := true
+
+				extNode := proof2[len(proof2)-1] // Let's name it E1
+				bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
+					key[keyIndex], key[keyIndex], false, false, isExtension)
+				nodes = append(nodes, bNode)
+
+				// Let's construct the leaf L1 that will have the correct key (the queried one)
+				l := keyIndex - len(nibbles)
+				// path will have nibbles up to the E1 nibbles (but without them) - in our example [3 5 8]
+				path := make([]byte, l)
+				copy(path, key[:l])
+				// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
+
+				compact := trie.HexToCompact(key[l:])
+				// Add RLP:
+				compactLen := byte(len(compact))
+				rlp2 := 128 + compactLen
+				rlp1 := 192 + compactLen + 1
+				// Constructed leaf L1:
+				constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
+
+				// Add dummy value:
+				constructedLeaf = append(constructedLeaf, 0)
+
+				node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+				nodes = append(nodes, node)
 			}
 		}
 	}
