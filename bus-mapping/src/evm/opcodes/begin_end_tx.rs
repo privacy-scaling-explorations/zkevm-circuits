@@ -172,7 +172,6 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
                 },
             );
         }
-        dbg!((state.tx.id, state.tx.call_data.len(), &state.tx.call_data));
     }
 
     // There are 4 branches from here.
