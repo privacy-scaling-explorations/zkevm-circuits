@@ -279,7 +279,7 @@ impl<F: Field, const XI_0: i64> EccCircuit<F, XI_0> {
                     decompose_ec_pairing_op
                 );
 
-                // finalize after first phase.
+                // finalize after the first phase.
                 config.fp_config.finalize(&mut ctx);
                 ctx.next_phase();
 

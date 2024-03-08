@@ -155,7 +155,7 @@ impl From<&ExecutionState> for ExecStateReport {
     }
 }
 
-/// Struct that contains all of the measurament values required to evaluate the
+/// Struct that contains all of the measurement values required to evaluate the
 /// costs of a particular `ColumnType` of an `ExecStateReport`
 #[derive(Debug, Clone, Default)]
 pub struct StateReportRow {
