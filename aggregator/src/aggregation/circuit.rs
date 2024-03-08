@@ -249,7 +249,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let hash_digest_cells = {
+        let (hash_digest_cells, rlc_config_offset) = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -278,7 +278,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 .iter()
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
-            let hash_digest_cells = assign_batch_hashes(
+            let (hash_digest_cells, rlc_config_offset) = assign_batch_hashes(
                 &config,
                 &mut layouter,
                 challenges,
@@ -287,7 +287,7 @@ impl Circuit<Fr> for AggregationCircuit {
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
-            hash_digest_cells
+            (hash_digest_cells, rlc_config_offset)
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
@@ -381,6 +381,15 @@ impl Circuit<Fr> for AggregationCircuit {
                 )?;
             }
         }
+
+        // blob data config
+        config.blob_data_config.assign(
+            &mut layouter,
+            challenges,
+            rlc_config_offset,
+            &config.rlc_config,
+            &self.batch_hash,
+        )?;
 
         end_timer!(witness_time);
         Ok(())

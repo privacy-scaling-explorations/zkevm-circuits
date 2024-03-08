@@ -183,7 +183,7 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     preimages: &[Vec<u8>],
-) -> Result<Vec<AssignedCell<Fr, Fr>>, Error> {
+) -> Result<(Vec<AssignedCell<Fr, Fr>>, usize), Error> {
     let extracted_hash_cells = extract_hash_cells(
         &config.keccak_circuit_config,
         layouter,
@@ -208,7 +208,7 @@ pub(crate) fn assign_batch_hashes(
     // - batch's data_hash length is 32 * number_of_valid_snarks
     // 8. batch data hash is correct w.r.t. its RLCs
     // 9. is_final_cells are set correctly
-    conditional_constraints(
+    let rlc_config_offset = conditional_constraints(
         &config.rlc_config,
         layouter,
         challenges,
@@ -216,7 +216,7 @@ pub(crate) fn assign_batch_hashes(
         &extracted_hash_cells,
     )?;
 
-    Ok(extracted_hash_cells.hash_output_cells)
+    Ok((extracted_hash_cells.hash_output_cells, rlc_config_offset))
 }
 
 pub(crate) fn extract_hash_cells(
@@ -248,7 +248,7 @@ pub(crate) fn extract_hash_cells(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // (4) chunk[i].tx_bytes
-    // (5) blob data
+    // (5) preimage of z
     // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, keccak_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
@@ -507,7 +507,7 @@ pub(crate) fn conditional_constraints(
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     extracted_hash_cells: &ExtractedHashCells,
-) -> Result<(), Error> {
+) -> Result<usize, Error> {
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
     let ExtractedHashCells {
         hash_input_cells,
@@ -520,10 +520,10 @@ pub(crate) fn conditional_constraints(
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
+            |mut region| -> Result<usize, halo2_proofs::plonk::Error> {
                 if first_pass {
                     first_pass = false;
-                    return Ok(());
+                    return Ok(0);
                 }
 
                 rlc_config.init(&mut region)?;
@@ -1052,11 +1052,10 @@ pub(crate) fn conditional_constraints(
                     .constrain_equal(left.cell(), rlc_config.one_cell(left.cell().region_index))?;
 
                 log::trace!("rlc chip uses {} rows", offset);
-                Ok(())
+                Ok(offset)
             },
         )
-        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
-    Ok(())
+        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))
 }
 
 /// Input a list of flags whether the snark is valid
