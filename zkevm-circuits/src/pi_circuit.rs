@@ -287,9 +287,19 @@ impl PublicData {
             + self.max_txs * KECCAK_DIGEST_SIZE
     }
 
-    fn pi_bytes_start_offset(&self) -> usize {
+    fn chunk_txbytes_start_offset(&self) -> usize {
         self.data_bytes_end_offset()
             + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
+            + 1 // new row
+    }
+
+    fn chunk_txbytes_end_offset(&self) -> usize {
+        self.chunk_txbytes_start_offset() + N_BYTES_WORD * self.max_txs
+    }
+
+    fn pi_bytes_start_offset(&self) -> usize {
+        self.chunk_txbytes_end_offset()
+            + 1 // a row is reserved for the keccak256(rlc(chunk_txbytes)) == chunk_txbytes_hash lookup.
             + 1 // new row.
     }
 
