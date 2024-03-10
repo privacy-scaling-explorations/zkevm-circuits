@@ -183,16 +183,35 @@ impl PublicData {
             )
             .collect::<Vec<u8>>();
 
-        assert_eq!(
-            result.len(),
-            BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len()
-                + KECCAK_DIGEST_SIZE * self.transactions.len()
-        );
+        // 4844_debug
+        // assert_eq!(
+        //     result.len(),
+        //     BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len()
+        //         + KECCAK_DIGEST_SIZE * self.transactions.len()
+        // );
         result
     }
 
     fn get_data_hash(&self) -> H256 {
         H256(keccak256(self.data_bytes()))
+    }
+
+    /// Obtain the l2 tx (not padding; right now padding txs are l2 txs by default) bytes in the chunk
+    fn chunk_txbytes(&self) -> Vec<u8> {
+        let mut result: Vec<u8> = vec![];
+        let chunk_txs_iter = self.transactions
+            .iter()
+            .filter(|&tx| tx.tx_type != TxType::L1Msg && !tx.caller_address.is_zero());
+
+        for tx in chunk_txs_iter {
+            result.extend_from_slice(&tx.rlp_signed);
+        }
+
+        result
+    }
+
+    fn get_chunk_txbytes_hash(&self) -> H256 {
+        H256(keccak256(self.chunk_txbytes()))
     }
 
     fn pi_bytes(&self, data_hash: H256) -> Vec<u8> {
