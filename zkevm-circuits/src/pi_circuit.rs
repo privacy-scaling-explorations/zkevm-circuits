@@ -786,25 +786,34 @@ impl<F: Field> PiCircuitConfig<F> {
     /// |          |------------------------|--------------------------|
     /// |          | rlc(data_bytes)        | <- q_keccak == 1         |
     /// |----------|------------------------|--------------------------|
+    /// |          | l2txs\[0\].hashRLC     |                          |
+    /// | *PART 2* | l2txs\[1\].hashRLC     |                          |
+    /// |          | ...                    |                          |
+    /// | ASSIGN   | l2txs\[n\].hashRLC     | <- q_chunk_txbytes == 1  |
+    /// | CHUNK    | ...                    |                          |
+    /// | TXBYTES  | PADDING                |                          |
+    /// | (L2TX)   |------------------------|--------------------------|
+    /// |          | rlc(chunk_txbytes)     | <- q_keccak == 1         |
+    /// |----------|------------------------|--------------------------|
     /// |          | rpi initialise         |                          |
     /// |          | chain_id               |                          |
-    /// | *PART 2* | prev_state_root        |                          |
+    /// | *PART 3* | prev_state_root        |                          |
     /// |          | next_state_root        |                          |
     /// | ASSIGN   | withdraw_trie_root     |                          |
     /// | PI       | data_hash              |                          |
     /// | BYTES    |------------------------|--------------------------|
     /// |          | rlc(pi_bytes)          | <- q_keccak == 1         |
     /// |----------|------------------------|--------------------------|
-    /// | *PART 3* | rpi initialise         |                          |
+    /// | *PART 4* | rpi initialise         |                          |
     /// | ASSIGN   | pi_hash_hi             |                          |
     /// | PI HASH  | pi_hash_lo             |                          |
     /// |----------|------------------------|--------------------------|
-    /// | *PART 4* | rpi initialise         |                          |
+    /// | *PART 5* | rpi initialise         |                          |
     /// | ASSIGN   | coinbase               |                          |
     /// | CONSTS   | difficulty             |                          |
     /// |----------|------------------------|--------------------------|
     ///
-    /// Where each one of the rows above, i.e. block\[0\].number, block\[0\].timestamp, ...,
+    /// Where each one of the rows above, i.e. block\[0\].number, block\[0\].timestamp, l2txs\[0\].hashRLC, ...,
     /// pi_hash_lo, coinbase, difficulty are assigned using the assign_field method.
     ///
     /// Each `field` takes multiple rows in the actual circuit layout depending on how many bytes
