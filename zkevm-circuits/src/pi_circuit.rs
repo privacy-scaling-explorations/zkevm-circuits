@@ -9,7 +9,7 @@ mod test;
 
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
-use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
+use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable, tx_circuit::TX_HASH_RLC_OFFSET};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{geth_types::TxType, Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
@@ -1160,15 +1160,14 @@ impl<F: Field> PiCircuitConfig<F> {
         let chunk_txbytes_rlc = rlc_be_bytes(&chunk_bytes, challenges.keccak_input());
         let mut pows_of_rand: Vec<Value<F>> = vec![Value::known(F::one())];
 
+        // Assign L2 RLC(rlp_signed)
         for (i, rlp_signed) in transactions
             .iter()
             .map(|&tx| tx.rlp_signed.clone())
-            .chain(vec![])
             .take(public_data.max_txs)
             .enumerate()
         {
-            let is_rpi_padding = i >= n_txs;
-            let is_last_l2tx = i == (n_txs - 1);
+            let is_full_l2tx = i == (public_data.max_txs - 1);
             let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
             let tx_hash_len = rlp_signed.len();
 
@@ -1182,10 +1181,10 @@ impl<F: Field> PiCircuitConfig<F> {
                     chunk_txbytes_rlc,
                     tx_hash_rlc,
                     tx_hash_len,
-                    is_rpi_padding,
+                    false,
                     rpi_rlc_acc,
                     rpi_length,
-                    is_last_l2tx,
+                    is_full_l2tx,
                     &mut pows_of_rand,
                     challenges,
                 )?;
@@ -1200,10 +1199,45 @@ impl<F: Field> PiCircuitConfig<F> {
 
             region.constrain_equal(
                 tx_hash_rlc_cell.cell(),
-                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
             )?;
 
-            if is_last_l2tx {
+            if is_full_l2tx {
+                chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
+                chunk_txbytes_length_op = final_cells[RPI_LENGTH_ACC_CELL_IDX].clone();
+            }
+        }
+
+        // Assign paddings
+        for (i, rlp_signed) in iter::empty()
+            .chain(std::iter::repeat(vec![]))
+            .take(public_data.max_txs - n_txs)
+            .enumerate()
+        {
+            let is_last_l2_padding = i == (public_data.max_txs - n_txs - 1);
+            let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
+            let tx_hash_len = rlp_signed.len();
+
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, _, final_cells) = self
+                .assign_tx_hash_rlc(
+                    region,
+                    offset,
+                    chunk_txbytes_rlc,
+                    tx_hash_rlc,
+                    tx_hash_len,
+                    true,
+                    rpi_rlc_acc,
+                    rpi_length,
+                    is_last_l2_padding,
+                    &mut pows_of_rand,
+                    challenges,
+                )?;
+
+            offset = tmp_offset;
+            rpi_rlc_acc = tmp_rpi_rlc_acc;
+            rpi_length = tmp_rpi_length;
+
+            if is_last_l2_padding {
                 chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
                 chunk_txbytes_length_op = final_cells[RPI_LENGTH_ACC_CELL_IDX].clone();
             }

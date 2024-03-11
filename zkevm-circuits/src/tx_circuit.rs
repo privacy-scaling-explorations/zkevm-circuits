@@ -88,6 +88,8 @@ use itertools::Itertools;
 pub const TX_LEN: usize = 28;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
+/// Offset of TxHashRLC tag in the tx table. TxHashRLC = RLC(tx.rlp_signed)
+pub const TX_HASH_RLC_OFFSET: usize = 20;
 /// Offset of ChainID tag in the tx table
 pub const CHAIN_ID_OFFSET: usize = 12;
 /// Offset of HashLength in the tx table
