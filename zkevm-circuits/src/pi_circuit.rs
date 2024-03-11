@@ -19,11 +19,11 @@ use crate::{
     table::{BlockTable, LookupTable, TxTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
-use std::ops::Mul;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+use std::ops::Mul;
 
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
@@ -197,10 +197,12 @@ impl PublicData {
         H256(keccak256(self.data_bytes()))
     }
 
-    /// Obtain the l2 tx (not padding; right now padding txs are l2 txs by default) bytes in the chunk
+    /// Obtain the l2 tx (not padding; right now padding txs are l2 txs by default) bytes in the
+    /// chunk
     fn chunk_txbytes(&self) -> Vec<u8> {
         let mut result: Vec<u8> = vec![];
-        let chunk_txs_iter = self.transactions
+        let chunk_txs_iter = self
+            .transactions
             .iter()
             .filter(|&tx| tx.tx_type != TxType::L1Msg && !tx.caller_address.is_zero());
 
@@ -825,8 +827,9 @@ impl<F: Field> PiCircuitConfig<F> {
     /// | CONSTS   | difficulty             |                          |
     /// |----------|------------------------|--------------------------|
     ///
-    /// Where each one of the rows above, i.e. block\[0\].number, block\[0\].timestamp, l2txs\[0\].hashRLC, ...,
-    /// pi_hash_lo, coinbase, difficulty are assigned using the assign_field method.
+    /// Where each one of the rows above, i.e. block\[0\].number, block\[0\].timestamp,
+    /// l2txs\[0\].hashRLC, ..., pi_hash_lo, coinbase, difficulty are assigned using the
+    /// assign_field method.
     ///
     /// Each `field` takes multiple rows in the actual circuit layout depending on how many bytes
     /// it takes to represent the said field. For instance, pi_hash_lo represent the lower 16 bytes
@@ -856,13 +859,8 @@ impl<F: Field> PiCircuitConfig<F> {
         debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 2. Assign chunk tx bytes.
-        let (offset, chunk_txbytes_hash_rlc_cell) = self.assign_chunk_txbytes(
-            region,
-            offset,
-            public_data,
-            tx_value_cells,
-            challenges,
-        )?;
+        let (offset, chunk_txbytes_hash_rlc_cell) =
+            self.assign_chunk_txbytes(region, offset, public_data, tx_value_cells, challenges)?;
 
         // 3. Assign public input bytes.
         let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
@@ -1004,7 +1002,11 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // Assign tx hash values.
-        let transactions = public_data.transactions.iter().filter(|&tx| tx.tx_type == TxType::L1Msg).collect::<Vec<&Transaction>>();
+        let transactions = public_data
+            .transactions
+            .iter()
+            .filter(|&tx| tx.tx_type == TxType::L1Msg)
+            .collect::<Vec<&Transaction>>();
         let n_txs = transactions.len();
         let mut tx_copy_cells = vec![];
         let mut data_bytes_rlc = None;
@@ -1105,12 +1107,17 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // Assign chunk txbytes
-        // Summary field TxHashRLC from TxTable is the RLC of a transaction's rlp_signed bytes. 
-        // Its accumulation correctness is verified within the RLP Circuit and lookup-constrained from the TxCircuit.
-        let transactions = public_data.transactions.iter().filter(|&tx| tx.is_chunk_l2_tx()).collect::<Vec<&Transaction>>();
+        // Summary field TxHashRLC from TxTable is the RLC of a transaction's rlp_signed bytes.
+        // Its accumulation correctness is verified within the RLP Circuit and lookup-constrained
+        // from the TxCircuit.
+        let transactions = public_data
+            .transactions
+            .iter()
+            .filter(|&tx| tx.is_chunk_l2_tx())
+            .collect::<Vec<&Transaction>>();
         let n_txs = transactions.len();
-        let mut data_bytes_rlc = None;
-        let mut data_bytes_length = None;
+        let mut chunk_txbytes_rlc_op = None;
+        let mut chunk_txbytes_length_op = None;
         let mut tx_copy_idx: usize = 0;
 
         // The RLC of all l2 tx.rlp_signed
@@ -1119,7 +1126,6 @@ impl<F: Field> PiCircuitConfig<F> {
             .flat_map(|&tx| tx.rlp_signed.clone())
             .collect::<Vec<u8>>();
         let chunk_txbytes_rlc = rlc_be_bytes(&chunk_bytes, challenges.keccak_input());
-        let chunk_txbytes_hash = keccak256(chunk_bytes);
         let mut pows_of_rand: Vec<Value<F>> = vec![Value::known(F::one())];
 
         for (i, rlp_signed) in transactions
@@ -1134,21 +1140,23 @@ impl<F: Field> PiCircuitConfig<F> {
             let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
             let tx_hash_len = rlp_signed.len();
 
-            // As the field TxHashRLC is already RLC-accumulated, it's guaranteed to fit within the scalar field.
-            // Therefore, the variable field assignment method assign_field is not necessary.
-            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, tx_hash_rlc_cell, final_cells) = self.assign_tx_hash_rlc(
-                region, 
-                offset, 
-                chunk_txbytes_rlc,
-                tx_hash_rlc, 
-                tx_hash_len, 
-                is_rpi_padding, 
-                rpi_rlc_acc, 
-                rpi_length, 
-                is_last_l2tx,
-                &mut pows_of_rand,
-                challenges
-            )?;
+            // As the field TxHashRLC is already RLC-accumulated, it's guaranteed to fit within the
+            // scalar field. Therefore, the variable field assignment method
+            // assign_field is not necessary.
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, tx_hash_rlc_cell, final_cells) = self
+                .assign_tx_hash_rlc(
+                    region,
+                    offset,
+                    chunk_txbytes_rlc,
+                    tx_hash_rlc,
+                    tx_hash_len,
+                    is_rpi_padding,
+                    rpi_rlc_acc,
+                    rpi_length,
+                    is_last_l2tx,
+                    &mut pows_of_rand,
+                    challenges,
+                )?;
 
             offset = tmp_offset;
             rpi_rlc_acc = tmp_rpi_rlc_acc;
@@ -1164,40 +1172,40 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
 
             if is_last_l2tx {
-                data_bytes_rlc = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
-                data_bytes_length = final_cells[RPI_LENGTH_ACC_CELL_IDX].clone();
+                chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
+                chunk_txbytes_length_op = final_cells[RPI_LENGTH_ACC_CELL_IDX].clone();
             }
         }
 
         // Assign row for validating lookup to check:
         // data_hash == keccak256(rlc(data_bytes))
-        data_bytes_rlc.unwrap().copy_advice(
-            || "data_bytes_rlc in the rpi col",
+        chunk_txbytes_rlc_op.unwrap().copy_advice(
+            || "chunk_txbytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
             offset,
         )?;
-        data_bytes_length.unwrap().copy_advice(
-            || "data_bytes_length in the rpi_length_acc col",
+        chunk_txbytes_length_op.unwrap().copy_advice(
+            || "chunk_txbytes_length in the rpi_length_acc col",
             region,
             self.rpi_length_acc,
             offset,
         )?;
-        let data_hash_rlc_cell = {
-            let data_hash_rlc = rlc_be_bytes(
-                &public_data.get_data_hash().to_fixed_bytes(),
+        let chunk_txbytes_hash_rlc_cell = {
+            let chunk_txbytes_hash_rlc = rlc_be_bytes(
+                &public_data.get_chunk_txbytes_hash().to_fixed_bytes(),
                 challenges.evm_word(),
             );
             region.assign_advice(
-                || "data_hash_rlc",
+                || "chunk_txbytes_hash_rlc",
                 self.rpi_rlc_acc,
                 offset,
-                || data_hash_rlc,
+                || chunk_txbytes_hash_rlc,
             )?
         };
         self.q_keccak.enable(region, offset)?;
 
-        Ok((offset + 1, data_hash_rlc_cell))
+        Ok((offset + 1, chunk_txbytes_hash_rlc_cell))
     }
 
     /// Assign the TxHashRLC (RLC of tx.rlp_signed) to PI Circuit
@@ -1216,8 +1224,18 @@ impl<F: Field> PiCircuitConfig<F> {
         is_last_l2tx: bool,
         pows_of_rand: &mut Vec<Value<F>>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(usize, Value<F>, Value<F>, AssignedCell<F, F>, [Option<AssignedCell<F, F>>; 3]), Error> {
-        let (mut final_rpi_cell, mut final_rpi_rlc_cell, mut final_rpi_length_cell) = (None, None, None);
+    ) -> Result<
+        (
+            usize,
+            Value<F>,
+            Value<F>,
+            AssignedCell<F, F>,
+            [Option<AssignedCell<F, F>>; 3],
+        ),
+        Error,
+    > {
+        let (mut final_rpi_cell, mut final_rpi_rlc_cell, mut final_rpi_length_cell) =
+            (None, None, None);
 
         if !is_rpi_padding {
             if tx_hash_len >= pows_of_rand.len() {
@@ -1225,7 +1243,7 @@ impl<F: Field> PiCircuitConfig<F> {
                     pows_of_rand.push(pows_of_rand.last().unwrap().mul(challenges.keccak_input()));
                 }
             }
-    
+
             let pow_of_rand = pows_of_rand[tx_hash_len];
 
             rpi_rlc_acc = rpi_rlc_acc * pow_of_rand + tx_hash_rlc;
@@ -1238,18 +1256,10 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || chunk_txbytes_rlc,
         )?;
-        let rpi_bytes_cell = region.assign_advice(
-            || "rlp_bytes",
-            self.rpi_field_bytes,
-            offset,
-            || tx_hash_rlc,
-        )?;
-        let rpi_rlc_cell = region.assign_advice(
-            || "rpi_rlc_acc",
-            self.rpi_rlc_acc,
-            offset,
-            || rpi_rlc_acc,
-        )?;
+        let rpi_bytes_cell =
+            region.assign_advice(|| "rlp_bytes", self.rpi_field_bytes, offset, || tx_hash_rlc)?;
+        let rpi_rlc_cell =
+            region.assign_advice(|| "rpi_rlc_acc", self.rpi_rlc_acc, offset, || rpi_rlc_acc)?;
         let rpi_length_cell = region.assign_advice(
             || "rpi_length_acc",
             self.rpi_length_acc,
@@ -1275,17 +1285,13 @@ impl<F: Field> PiCircuitConfig<F> {
             final_rpi_rlc_cell = Some(rpi_rlc_cell);
             final_rpi_length_cell = Some(rpi_length_cell);
         }
-        
+
         Ok((
             offset + 1,
             rpi_rlc_acc,
             rpi_length,
             rpi_bytes_cell,
-            [
-                final_rpi_cell,
-                final_rpi_rlc_cell,
-                final_rpi_length_cell,
-            ],
+            [final_rpi_cell, final_rpi_rlc_cell, final_rpi_length_cell],
         ))
     }
 
@@ -1388,7 +1394,10 @@ impl<F: Field> PiCircuitConfig<F> {
         let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
 
         // Copy chunk_txbytes_hash value from the previous section.
-        region.constrain_equal(chunk_txbytes_hash_cell.cell(), chunk_txbytes_hash_rlc_cell.cell())?;
+        region.constrain_equal(
+            chunk_txbytes_hash_cell.cell(),
+            chunk_txbytes_hash_rlc_cell.cell(),
+        )?;
 
         // Assign row for validating lookup to check:
         // pi_hash == keccak256(rlc(pi_bytes))

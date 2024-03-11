@@ -2971,7 +2971,7 @@ impl<F: Field> TxCircuitConfig<F> {
             if is_last_tx {
                 tx_value_cells.push(txbytes_hash_assignment);
             }
-            
+
             // 2nd phase columns
             for (col_anno, col, col_val) in [
                 ("tx_value_rlc", self.tx_value_rlc, rlp_be_bytes_rlc),
