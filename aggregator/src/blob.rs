@@ -2,7 +2,6 @@ use crate::{barycentric::interpolate, ChunkHash};
 use eth_types::U256;
 use ethers_core::utils::keccak256;
 use halo2_proofs::halo2curves::bls12_381::Scalar;
-use std::iter::once;
 
 pub const BLOB_WIDTH: usize = 4096;
 pub const BYTES_PER_BLOB_ELEMENT: usize = 32;
@@ -33,7 +32,11 @@ impl Blob {
     pub fn random_point(&self) -> Scalar {
         let chunk_tx_bytes_hashes = self.0.iter().flat_map(keccak256);
 
-        let input: Vec<_> = self.metadata_bytes().chain(chunk_tx_bytes_hashes).collect();
+        let input: Vec<_> = keccak256(self.metadata_bytes().collect::<Vec<_>>())
+            .into_iter()
+            .chain(chunk_tx_bytes_hashes)
+            .collect();
+
         // Convert to U256 first because Scalar::from_bytes will fail if bytes are non-canonical.
         Scalar::from_raw(U256::from(keccak256(input)).0)
     }
@@ -41,8 +44,9 @@ impl Blob {
     fn metadata_bytes(&self) -> impl Iterator<Item = u8> + '_ {
         let n_chunks = self.0.len();
         let chunk_lengths = self.0.iter().map(Vec::len);
-        once(u8::try_from(n_chunks).unwrap())
-            .chain(chunk_lengths.flat_map(|x| u16::try_from(x).unwrap().to_le_bytes()))
+        std::iter::empty()
+            .chain(u16::try_from(n_chunks).unwrap().to_be_bytes())
+            .chain(chunk_lengths.flat_map(|x| u32::try_from(x).unwrap().to_be_bytes()))
     }
 
     fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
@@ -85,7 +89,6 @@ impl Default for BlobAssignments {
 mod tests {
     use super::*;
     use crate::barycentric::ROOTS_OF_UNITY;
-    use hex;
     use reth_primitives::{
         constants::eip4844::MAINNET_KZG_TRUSTED_SETUP,
         kzg::{Blob as RethBlob, KzgProof},

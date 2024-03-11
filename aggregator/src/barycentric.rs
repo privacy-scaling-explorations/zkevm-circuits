@@ -59,12 +59,13 @@ impl BarycentricEvaluationConfig {
             .take(LOG_BLOG_WIDTH)
             .last()
             .unwrap();
-        let p =(z_to_blob_width - one) * ROOTS_OF_UNITY
-            .map(ScalarFieldElement::constant)
-            .into_iter()
-            .zip_eq(blob.map(ScalarFieldElement::private))
-            .map(|(root, f)| f * (root.clone() / (z.clone() - root)).carry())
-            .sum()
+        let p = (z_to_blob_width - one)
+            * ROOTS_OF_UNITY
+                .map(ScalarFieldElement::constant)
+                .into_iter()
+                .zip_eq(blob.map(ScalarFieldElement::private))
+                .map(|(root, f)| f * (root.clone() / (z.clone() - root)).carry())
+                .sum()
             / blob_width;
         p.resolve(ctx, &self.scalar)
     }
