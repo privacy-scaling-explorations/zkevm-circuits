@@ -676,31 +676,29 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // q_keccak = 1     |pi_bs_rlc|     ..    |      ...      | pi_hash_rlc |      136       |
         //   pi hash        |   hi    |     ..    |      ...      |     ...     |       16       |
         //                  |   lo    |     ..    |      ...      | pi_hash_rlc |       32       |
+        meta.lookup_any("keccak(rpi)", |meta| {
+            let q_keccak = meta.query_selector(q_keccak);
 
-        // 4844_debug
-        // meta.lookup_any("keccak(rpi)", |meta| {
-        //     let q_keccak = meta.query_selector(q_keccak);
+            let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
+            let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
+            let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
 
-        //     let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
-        //     let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
-        //     let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            let input_exprs = vec![
+                1.expr(), // q_enable = true
+                1.expr(), // is_final = true
+                rpi_rlc,
+                rpi_length,
+                output,
+            ];
+            let keccak_table_exprs = keccak_table.table_exprs(meta);
+            assert_eq!(input_exprs.len(), keccak_table_exprs.len());
 
-        //     let input_exprs = vec![
-        //         1.expr(), // q_enable = true
-        //         1.expr(), // is_final = true
-        //         rpi_rlc,
-        //         rpi_length,
-        //         output,
-        //     ];
-        //     let keccak_table_exprs = keccak_table.table_exprs(meta);
-        //     assert_eq!(input_exprs.len(), keccak_table_exprs.len());
-
-        //     input_exprs
-        //         .into_iter()
-        //         .zip(keccak_table_exprs)
-        //         .map(|(input, table)| (q_keccak.expr() * input, table))
-        //         .collect()
-        // });
+            input_exprs
+                .into_iter()
+                .zip(keccak_table_exprs)
+                .map(|(input, table)| (q_keccak.expr() * input, table))
+                .collect()
+        });
 
         // 3. constrain block_table
         meta.create_gate(
@@ -2113,6 +2111,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let num_rows = 1 + max_inner_blocks * BLOCK_HEADER_BYTES_NUM
             + max_txs * KECCAK_DIGEST_SIZE
             + 1 // for data hash row
+            + 1 // for chunk txbytes hash start row
+            + max_txs // for RLC of rlp_signed bytes
+            + 1 // for chunk txbytes hash row
             + 1 // for pi bytes start row
             + N_BYTES_U64 // chain_id
             + 4 * KECCAK_DIGEST_SIZE // state_roots & data hash
