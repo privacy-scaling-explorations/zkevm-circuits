@@ -19,6 +19,7 @@ use crate::{
     table::{BlockTable, LookupTable, TxTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
+use std::ops::Mul;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
@@ -1095,25 +1096,6 @@ impl<F: Field> PiCircuitConfig<F> {
                 || Value::known(F::one()),
             )?;
         }
-        
-        // Enable RLC accumulator consistency check throughout the above rows.
-        // for q_offset in public_data.data_bytes_start_offset()..public_data.data_bytes_end_offset() {
-        //     self.q_not_end.enable(region, q_offset)?;
-        // }
-
-
-        //     }
-
-        //     block_table_offset += BLOCK_LEN;
-        // }
-        // Copy block context fields to block table
-        // for (block_cell, row_offset) in block_copy_cells.into_iter() {
-        //     region.constrain_equal(
-        //         block_cell.cell(),
-        //         block_value_cells[row_offset - 1].cell(), /* -1 for block table's first row of
-        //                                                    * all-zeros */
-        //     )?;
-        // }
 
         // Assign chunk txbytes
         // Summary field TxHashRLC from TxTable is the RLC of a transaction's rlp_signed bytes. 
@@ -1131,6 +1113,7 @@ impl<F: Field> PiCircuitConfig<F> {
             .collect::<Vec<u8>>();
         let chunk_txbytes_rlc = rlc_be_bytes(&chunk_bytes, challenges.keccak_input());
         let chunk_txbytes_hash = keccak256(chunk_bytes);
+        let mut pows_of_rand: Vec<Value<F>> = vec![Value::known(F::one())];
 
         for (i, rlp_signed) in transactions
             .iter()
@@ -1142,7 +1125,7 @@ impl<F: Field> PiCircuitConfig<F> {
             let is_rpi_padding = i >= n_txs;
             let is_last_l2tx = i == (n_txs - 1);
             let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
-            let tx_hash_len = Value::known(F::from(*(&rlp_signed.len()) as u64));
+            let tx_hash_len = rlp_signed.len();
 
             // As the field TxHashRLC is already RLC-accumulated, it's guaranteed to fit within the scalar field.
             // Therefore, the variable field assignment method assign_field is not necessary.
@@ -1155,7 +1138,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 is_rpi_padding, 
                 rpi_rlc_acc, 
                 rpi_length, 
-                is_last_l2tx, 
+                is_last_l2tx,
+                &mut pows_of_rand,
                 challenges
             )?;
 
@@ -1218,14 +1202,28 @@ impl<F: Field> PiCircuitConfig<F> {
         offset: usize,
         chunk_txbytes_rlc: Value<F>,
         tx_hash_rlc: Value<F>,
-        tx_hash_len: Value<F>,
+        tx_hash_len: usize,
         is_rpi_padding: bool,
         mut rpi_rlc_acc: Value<F>, // rlc accumulator over rpi.
         mut rpi_length: Value<F>,  // no. of bytes accumulated since rlc was last initialised.
         is_last_l2tx: bool,
+        pows_of_rand: &mut Vec<Value<F>>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, Value<F>, Value<F>, AssignedCell<F, F>, [Option<AssignedCell<F, F>>; 3]), Error> {
         let (mut final_rpi_cell, mut final_rpi_rlc_cell, mut final_rpi_length_cell) = (None, None, None);
+
+        if !is_rpi_padding {
+            if tx_hash_len >= pows_of_rand.len() {
+                for _ in 0..(tx_hash_len - pows_of_rand.len() + 1) {
+                    pows_of_rand.push(pows_of_rand.last().unwrap().mul(challenges.keccak_input()));
+                }
+            }
+    
+            let pow_of_rand = pows_of_rand[tx_hash_len];
+
+            rpi_rlc_acc = rpi_rlc_acc * pow_of_rand + tx_hash_rlc;
+            rpi_length = rpi_length + Value::known(F::from(tx_hash_len as u64));
+        }
 
         let rpi_cell = region.assign_advice(
             || "field value",
