@@ -144,6 +144,10 @@ impl PublicData {
             self.block_ctxs.ctxs.len()
         );
         let num_all_txs_in_blocks = self.get_num_all_txs();
+        let l1transactions = self.transactions
+            .iter()
+            .filter(|&tx| tx.tx_type == TxType::L1Msg)
+            .collect::<Vec<&Transaction>>();
         let result = iter::empty()
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
                 // sanity check on coinbase & difficulty
@@ -177,19 +181,15 @@ impl PublicData {
             }))
             // Tx Hashes
             .chain(
-                self.transactions
-                    .iter()
-                    .filter(|&tx| tx.tx_type == TxType::L1Msg)
-                    .flat_map(|tx| tx.hash.to_fixed_bytes()),
+                l1transactions.iter().flat_map(|&tx| tx.hash.to_fixed_bytes()),
             )
             .collect::<Vec<u8>>();
 
-        // 4844_debug
-        // assert_eq!(
-        //     result.len(),
-        //     BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len()
-        //         + KECCAK_DIGEST_SIZE * self.transactions.len()
-        // );
+        assert_eq!(
+            result.len(),
+            BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len()
+                + KECCAK_DIGEST_SIZE * l1transactions.len()
+        );
         result
     }
 
@@ -303,7 +303,7 @@ impl PublicData {
     }
 
     fn q_chunk_txbytes_end_offset(&self) -> usize {
-        self.q_chunk_txbytes_start_offset() + N_BYTES_WORD * self.max_txs
+        self.q_chunk_txbytes_start_offset() + self.max_txs
     }
 
     fn pi_bytes_start_offset(&self) -> usize {
@@ -313,7 +313,7 @@ impl PublicData {
     }
 
     fn pi_bytes_end_offset(&self) -> usize {
-        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 4
+        self.pi_bytes_start_offset() + N_BYTES_U64 + N_BYTES_WORD * 5
     }
 
     fn pi_hash_start_offset(&self) -> usize {
@@ -676,29 +676,31 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // q_keccak = 1     |pi_bs_rlc|     ..    |      ...      | pi_hash_rlc |      136       |
         //   pi hash        |   hi    |     ..    |      ...      |     ...     |       16       |
         //                  |   lo    |     ..    |      ...      | pi_hash_rlc |       32       |
-        meta.lookup_any("keccak(rpi)", |meta| {
-            let q_keccak = meta.query_selector(q_keccak);
 
-            let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
-            let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
-            let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+        // 4844_debug
+        // meta.lookup_any("keccak(rpi)", |meta| {
+        //     let q_keccak = meta.query_selector(q_keccak);
 
-            let input_exprs = vec![
-                1.expr(), // q_enable = true
-                1.expr(), // is_final = true
-                rpi_rlc,
-                rpi_length,
-                output,
-            ];
-            let keccak_table_exprs = keccak_table.table_exprs(meta);
-            assert_eq!(input_exprs.len(), keccak_table_exprs.len());
+        //     let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
+        //     let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
+        //     let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
 
-            input_exprs
-                .into_iter()
-                .zip(keccak_table_exprs)
-                .map(|(input, table)| (q_keccak.expr() * input, table))
-                .collect()
-        });
+        //     let input_exprs = vec![
+        //         1.expr(), // q_enable = true
+        //         1.expr(), // is_final = true
+        //         rpi_rlc,
+        //         rpi_length,
+        //         output,
+        //     ];
+        //     let keccak_table_exprs = keccak_table.table_exprs(meta);
+        //     assert_eq!(input_exprs.len(), keccak_table_exprs.len());
+
+        //     input_exprs
+        //         .into_iter()
+        //         .zip(keccak_table_exprs)
+        //         .map(|(input, table)| (q_keccak.expr() * input, table))
+        //         .collect()
+        // });
 
         // 3. constrain block_table
         meta.create_gate(
