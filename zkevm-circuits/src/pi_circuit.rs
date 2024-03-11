@@ -215,7 +215,7 @@ impl PublicData {
         H256(keccak256(self.chunk_txbytes()))
     }
 
-    fn pi_bytes(&self, data_hash: H256) -> Vec<u8> {
+    fn pi_bytes(&self, data_hash: H256, chunk_txbytes_hash: H256) -> Vec<u8> {
         iter::empty()
             .chain(self.chain_id.to_be_bytes())
             // state roots
@@ -224,6 +224,7 @@ impl PublicData {
             .chain(self.withdraw_trie_root.to_fixed_bytes())
             // data hash
             .chain(data_hash.to_fixed_bytes())
+            .chain(chunk_txbytes_hash.to_fixed_bytes())
             .collect::<Vec<u8>>()
     }
 
@@ -233,8 +234,13 @@ impl PublicData {
             "[pi] chunk data hash: {}",
             hex::encode(data_hash.to_fixed_bytes())
         );
+        let chunk_txbytes_hash = H256(keccak256(self.chunk_txbytes()));
+        log::debug!(
+            "[pi] chunk txbytes hash: {}",
+            hex::encode(chunk_txbytes_hash.to_fixed_bytes())
+        );
 
-        let pi_bytes = self.pi_bytes(data_hash);
+        let pi_bytes = self.pi_bytes(data_hash, chunk_txbytes_hash);
         let pi_hash = keccak256(pi_bytes);
 
         H256(pi_hash)
@@ -866,6 +872,7 @@ impl<F: Field> PiCircuitConfig<F> {
             block_value_cells,
             tx_value_cells,
             &data_hash_rlc_cell,
+            &chunk_txbytes_hash_rlc_cell,
             challenges,
         )?;
         debug_assert_eq!(offset, public_data.pi_hash_start_offset());
@@ -1294,6 +1301,7 @@ impl<F: Field> PiCircuitConfig<F> {
         block_value_cells: &[AssignedCell<F, F>],
         tx_value_cells: &[AssignedCell<F, F>],
         data_hash_rlc_cell: &AssignedCell<F, F>,
+        chunk_txbytes_hash_rlc_cell: &AssignedCell<F, F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>, Connections<F>), Error> {
         let (mut offset, mut rpi_rlc_acc, mut rpi_length) = self.assign_rlc_init(region, offset)?;
@@ -1349,7 +1357,7 @@ impl<F: Field> PiCircuitConfig<F> {
         };
 
         // Assign data_hash
-        (offset, _, _, cells) = self.assign_field(
+        (offset, rpi_rlc_acc, rpi_length, cells) = self.assign_field(
             region,
             offset,
             &public_data.get_data_hash().to_fixed_bytes(),
@@ -1360,11 +1368,27 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         let data_hash_cell = cells[RPI_CELL_IDX].clone();
-        let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
-        let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
 
         // Copy data_hash value we collected from assigning data bytes.
         region.constrain_equal(data_hash_rlc_cell.cell(), data_hash_cell.cell())?;
+
+        // Assign chunk txbytes hash
+        (offset, _, _, cells) = self.assign_field(
+            region,
+            offset,
+            &public_data.get_chunk_txbytes_hash().to_fixed_bytes(),
+            RpiFieldType::DefaultType,
+            false,
+            rpi_rlc_acc,
+            rpi_length,
+            challenges,
+        )?;
+        let chunk_txbytes_hash_cell = cells[RPI_CELL_IDX].clone();
+        let pi_bytes_rlc = cells[RPI_RLC_ACC_CELL_IDX].clone();
+        let pi_bytes_length = cells[RPI_LENGTH_ACC_CELL_IDX].clone();
+
+        // Copy chunk_txbytes_hash value from the previous section.
+        region.constrain_equal(chunk_txbytes_hash_cell.cell(), chunk_txbytes_hash_rlc_cell.cell())?;
 
         // Assign row for validating lookup to check:
         // pi_hash == keccak256(rlc(pi_bytes))
