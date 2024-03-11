@@ -13,8 +13,8 @@ use zkevm_circuits::{
 
 use crate::{
     batch::{
-        N_BYTES_32, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA, N_ROWS_DIGEST_BYTES, N_ROWS_DIGEST_RLC,
-        N_ROWS_METADATA,
+        BLOB_WIDTH, N_BYTES_31, N_BYTES_32, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
+        N_ROWS_DIGEST_BYTES, N_ROWS_DIGEST_RLC, N_ROWS_METADATA,
     },
     BatchHash, RlcConfig, MAX_AGG_SNARKS,
 };
@@ -47,6 +47,11 @@ pub struct BlobDataConfig {
     data_selector: Selector,
     /// Boolean to let us know we are in the hash section.
     hash_selector: Selector,
+}
+
+pub struct AssignedBlobDataExport {
+    pub blob_fields: Vec<Vec<AssignedCell<Fr, Fr>>>,
+    pub challenge_digest: Vec<AssignedCell<Fr, Fr>>,
 }
 
 struct AssignedBlobDataConfig {
@@ -230,7 +235,7 @@ impl BlobDataConfig {
         mut rlc_config_offset: usize,
         rlc_config: &RlcConfig,
         batch: &BatchHash,
-    ) -> Result<(), Error> {
+    ) -> Result<AssignedBlobDataExport, Error> {
         layouter.assign_region(
             || "BlobDataConfig",
             |mut region| {
@@ -330,7 +335,7 @@ impl BlobDataConfig {
                 region.constrain_equal(num_chunks.cell(), lc2.cell())?;
 
                 ////////////////////////////////////////////////////////////////////////////////
-                ////////////////////////////////// CHUNK_size //////////////////////////////////
+                ////////////////////////////////// CHUNK_SIZE //////////////////////////////////
                 ////////////////////////////////////////////////////////////////////////////////
 
                 let mut num_nonempty_chunks = {
@@ -597,7 +602,28 @@ impl BlobDataConfig {
                     rlc_config.enforce_zero(&mut region, &diff)?;
                 }
 
-                Ok(())
+                // Export
+                let mut blob_fields = Vec::with_capacity(BLOB_WIDTH);
+                let blob_bytes = assigned_rows
+                    .iter()
+                    .take(N_ROWS_METADATA + N_ROWS_DATA)
+                    .map(|row| row.byte.clone())
+                    .collect::<Vec<_>>();
+                for chunk in blob_bytes.chunks_exact(N_BYTES_31) {
+                    blob_fields.push(chunk.to_vec());
+                }
+                let export = AssignedBlobDataExport {
+                    blob_fields,
+                    challenge_digest: assigned_rows
+                        .iter()
+                        .rev()
+                        .take(N_BYTES_32)
+                        .map(|row| row.byte.clone())
+                        .rev()
+                        .collect(),
+                };
+
+                Ok(export)
             },
         )
     }
