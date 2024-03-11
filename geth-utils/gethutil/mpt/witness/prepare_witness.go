@@ -267,22 +267,6 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			// Needs to be after `specialTest == 1` preparation:
 			nodes = append(nodes, GetStartNode(proofType, sRoot, cRoot, specialTest))
 
-			/*
-			if tMod.Type == StorageDoesNotExist {
-				fmt.Println("===================");
-				fmt.Println(addr);
-				fmt.Println(tMod.Key);
-				fmt.Println("");
-
-				for i := 0; i < len(storageProof); i++ {
-					fmt.Println(storageProof[i])
-					fmt.Println("")
-				}
-				fmt.Println("========");
-				fmt.Println("");
-			}
-			*/
-
 			// In convertProofToWitness, we can't use account address in its original form (non-hashed), because
 			// of the "special" test for which we manually manipulate the "hashed" address and we don't have a preimage.
 			// TODO: addr is used for calling GetProof for modified extension node only, might be done in a different way
@@ -380,8 +364,6 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 	}
 
 	var isExtension bool
-	extensionNodeInd := 0
-
 	var extListRlpBytes []byte
 	var extValues [][]byte
 	for i := 0; i < 4; i++ {
@@ -393,7 +375,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 	for i := 0; i < upTo; i++ {
 		if !isBranch(proof1[i]) {
 			isNonExistingProof := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof)
-			areThereNibbles := len(extNibblesS) != 0 || len(extNibblesC) != 0
+			areThereNibbles := len(extNibblesS[i]) != 0 || len(extNibblesC[i]) != 0
 			// If i < upTo-1, it means it's not a leaf, so it's an extension node.
 			// There is no any special relation between isNonExistingProof and isExtension,
 			// except that in the non-existing proof the extension node can appear in `i == upTo-1`.
@@ -404,10 +386,9 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if (i != upTo-1) || (areThereNibbles && isNonExistingProof) { // extension node
 				var numberOfNibbles byte
 				isExtension = true
-				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[i], proof2[i])
+				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS[i], proof1[i], proof2[i])
 
 				keyIndex += int(numberOfNibbles)
-				extensionNodeInd++
 				continue
 			}
 
@@ -445,9 +426,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				leafRow0 = proof2[len2-1]
 			}
 
-			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC,
+			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2,
+				extNibblesS[len1-1], extNibblesC[len2-1],
 				leafRow0, key, neighbourNode,
-				keyIndex, extensionNodeInd, additionalBranch,
+				keyIndex, additionalBranch,
 				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
 
 			nodes = append(nodes, bNode)
@@ -488,7 +470,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			// modification).
 			if isModifiedExtNode {
 				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
-					keyIndex, extensionNodeInd, numberOfNibbles, additionalBranch,
+					keyIndex, numberOfNibbles, additionalBranch,
 					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
 			}
 			nodes = append(nodes, leafNode)
@@ -513,7 +495,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
 				nodes = append(nodes, node)
 			}
-		} else if len(extNibblesC) > len(proof2)-1 {
+		} else {
 			isLastExtNode := len(extNibblesC[len(proof2)-1]) != 0
 			if isLastExtNode {
 				// We need to add a placeholder branch and a placeholder leaf.
@@ -564,7 +546,11 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					newKey[keyIndex] = byte(i)
 					k := trie.HexToKeybytes(newKey)
 					ky := common.BytesToHash(k)
-					proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
+					if isAccountProof {
+						proof, _, _, _, _, err = statedb.GetProof(addr)
+					} else {
+						proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
+					}
 					check(err)
 					if !isBranch(proof[len(proof)-1]) {
 						break
@@ -585,6 +571,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				path := make([]byte, l)
 				copy(path, key[:l])
 				// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
+
+				// TODO: construct for account proof
 
 				compact := trie.HexToCompact(key[l:])
 				// Add RLP:

@@ -204,10 +204,10 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
-func addBranchAndPlaceholder(proof1, proof2,
-	extNibblesS, extNibblesC [][]byte,
+func addBranchAndPlaceholder(proof1, proof2 [][]byte,
+	extNibblesS, extNibblesC []byte,
 	leafRow0, key, neighbourNode []byte,
-	keyIndex, extensionNodeInd int,
+	keyIndex int,
 	additionalBranch, isAccountProof, nonExistingAccountProof,
 	isShorterProofLastLeaf bool, toBeHashed *[][]byte) (bool, bool, int, Node) {
 	len1 := len(proof1)
@@ -226,9 +226,9 @@ func addBranchAndPlaceholder(proof1, proof2,
 	if isExtension {
 		var numNibbles byte
 		if len1 > len2 {
-			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[len1-3], proof1[len1-3])
+			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, proof1[len1-3], proof1[len1-3])
 		} else {
-			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesC, extensionNodeInd, proof2[len2-3], proof2[len2-3])
+			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesC, proof2[len2-3], proof2[len2-3])
 		}
 		numberOfNibbles = int(numNibbles)
 	}

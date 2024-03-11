@@ -1,6 +1,6 @@
 package witness
 
-func prepareExtensions(extNibbles [][]byte, extensionNodeInd int, proofEl1, proofEl2 []byte) (byte, []byte, [][]byte) {
+func prepareExtensions(extNibbles []byte, proofEl1, proofEl2 []byte) (byte, []byte, [][]byte) {
 	var values [][]byte
 	v1 := make([]byte, valueLen)
 	v2 := make([]byte, valueLen)
@@ -30,9 +30,9 @@ func prepareExtensions(extNibbles [][]byte, extensionNodeInd int, proofEl1, proo
 		}
 	}
 	ind := 0
-	for j := startNibblePos; j < len(extNibbles[extensionNodeInd]); j += 2 {
+	for j := startNibblePos; j < len(extNibbles); j += 2 {
 		v3[2+ind] = // TODO: check 2 + ind
-			extNibbles[extensionNodeInd][j]
+			extNibbles[j]
 		ind++
 	}
 	values = append(values, v1)

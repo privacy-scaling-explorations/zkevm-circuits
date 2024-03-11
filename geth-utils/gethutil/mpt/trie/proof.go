@@ -107,11 +107,15 @@ func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) (
 		// copy n.Key before it gets changed in ProofHash
 		var nCopy []byte
 		if short, ok := n.(*ShortNode); ok {
-			if !hasTerm(short.Key) { // only for extension keys
+			if !hasTerm(short.Key) { // extension keys
 				nCopy = make([]byte, len(short.Key))
 				copy(nCopy, short.Key)
 				extNibbles = append(extNibbles, nCopy)
+			} else {
+				extNibbles = append(extNibbles, []byte{})
 			}
+		} else {
+			extNibbles = append(extNibbles, []byte{})
 		}
 
 		n, _ = hasher.ProofHash(n)
