@@ -856,11 +856,12 @@ impl<F: Field> PiCircuitConfig<F> {
             tx_value_cells,
             challenges,
         )?;
-        debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
+        debug_assert_eq!(offset, public_data.q_chunk_txbytes_start_offset());
 
         // 2. Assign chunk tx bytes.
         let (offset, chunk_txbytes_hash_rlc_cell) =
             self.assign_chunk_txbytes(region, offset, public_data, tx_value_cells, challenges)?;
+        debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 3. Assign public input bytes.
         let (offset, pi_hash_rlc_cell, connections) = self.assign_pi_bytes(
@@ -1002,6 +1003,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // Assign tx hash values.
+        // First, Assign actual L1Msg hashes
         let transactions = public_data
             .transactions
             .iter()
@@ -1014,18 +1016,15 @@ impl<F: Field> PiCircuitConfig<F> {
         for (i, tx_hash) in transactions
             .iter()
             .map(|tx| tx.hash)
-            .chain(std::iter::repeat(get_dummy_tx_hash()))
             .take(public_data.max_txs)
             .enumerate()
         {
-            let is_rpi_padding = i >= n_txs;
-
             let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
                 region,
                 offset,
                 &tx_hash.to_fixed_bytes(),
                 RpiFieldType::DefaultType,
-                is_rpi_padding,
+                false,
                 rpi_rlc_acc,
                 rpi_length,
                 challenges,
@@ -1034,19 +1033,52 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_rlc_acc = tmp_rpi_rlc_acc;
             rpi_length = tmp_rpi_length;
             tx_copy_cells.push(cells[RPI_CELL_IDX].clone());
+
             if i == public_data.max_txs - 1 {
                 data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
                 data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
             }
         }
+
+        // Assign padding hashes
+        for (i, tx_hash) in iter::empty()
+            .chain(std::iter::repeat(get_dummy_tx_hash()))
+            .take(public_data.max_txs - n_txs)
+            .enumerate()
+        {
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
+                region,
+                offset,
+                &tx_hash.to_fixed_bytes(),
+                RpiFieldType::DefaultType,
+                true,
+                rpi_rlc_acc,
+                rpi_length,
+                challenges,
+            )?;
+            offset = tmp_offset;
+            rpi_rlc_acc = tmp_rpi_rlc_acc;
+            rpi_length = tmp_rpi_length;
+
+            if i == (public_data.max_txs - n_txs) - 1 {
+                data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
+                data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
+            }
+        }
+
         // Copy tx_hashes to tx table
         log::trace!("tx_copy_cells: {:?}", tx_copy_cells);
         log::trace!("tx_value_cells: {:?}", tx_value_cells);
 
-        for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
+        let mut tx_copy_idx = 0;
+        for (_, tx_hash_rlc_cell) in tx_copy_cells.into_iter().enumerate() {
+            // Skip L2 messages
+            while public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
+                tx_copy_idx += 1;
+            }
             region.constrain_equal(
-                tx_hash_cell.cell(),
-                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+                tx_hash_rlc_cell.cell(),
+                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
             )?;
         }
 
@@ -1162,13 +1194,13 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_rlc_acc = tmp_rpi_rlc_acc;
             rpi_length = tmp_rpi_length;
 
-            while !transactions[tx_copy_idx].is_chunk_l2_tx() {
+            while !public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
                 tx_copy_idx += 1;
             }
 
             region.constrain_equal(
                 tx_hash_rlc_cell.cell(),
-                tx_value_cells[i * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
             )?;
 
             if is_last_l2tx {
