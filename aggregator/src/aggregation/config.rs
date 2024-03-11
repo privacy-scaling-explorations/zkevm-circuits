@@ -40,8 +40,6 @@ pub struct AggregationConfig {
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)
     /// - the number of valid SNARKs (1 element)
-    /// - random point z for blob consistency check
-    /// - y = blob(z)
     pub instance: Column<Instance>,
     pub barycentric: BarycentricEvaluationConfig,
 }
