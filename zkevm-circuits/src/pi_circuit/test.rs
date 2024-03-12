@@ -85,8 +85,7 @@ fn empty_block() -> Block<Fr> {
     }
 }
 
-// 4844_debug
-// #[cfg(feature = "scroll")]
+#[cfg(feature = "scroll")]
 #[test]
 fn serial_test_simple_pi() {
     const MAX_TXS: usize = 4;
@@ -137,8 +136,7 @@ fn run_size_check<
     assert_eq!(prover1.permutation(), prover2.permutation());
 }
 
-// 4844_debug
-// #[cfg(feature = "scroll")]
+#[cfg(feature = "scroll")]
 #[test]
 fn variadic_size_check() {
     const MAX_TXS: usize = 8;
