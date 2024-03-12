@@ -9,7 +9,10 @@ mod test;
 
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
-use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable, tx_circuit::TX_HASH_RLC_OFFSET};
+use crate::{
+    evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable,
+    tx_circuit::TX_HASH_RLC_OFFSET,
+};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{geth_types::TxType, Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
@@ -144,7 +147,8 @@ impl PublicData {
             self.block_ctxs.ctxs.len()
         );
         let num_all_txs_in_blocks = self.get_num_all_txs();
-        let l1transactions = self.transactions
+        let l1transactions = self
+            .transactions
             .iter()
             .filter(|&tx| tx.tx_type == TxType::L1Msg)
             .collect::<Vec<&Transaction>>();
@@ -181,7 +185,9 @@ impl PublicData {
             }))
             // Tx Hashes
             .chain(
-                l1transactions.iter().flat_map(|&tx| tx.hash.to_fixed_bytes()),
+                l1transactions
+                    .iter()
+                    .flat_map(|&tx| tx.hash.to_fixed_bytes()),
             )
             .collect::<Vec<u8>>();
 
@@ -1071,7 +1077,7 @@ impl<F: Field> PiCircuitConfig<F> {
         log::trace!("tx_value_cells: {:?}", tx_value_cells);
 
         let mut tx_copy_idx = 0;
-        for (_, tx_hash_rlc_cell) in tx_copy_cells.into_iter().enumerate() {
+        for tx_hash_rlc_cell in tx_copy_cells.into_iter() {
             // Skip L2 messages
             while public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
                 tx_copy_idx += 1;
