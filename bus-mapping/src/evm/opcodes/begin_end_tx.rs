@@ -1,6 +1,8 @@
 use super::TxExecSteps;
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{
+        Call, CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+    },
     operation::{AccountField, AccountOp, CallContextField, TxReceiptField, TxRefundOp, RW},
     state_db::CodeDB,
     Error,
@@ -148,6 +150,28 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             stream.append(&nonce_prev);
             stream.out().to_vec()
         });
+        // We also hash the call_data as it will be used as init code, and the
+        // call_context.code_hash needs to be checked against the hash of this call_data.
+        state.block.sha3_inputs.push(state.tx.call_data.to_vec());
+
+        // Append the copy for the CopyCircuit to calculate RLC(call_data) for the keccack lookup
+        if state.tx.call_data.len() > 0 {
+            state.push_copy(
+                &mut exec_step,
+                CopyEvent {
+                    src_addr: 0,
+                    src_addr_end: state.tx.call_data.len() as u64,
+                    src_type: CopyDataType::TxCalldata,
+                    src_id: NumberOrHash::Number(state.tx.id as usize),
+                    dst_addr: 0,
+                    dst_type: CopyDataType::RlcAcc,
+                    dst_id: NumberOrHash::Number(0),
+                    log_id: None,
+                    rw_counter_start: state.block_ctx.rwc,
+                    bytes: state.tx.call_data.iter().map(|b| (*b, false)).collect(),
+                },
+            );
+        }
     }
 
     // There are 4 branches from here.
