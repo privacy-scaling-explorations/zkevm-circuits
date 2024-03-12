@@ -14,6 +14,7 @@ use eth_types::l2_types::BlockTrace;
 pub struct Prover {
     // Make it public for testing with inner functions (unnecessary for FFI).
     pub inner: common::Prover,
+    verifier: super::verifier::Verifier,
     raw_vk: Option<Vec<u8>>,
 }
 
@@ -30,7 +31,13 @@ impl Prover {
             );
         }
 
-        Self { inner, raw_vk }
+        let verifier = super::verifier::Verifier::from_dirs(params_dir, assets_dir);
+
+        Self {
+            inner,
+            raw_vk,
+            verifier,
+        }
     }
 
     pub fn get_vk(&self) -> Option<Vec<u8>> {
@@ -73,7 +80,9 @@ impl Prover {
 
         self.check_and_clear_raw_vk();
 
-        match output_dir.and_then(|output_dir| ChunkProof::from_json_file(output_dir, &name).ok()) {
+        let chunk_proof = match output_dir
+            .and_then(|output_dir| ChunkProof::from_json_file(output_dir, &name).ok())
+        {
             Some(proof) => Ok(proof),
             None => {
                 let chunk_hash = ChunkHash::from_witness_block(&witness_block, false);
@@ -87,7 +96,13 @@ impl Prover {
 
                 result
             }
+        }?;
+
+        if !self.verifier.verify_chunk_proof(chunk_proof.clone()) {
+            anyhow::bail!("chunk prover cannot generate valid proof");
         }
+
+        Ok(chunk_proof)
     }
 
     fn check_and_clear_raw_vk(&mut self) {
