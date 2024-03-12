@@ -109,6 +109,9 @@ func (t *SecureTrie) Update(key, value []byte) {
 // If a node was not found in the database, a MissingNodeError is returned.
 func (t *SecureTrie) TryUpdate(key, value []byte) error {
 	hk := t.hashKey(key)
+	if oracle.PreventHashingInSecureTrie {
+		hk = append(hk, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+	}
 	err := t.trie.TryUpdate(hk, value)
 	if err != nil {
 		return err

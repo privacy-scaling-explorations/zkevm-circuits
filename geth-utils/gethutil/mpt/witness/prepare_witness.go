@@ -179,6 +179,10 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			addr := tMod.Address
 			addrh := crypto.Keccak256(addr.Bytes())
+			if oracle.PreventHashingInSecureTrie {
+				addrh = addr.Bytes()
+				addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+			}
 			accountAddr := trie.KeybytesToHex(addrh)
 
 			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)

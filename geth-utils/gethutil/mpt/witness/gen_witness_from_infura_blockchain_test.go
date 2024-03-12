@@ -2344,10 +2344,9 @@ func TestStorageWrongExtensionNode(t *testing.T) {
 	addr := common.HexToAddress("0x40efbf12580138bc623c95757286df4e24eb81c9")
 
 	statedb.DisableLoadingRemoteAccounts()
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
 
 	statedb.CreateAccount(addr)
-
-	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
 
 	key1 := common.HexToHash("0x1230000000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x1231000000000000000000000000000000000000000000000000000000000000")

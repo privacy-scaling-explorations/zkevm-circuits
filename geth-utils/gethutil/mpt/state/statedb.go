@@ -298,7 +298,12 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 
 // GetProof returns the Merkle proof for a given account.
 func (s *StateDB) GetProof(addr common.Address) ([][]byte, []byte, [][]byte, bool, bool, error) {
-	return s.GetProofByHash(crypto.Keccak256Hash(addr.Bytes()))
+	var newAddr common.Hash
+	if oracle.PreventHashingInSecureTrie {
+		bytes := append(addr.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		newAddr = common.BytesToHash(bytes)
+	}
+	return s.GetProofByHash(newAddr)
 }
 
 // GetProofByHash returns the Merkle proof for a given account.
@@ -311,7 +316,13 @@ func (s *StateDB) GetProofByHash(addrHash common.Hash) ([][]byte, []byte, [][]by
 // GetStorageProof returns the Merkle proof for given storage slot.
 func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, []byte, [][]byte, bool, bool, error) {
 	var proof proofList
-	trie := s.StorageTrie(a)
+	newAddr := a
+	if oracle.PreventHashingInSecureTrie {
+		bytes := append(a.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		newAddr = common.BytesToAddress(bytes)
+	}
+
+	trie := s.StorageTrie(newAddr)
 	if trie == nil {
 		return proof, nil, nil, false, false, errors.New("storage trie for requested address does not exist")
 	}
