@@ -36,12 +36,13 @@ pub struct AggregationConfig {
     pub rlc_config: RlcConfig,
     /// The blob data's config.
     pub blob_data_config: BlobDataConfig,
+    /// Config to do the barycentric evaluation on blob polynomial.
+    pub barycentric: BarycentricEvaluationConfig,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)
     /// - the number of valid SNARKs (1 element)
     pub instance: Column<Instance>,
-    pub barycentric: BarycentricEvaluationConfig,
 }
 
 impl AggregationConfig {

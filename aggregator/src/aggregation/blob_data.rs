@@ -1,4 +1,5 @@
 use ethers_core::utils::keccak256;
+use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::Fr,
@@ -236,6 +237,7 @@ impl BlobDataConfig {
         mut rlc_config_offset: usize,
         rlc_config: &RlcConfig,
         batch: &BatchHash,
+        barycentric_assignments: &[CRTInteger<Fr>],
     ) -> Result<AssignedBlobDataExport, Error> {
         layouter.assign_region(
             || "BlobDataConfig",
@@ -637,6 +639,82 @@ impl BlobDataConfig {
                         .collect(),
                     chunk_data_digests,
                 };
+
+                ////////////////////////////////////////////////////////////////////////////////
+                //////////////////////////////////// LINKING ///////////////////////////////////
+                ////////////////////////////////////////////////////////////////////////////////
+
+                assert_eq!(barycentric_assignments.len(), BLOB_WIDTH + 2);
+                let blob_crts = barycentric_assignments
+                    .iter()
+                    .take(BLOB_WIDTH)
+                    .collect::<Vec<_>>();
+                let challenge_digest_crt = barycentric_assignments
+                    .get(BLOB_WIDTH)
+                    .expect("challenge digest CRT");
+                let powers_of_256 = std::iter::successors(Some(Ok(one)), |coeff| {
+                    Some(rlc_config.mul(
+                        &mut region,
+                        &two_fifty_six,
+                        coeff.as_ref().expect("coeff expected"),
+                        &mut rlc_config_offset,
+                    ))
+                })
+                .take(32)
+                .collect::<Result<Vec<_>, Error>>()?;
+                let challenge_digest_limb1 = rlc_config.inner_product(
+                    &mut region,
+                    &export.challenge_digest[0..11],
+                    &powers_of_256[0..11],
+                    &mut rlc_config_offset,
+                )?;
+                let challenge_digest_limb2 = rlc_config.inner_product(
+                    &mut region,
+                    &export.challenge_digest[11..22],
+                    &powers_of_256[11..22],
+                    &mut rlc_config_offset,
+                )?;
+                let challenge_digest_limb3 = rlc_config.inner_product(
+                    &mut region,
+                    &export.challenge_digest[22..32],
+                    &powers_of_256[22..32],
+                    &mut rlc_config_offset,
+                )?;
+                region.constrain_equal(
+                    challenge_digest_limb1.cell(),
+                    challenge_digest_crt.truncation.limbs[0].cell(),
+                )?;
+                region.constrain_equal(
+                    challenge_digest_limb2.cell(),
+                    challenge_digest_crt.truncation.limbs[1].cell(),
+                )?;
+                region.constrain_equal(
+                    challenge_digest_limb3.cell(),
+                    challenge_digest_crt.truncation.limbs[2].cell(),
+                )?;
+                for (blob_crt, blob_field) in blob_crts.iter().zip_eq(export.blob_fields.iter()) {
+                    let limb1 = rlc_config.inner_product(
+                        &mut region,
+                        &blob_field[0..11],
+                        &powers_of_256[0..11],
+                        &mut rlc_config_offset,
+                    )?;
+                    let limb2 = rlc_config.inner_product(
+                        &mut region,
+                        &blob_field[11..22],
+                        &powers_of_256[11..22],
+                        &mut rlc_config_offset,
+                    )?;
+                    let limb3 = rlc_config.inner_product(
+                        &mut region,
+                        &blob_field[22..32],
+                        &powers_of_256[22..32],
+                        &mut rlc_config_offset,
+                    )?;
+                    region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell())?;
+                    region.constrain_equal(limb2.cell(), blob_crt.truncation.limbs[1].cell())?;
+                    region.constrain_equal(limb3.cell(), blob_crt.truncation.limbs[2].cell())?;
+                }
 
                 Ok(export)
             },

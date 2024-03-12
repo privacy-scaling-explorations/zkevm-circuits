@@ -515,6 +515,24 @@ impl RlcConfig {
         Ok(res)
     }
 
+    pub(crate) fn inner_product(
+        &self,
+        region: &mut Region<Fr>,
+        a: &[AssignedCell<Fr, Fr>],
+        b: &[AssignedCell<Fr, Fr>],
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        assert_eq!(a.len(), b.len());
+        assert!(!a.is_empty());
+
+        let mut acc = self.mul(region, &a[0], &b[0], offset)?;
+        for (a_next, b_next) in a.iter().zip(b.iter()).skip(1) {
+            acc = self.mul_add(region, a_next, b_next, &acc, offset)?;
+        }
+
+        Ok(acc)
+    }
+
     // return a boolean if a ?= 0
     #[allow(dead_code)]
     pub(crate) fn is_zero(

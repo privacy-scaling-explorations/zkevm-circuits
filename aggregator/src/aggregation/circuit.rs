@@ -52,7 +52,6 @@ pub struct AggregationCircuit {
     // batch hash circuit for which the snarks are generated
     // the chunks in this batch are also padded already
     pub batch_hash: BatchHash,
-    // pub point_evaluation: BarycentricEvaluationConfig,
 }
 
 impl AggregationCircuit {
@@ -273,7 +272,6 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_data_hash_preimage
             // - z
             // - y
-            // - blob_hash?
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
@@ -394,12 +392,13 @@ impl Circuit<Fr> for AggregationCircuit {
         }
 
         // blob data config
-        config.blob_data_config.assign(
+        let blob_data_exports = config.blob_data_config.assign(
             &mut layouter,
             challenges,
             rlc_config_offset,
             &config.rlc_config,
             &self.batch_hash,
+            &barycentric_assignments,
         )?;
 
         end_timer!(witness_time);
