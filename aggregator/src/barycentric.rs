@@ -48,6 +48,12 @@ pub struct BarycentricEvaluationConfig {
     pub scalar: FpConfig<Fr, Scalar>,
 }
 
+pub struct BarycentricEvaluationAssignments {
+    z: CRTInteger<Fr>,
+    y: CRTInteger<Fr>,
+    blob: [CRTInteger<Fr>; BLOB_WIDTH],
+}
+
 impl BarycentricEvaluationConfig {
     pub fn construct(range: RangeConfig<Fr>) -> Self {
         Self {
@@ -135,24 +141,39 @@ impl BarycentricEvaluationConfig {
         ctx: &mut Context<Fr>,
         blob: [Scalar; BLOB_WIDTH],
         z: Scalar,
-    ) -> CRTInteger<Fr> {
+    ) -> BarycentricEvaluationAssignments {
         let one = ScalarFieldElement::constant(Scalar::one());
         let blob_width = ScalarFieldElement::constant(u64::try_from(BLOB_WIDTH).unwrap().into());
 
-        let z = ScalarFieldElement::private(z);
-        let z_to_blob_width = successors(Some(z.clone()), |z| Some(z.clone() * z.clone()))
-            .take(LOG_BLOG_WIDTH)
-            .last()
-            .unwrap();
-        let p = (z_to_blob_width - one)
+        let z = self
+            .scalar
+            .load_private(ctx, Value::known(fe_to_biguint(&z).into()));
+        let blob = blob.map(|e| {
+            self.scalar
+                .load_private(ctx, Value::known(fe_to_biguint(&e).into()))
+        });
+        let z_to_blob_width = successors(Some(ScalarFieldElement::private(z.clone())), |z| {
+            Some(z.clone() * z.clone())
+        })
+        .take(LOG_BLOG_WIDTH)
+        .last()
+        .unwrap();
+        let y = (z_to_blob_width - one)
             * ROOTS_OF_UNITY
                 .map(ScalarFieldElement::constant)
                 .into_iter()
-                .zip_eq(blob.map(ScalarFieldElement::private))
-                .map(|(root, f)| f * (root.clone() / (z.clone() - root)).carry())
+                .zip_eq(blob.clone().map(ScalarFieldElement::private))
+                .map(|(root, f)| {
+                    f * (root.clone() / (ScalarFieldElement::private(z.clone()) - root)).carry()
+                })
                 .sum()
             / blob_width;
-        p.resolve(ctx, &self.scalar)
+
+        BarycentricEvaluationAssignments {
+            z,
+            y: y.resolve(ctx, &self.scalar),
+            blob,
+        }
     }
 }
 

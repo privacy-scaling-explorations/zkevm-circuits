@@ -4,16 +4,13 @@ use halo2_ecc::{
     fields::{fp::FpConfig, FieldChip},
     halo2_base::Context,
 };
-use halo2_proofs::{
-    circuit::Value,
-    halo2curves::{bls12_381::Scalar, bn256::Fr},
-};
+use halo2_proofs::halo2curves::{bls12_381::Scalar, bn256::Fr};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone)]
 pub enum ScalarFieldElement {
     Constant(Scalar),
-    Private(Scalar),
+    Private(CRTInteger<Fr>),
     Add(Box<Self>, Box<Self>),
     Sub(Box<Self>, Box<Self>),
     Mul(Box<Self>, Box<Self>),
@@ -26,7 +23,7 @@ impl ScalarFieldElement {
         Self::Constant(x)
     }
 
-    pub fn private(x: Scalar) -> Self {
+    pub fn private(x: CRTInteger<Fr>) -> Self {
         Self::Private(x)
     }
 
@@ -37,7 +34,7 @@ impl ScalarFieldElement {
     pub fn resolve(&self, ctx: &mut Context<Fr>, config: &FpConfig<Fr, Scalar>) -> CRTInteger<Fr> {
         match self {
             Self::Constant(x) => config.load_constant(ctx, fe_to_biguint(x)),
-            Self::Private(x) => config.load_private(ctx, Value::known(fe_to_biguint(x).into())),
+            Self::Private(x) => x.clone(),
             Self::Add(x, y) => {
                 let x = x.resolve(ctx, config);
                 let y = y.resolve(ctx, config);

@@ -191,7 +191,7 @@ impl Circuit<Fr> for AggregationCircuit {
                         },
                     );
 
-                    config.barycentric.assign(
+                    let _barycentric_assignments = config.barycentric.assign(
                         &mut ctx,
                         self.batch_hash.blob.coefficients,
                         self.batch_hash.blob.z,
@@ -233,6 +233,8 @@ impl Circuit<Fr> for AggregationCircuit {
 
                     loader.ctx_mut().print_stats(&["Range"]);
 
+                    // TODO: return _barycentric_assignments and pass them to
+                    // config.blob_data_config.assign
                     Ok((accumulator_instances, snark_inputs))
                 },
             )?;

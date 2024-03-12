@@ -1,7 +1,7 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{Field, H256};
+use eth_types::{Field, H256, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
