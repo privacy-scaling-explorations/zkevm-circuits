@@ -1,7 +1,8 @@
-use eth_types::U256;
+use eth_types::{ToLittleEndian, U256};
 use halo2_base::{
-    gates::range::RangeConfig,
+    gates::{range::RangeConfig, GateInstructions},
     utils::{fe_to_biguint, modulus},
+    QuantumCell,
 };
 use halo2_ecc::{
     bigint::CRTInteger,
@@ -13,6 +14,7 @@ use halo2_proofs::{
     halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
 };
 use itertools::Itertools;
+use num_bigint::BigUint;
 use std::{iter::successors, sync::LazyLock};
 
 use crate::{
@@ -48,6 +50,7 @@ pub struct BarycentricEvaluationConfig {
     pub scalar: FpConfig<Fr, Scalar>,
 }
 
+#[allow(dead_code)]
 pub struct BarycentricEvaluationAssignments {
     z: CRTInteger<Fr>,
     y: CRTInteger<Fr>,
@@ -64,76 +67,196 @@ impl BarycentricEvaluationConfig {
     pub fn assign2(
         &self,
         ctx: &mut Context<Fr>,
-        blob: [Scalar; BLOB_WIDTH],
-        // TODO: accept blob_digest as a 32-bytes parameter (instead of BLS scalar).
-        z: Scalar,
-        y: Scalar,
-        /* blob_data_export: AssignedBlobDataExport */
-    ) {
-        // TODO:
-        // blob_digest = keccak256(
-        //     keccak256(metadata) ||
-        //     keccak256(chunk[0].txdata) ||
-        //     ... ||
-        //     keccak256(chunk[MAX_AGG_SNARKS-1].txdata)
-        // )
-        //
-        // We get the 32-bytes of digest from blob_data_export.challenge_digest:
-        // refer: https://github.com/scroll-tech/zkevm-circuits/blob/feat/4844-blob-data-config/aggregator/src/aggregation/blob_data.rs#L52-L56
-        //
-        // We need to:
-        // 1. assert equality of those 32 bytes (challenge digest)
-        // 2. do blob_digest % BLS_MODULUS
-        // 3. then load private
-        let z_crt = self
+        blob: [U256; BLOB_WIDTH],
+        challenge_digest: U256,
+        evaluation: U256,
+    ) -> Vec<CRTInteger<Fr>> {
+        // prechecks
+        let challenge_digest_le: Vec<QuantumCell<Fr>> = challenge_digest
+            .to_le_bytes()
+            .iter()
+            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
+            .collect::<Vec<_>>();
+        let evaluation_le: Vec<QuantumCell<Fr>> = evaluation
+            .to_le_bytes()
+            .iter()
+            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
+            .collect::<Vec<_>>();
+        let bls_modulus = U256::from_dec_str(
+            "52435875175126190479447740508185965837690552500527637822603658699938581184513",
+        )
+        .expect("BLS_MODULUS from decimal string");
+        let (_, challenge) = challenge_digest.div_mod(bls_modulus);
+        let challenge_scalar = Scalar::from_raw(challenge.0);
+        let evaluation_scalar = Scalar::from_raw(evaluation.0);
+        let challenge_digest_crt = self.scalar.load_private(
+            ctx,
+            Value::known(BigUint::from_bytes_le(&challenge_digest.to_le_bytes()).into()),
+        );
+        let challenge_digest_mod = self.scalar.carry_mod(ctx, &challenge_digest_crt);
+        let challenge_crt = self
             .scalar
-            .load_private(ctx, Value::known(fe_to_biguint(&z).into()));
-
-        let y_exp = self
+            .load_private(ctx, Value::known(fe_to_biguint(&challenge_scalar).into()));
+        self.scalar
+            .assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
+        let evaluation_crt = self
             .scalar
-            .load_private(ctx, Value::known(fe_to_biguint(&y).into()));
+            .load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
+        let powers_of_256 =
+            std::iter::successors(Some(Fr::one()), |coeff| Some(Fr::from(256) * coeff))
+                .take(32)
+                .map(QuantumCell::Constant)
+                .collect::<Vec<_>>();
+        let challenge_limb1 = self.scalar.range().gate.inner_product(
+            ctx,
+            challenge_digest_le[0..11].to_vec(),
+            powers_of_256[0..11].to_vec(),
+        );
+        let challenge_limb2 = self.scalar.range().gate.inner_product(
+            ctx,
+            challenge_digest_le[11..22].to_vec(),
+            powers_of_256[11..22].to_vec(),
+        );
+        let challenge_limb3 = self.scalar.range().gate.inner_product(
+            ctx,
+            challenge_digest_le[22..32].to_vec(),
+            powers_of_256[22..32].to_vec(),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(challenge_limb1),
+            QuantumCell::Existing(challenge_crt.truncation.limbs[0]),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(challenge_limb2),
+            QuantumCell::Existing(challenge_crt.truncation.limbs[1]),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(challenge_limb3),
+            QuantumCell::Existing(challenge_crt.truncation.limbs[2]),
+        );
+        let evaluation_limb1 = self.scalar.range().gate.inner_product(
+            ctx,
+            evaluation_le[0..11].to_vec(),
+            powers_of_256[0..11].to_vec(),
+        );
+        let evaluation_limb2 = self.scalar.range().gate.inner_product(
+            ctx,
+            evaluation_le[11..22].to_vec(),
+            powers_of_256[11..22].to_vec(),
+        );
+        let evaluation_limb3 = self.scalar.range().gate.inner_product(
+            ctx,
+            evaluation_le[22..32].to_vec(),
+            powers_of_256[22..32].to_vec(),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(evaluation_limb1),
+            QuantumCell::Existing(evaluation_crt.truncation.limbs[0]),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(evaluation_limb2),
+            QuantumCell::Existing(evaluation_crt.truncation.limbs[1]),
+        );
+        self.scalar.range().gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(evaluation_limb3),
+            QuantumCell::Existing(evaluation_crt.truncation.limbs[2]),
+        );
 
-        let mut y_evl = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::zero()));
+        // compute evaluation.
+        let mut blob_crts = Vec::with_capacity(BLOB_WIDTH);
+        let mut evaluation_computed = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::zero()));
         blob.iter()
             .zip_eq(ROOTS_OF_UNITY.map(|x| self.scalar.load_constant(ctx, fe_to_biguint(&x))))
             .for_each(|(blob_i, root_i_crt)| {
+                let blob_i_le = blob_i
+                    .to_le_bytes()
+                    .iter()
+                    .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
+                    .collect::<Vec<_>>();
+                let blob_i_scalar = Scalar::from_raw(blob_i.0);
                 let blob_i_crt = self
                     .scalar
-                    .load_private(ctx, Value::known(fe_to_biguint(blob_i).into()));
-
-                // TODO: assert that blob_i's limbs are equal to limbs from the bytes assigned in
-                // BlobDataConfig.
+                    .load_private(ctx, Value::known(fe_to_biguint(&blob_i_scalar).into()));
+                let limb1 = self.scalar.range().gate.inner_product(
+                    ctx,
+                    blob_i_le[0..11].to_vec(),
+                    powers_of_256[0..11].to_vec(),
+                );
+                let limb2 = self.scalar.range().gate.inner_product(
+                    ctx,
+                    blob_i_le[11..22].to_vec(),
+                    powers_of_256[11..22].to_vec(),
+                );
+                let limb3 = self.scalar.range().gate.inner_product(
+                    ctx,
+                    blob_i_le[22..32].to_vec(),
+                    powers_of_256[22..32].to_vec(),
+                );
+                self.scalar.range().gate.assert_equal(
+                    ctx,
+                    QuantumCell::Existing(limb1),
+                    QuantumCell::Existing(blob_i_crt.truncation.limbs[0]),
+                );
+                self.scalar.range().gate.assert_equal(
+                    ctx,
+                    QuantumCell::Existing(limb2),
+                    QuantumCell::Existing(blob_i_crt.truncation.limbs[1]),
+                );
+                self.scalar.range().gate.assert_equal(
+                    ctx,
+                    QuantumCell::Existing(limb3),
+                    QuantumCell::Existing(blob_i_crt.truncation.limbs[2]),
+                );
+                self.scalar.range().gate.assert_equal(
+                    ctx,
+                    blob_i_le[31].clone(),
+                    QuantumCell::Constant(Fr::zero()),
+                );
 
                 // a = int(polynomial[i]) * int(roots_of_unity_brp[i]) % BLS_MODULUS
                 let a = self.scalar.mul(ctx, &blob_i_crt, &root_i_crt);
 
                 // b = (int(BLS_MODULUS) + int(z) - int(roots_of_unity_brp[i])) % BLS_MODULUS
-                let b = self.scalar.sub_no_carry(ctx, &z_crt, &root_i_crt);
+                let b = self.scalar.sub_no_carry(ctx, &challenge_crt, &root_i_crt);
                 let b = self.scalar.carry_mod(ctx, &b);
 
                 // y += int(div(a, b) % BLS_MODULUS)
                 let a_by_b = self.scalar.divide(ctx, &a, &b);
-                y_evl = self.scalar.add_no_carry(ctx, &y_evl, &a_by_b);
-                y_evl = self.scalar.carry_mod(ctx, &y_evl);
+                evaluation_computed = self.scalar.add_no_carry(ctx, &evaluation_computed, &a_by_b);
+                evaluation_computed = self.scalar.carry_mod(ctx, &evaluation_computed);
+                blob_crts.push(blob_i_crt);
             });
 
         let one = self.scalar.load_constant(ctx, fe_to_biguint(&Fr::one()));
         let blob_width = self
             .scalar
             .load_constant(ctx, fe_to_biguint(&Fr::from(BLOB_WIDTH as u64)));
-        let z_to_blob_width = (0..LOG_BLOG_WIDTH).fold(z_crt, |acc, intermediate| {
-            self.scalar.mul(ctx, &z_crt, &z_crt)
+        let z_to_blob_width = (0..LOG_BLOG_WIDTH).fold(challenge_crt.clone(), |acc, _| {
+            self.scalar.mul(ctx, &acc, &acc)
         });
         let z_to_blob_width_minus_one = self.scalar.sub_no_carry(ctx, &z_to_blob_width, &one);
         let z_to_blob_width_minus_one = self.scalar.carry_mod(ctx, &z_to_blob_width_minus_one);
         let factor = self
             .scalar
             .divide(ctx, &z_to_blob_width_minus_one, &blob_width);
+        evaluation_computed = self.scalar.mul(ctx, &evaluation_computed, &factor);
+        evaluation_computed = self.scalar.carry_mod(ctx, &evaluation_computed);
 
-        y_evl = self.scalar.mul(ctx, &y_evl, &factor);
-        y_evl = self.scalar.carry_mod(ctx, &y_evl);
+        // The evaluation we computed is correct.
+        self.scalar
+            .assert_equal(ctx, &evaluation_computed, &evaluation_crt);
 
-        self.scalar.assert_equal(ctx, &y_evl, &y_exp);
+        blob_crts
+            .into_iter()
+            .chain(std::iter::once(challenge_digest_crt))
+            .chain(std::iter::once(evaluation_crt))
+            .collect()
     }
 
     pub fn assign(

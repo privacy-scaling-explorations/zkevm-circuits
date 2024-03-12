@@ -21,15 +21,15 @@ impl Blob {
         )
     }
 
-    pub fn coefficients(&self) -> [Scalar; BLOB_WIDTH] {
-        let mut scalar_bytes = [[0; BYTES_PER_BLOB_ELEMENT]; BLOB_WIDTH];
+    pub fn coefficients(&self) -> [U256; BLOB_WIDTH] {
+        let mut le_bytes = [[0; BYTES_PER_BLOB_ELEMENT]; BLOB_WIDTH];
         for (i, byte) in self.bytes().enumerate() {
-            scalar_bytes[i / 31][i % 31] = byte;
+            le_bytes[i / 31][i % 31] = byte;
         }
-        scalar_bytes.map(|bytes| Scalar::from_bytes(&bytes).unwrap())
+        le_bytes.map(|bytes| U256::from_little_endian(&bytes))
     }
 
-    pub fn random_point(&self) -> Scalar {
+    pub fn challenge_point(&self) -> U256 {
         let chunk_tx_bytes_hashes = self.0.iter().flat_map(keccak256);
 
         let input: Vec<_> = keccak256(self.metadata_bytes().collect::<Vec<_>>())
@@ -37,8 +37,7 @@ impl Blob {
             .chain(chunk_tx_bytes_hashes)
             .collect();
 
-        // Convert to U256 first because Scalar::from_bytes will fail if bytes are non-canonical.
-        Scalar::from_raw(U256::from(keccak256(input)).0)
+        keccak256(input).into()
     }
 
     fn metadata_bytes(&self) -> impl Iterator<Item = u8> + '_ {
@@ -57,20 +56,23 @@ impl Blob {
 
 #[derive(Clone, Debug)]
 pub struct BlobAssignments {
-    pub z: Scalar,
-    pub y: Scalar,
-    pub coefficients: [Scalar; BLOB_WIDTH],
+    pub challenge_digest: U256,
+    pub evaluation: U256,
+    pub coefficients: [U256; BLOB_WIDTH],
 }
 
 impl From<&Blob> for BlobAssignments {
     fn from(blob: &Blob) -> Self {
         let coefficients = blob.coefficients();
-        let z = blob.random_point();
+        let coefficients_scalar = coefficients.map(|coeff| Scalar::from_raw(coeff.0));
+        let challenge_digest = blob.challenge_point();
 
         Self {
-            z,
+            challenge_digest,
+            evaluation: U256::from_little_endian(
+                &interpolate(Scalar::from_raw(challenge_digest.0), coefficients_scalar).to_bytes(),
+            ),
             coefficients,
-            y: interpolate(z, coefficients),
         }
     }
 }
@@ -78,9 +80,9 @@ impl From<&Blob> for BlobAssignments {
 impl Default for BlobAssignments {
     fn default() -> Self {
         Self {
-            z: Scalar::default(),
-            y: Scalar::default(),
-            coefficients: [Scalar::default(); BLOB_WIDTH],
+            challenge_digest: U256::default(),
+            evaluation: U256::default(),
+            coefficients: [U256::default(); BLOB_WIDTH],
         }
     }
 }
@@ -97,18 +99,18 @@ mod tests {
     #[test]
     fn empty_chunks_random_point() {
         let empty_blob = Blob::default();
-        assert_eq!(
-            empty_blob.random_point(),
-            Scalar::from_raw(U256::from(keccak256([0u8])).0)
-        )
+        assert_eq!(empty_blob.challenge_point(), U256::from(keccak256([0u8])),)
     }
 
     #[test]
     fn zero_blob() {
         let blob = Blob::default();
 
-        let z = blob.random_point();
-        let y = interpolate(z, blob.coefficients());
+        let z = Scalar::from_raw(blob.challenge_point().0);
+        let y = interpolate(
+            z,
+            blob.coefficients().map(|coeff| Scalar::from_raw(coeff.0)),
+        );
 
         assert_eq!(
             z,
@@ -128,8 +130,11 @@ mod tests {
             vec![255; 23],
         ]);
 
-        let z = blob.random_point();
-        let y = interpolate(z, blob.coefficients());
+        let z = Scalar::from_raw(blob.challenge_point().0);
+        let y = interpolate(
+            z,
+            blob.coefficients().map(|coeff| Scalar::from_raw(coeff.0)),
+        );
 
         assert_eq!(
             z,

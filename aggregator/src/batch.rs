@@ -117,8 +117,7 @@ impl BatchHash {
             .collect::<Vec<_>>();
         let batch_data_hash = keccak256(preimage);
 
-        let z = U256::default(); // TODO: compute z from batch
-        let y = U256::default(); // TODO: compute y from (batch, z)
+        let blob = BlobAssignments::from(&Blob::new(chunks_with_padding));
 
         // public input hash is build as
         // keccak(
@@ -130,9 +129,6 @@ impl BatchHash {
         //     z ||
         //     y
         // )
-
-        let blob = BlobAssignments::from(&Blob::new(chunks_with_padding));
-
         let preimage = [
             chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
             chunks_with_padding[0].prev_state_root.as_bytes(),
@@ -143,8 +139,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             batch_data_hash.as_slice(),
-            &blob.z.to_bytes(),
-            &blob.y.to_bytes(),
+            // TODO: add z
+            // TODO: add y
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
