@@ -65,14 +65,15 @@ func GetWitness(nodeUrl string, blockNum int, trieModifications []TrieModificati
 	return obtainTwoProofsAndConvertToWitness(trieModifications, statedb, 0)
 }
 
-func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLen int, statedb *state.StateDB, specialTest byte) []Node {
+func obtainAccountProofAndConvertToWitness(tMod TrieModification, statedb *state.StateDB, specialTest byte) []Node {
 	statedb.IntermediateRoot(false)
 
 	addr := tMod.Address
 	addrh := crypto.Keccak256(addr.Bytes())
 	if oracle.PreventHashingInSecureTrie {
 		addrh = addr.Bytes()
-		addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		addr = common.BytesToAddress(addrh)
 	}
 	accountAddr := trie.KeybytesToHex(addrh)
 
@@ -82,7 +83,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	// for cases when statedb.loadRemoteAccountsIntoStateObjects = false.
 	statedb.SetStateObjectIfExists(tMod.Address)
 
-	oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
+	oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
 	accountProof, aNeighbourNode1, aExtNibbles1, isLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 	check(err)
 
@@ -182,10 +183,11 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			if oracle.PreventHashingInSecureTrie {
 				addrh = addr.Bytes()
 				addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+				addr = common.BytesToAddress(addrh)
 			}
 			accountAddr := trie.KeybytesToHex(addrh)
 
-			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
+			oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
 			oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
 
 			if specialTest == 1 {
@@ -282,7 +284,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			nodes = append(nodes, nodesStorage...)
 			nodes = append(nodes, GetEndNode())
 		} else {
-			accountNodes := obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications), statedb, specialTest)
+			accountNodes := obtainAccountProofAndConvertToWitness(tMod, statedb, specialTest)
 			nodes = append(nodes, accountNodes...)
 		}
 	}

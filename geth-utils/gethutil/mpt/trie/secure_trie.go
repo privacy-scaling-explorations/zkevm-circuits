@@ -109,9 +109,6 @@ func (t *SecureTrie) Update(key, value []byte) {
 // If a node was not found in the database, a MissingNodeError is returned.
 func (t *SecureTrie) TryUpdate(key, value []byte) error {
 	hk := t.hashKey(key)
-	if oracle.PreventHashingInSecureTrie {
-		hk = append(hk, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
-	}
 	err := t.trie.TryUpdate(hk, value)
 	if err != nil {
 		return err
@@ -214,6 +211,9 @@ func (t *SecureTrie) hashKey(key []byte) []byte {
 		return t.hashKeyBuf[:]
 	} else {
 		// For generating special tests for MPT circuit.
+		if len(key) < 32 { // accounts
+			key = append(key, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		}
 		return key
 	}
 }

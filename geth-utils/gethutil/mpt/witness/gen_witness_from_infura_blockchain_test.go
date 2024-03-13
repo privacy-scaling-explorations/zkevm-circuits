@@ -2347,6 +2347,7 @@ func TestStorageWrongExtensionNode(t *testing.T) {
 	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
 
 	statedb.CreateAccount(addr)
+	statedb.IntermediateRoot(false)
 
 	key1 := common.HexToHash("0x1230000000000000000000000000000000000000000000000000000000000000")
 	key2 := common.HexToHash("0x1231000000000000000000000000000000000000000000000000000000000000")
