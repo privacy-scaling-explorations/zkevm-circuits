@@ -255,6 +255,7 @@ impl BarycentricEvaluationConfig {
         blob_crts
             .into_iter()
             .chain(std::iter::once(challenge_digest_crt))
+            .chain(std::iter::once(challenge_crt))
             .chain(std::iter::once(evaluation_crt))
             .collect()
     }
