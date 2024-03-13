@@ -53,7 +53,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
 
         let remainder_end = data_offset.overflowing_add(length).0;
         // check data_offset or end is u64 overflow, or
-        // last_callee_return_data_length < reaminder_end
+        // last_callee_return_data_length < reminder_end
         let data_offset_overflow = data_offset > Word::from(u64::MAX);
         let remainder_end_overflow = remainder_end > Word::from(u64::MAX);
         let remainder_end_exceed_length =

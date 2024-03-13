@@ -36,7 +36,7 @@ enum BuildError {
     /// Failed to create CompilerInput artifact for given contract  
     #[error("FailedToComposeCompilerInputs(path: {path:}, {reason:}))")]
     FailedToComposeCompilerInputs { path: String, reason: String },
-    /// Errors or non-ignored warnings exist in the CompilerOutpu struct
+    /// Errors or non-ignored warnings exist in the CompilerOutput struct
     #[error("CompilerOutputContainsErrors(path: {path:}, errors: {errors:#?})")]
     CompilerOutputContainsErrors {
         path: String,
@@ -97,7 +97,7 @@ const CONTRACTS: &[(&str, &str)] = &[
     // Contract to test worst-case usage of opcodes.
     ("Benchmarks", "BENCHMARKS.sol"),
 ];
-/// Target directory for rust contract bingings
+/// Target directory for rust contract bindings
 const BINDINGS_DR: &str = "src";
 
 fn main() -> Result<(), BuildError> {
