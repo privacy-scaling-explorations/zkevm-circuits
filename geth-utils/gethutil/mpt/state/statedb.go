@@ -298,8 +298,8 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 
 // GetProof returns the Merkle proof for a given account.
 func (s *StateDB) GetProof(addr common.Address) ([][]byte, []byte, [][]byte, bool, bool, error) {
-	var newAddr common.Hash
-	if oracle.PreventHashingInSecureTrie {
+	newAddr := crypto.Keccak256Hash(addr.Bytes())
+	if oracle.AccountPreventHashingInSecureTrie {
 		bytes := append(addr.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
 		newAddr = common.BytesToHash(bytes)
 	}
@@ -317,7 +317,7 @@ func (s *StateDB) GetProofByHash(addrHash common.Hash) ([][]byte, []byte, [][]by
 func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, []byte, [][]byte, bool, bool, error) {
 	var proof proofList
 	newAddr := a
-	if oracle.PreventHashingInSecureTrie {
+	if oracle.AccountPreventHashingInSecureTrie {
 		bytes := append(a.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
 		newAddr = common.BytesToAddress(bytes)
 	}
@@ -545,7 +545,7 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 		panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
 	}
 	
-	if !oracle.PreventHashingInSecureTrie {
+	if !oracle.AccountPreventHashingInSecureTrie {
 		if err = s.trie.TryUpdateAlwaysHash(addr[:], data); err != nil {
 			s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
 		}

@@ -70,7 +70,7 @@ func obtainAccountProofAndConvertToWitness(tMod TrieModification, statedb *state
 
 	addr := tMod.Address
 	addrh := crypto.Keccak256(addr.Bytes())
-	if oracle.PreventHashingInSecureTrie {
+	if oracle.AccountPreventHashingInSecureTrie {
 		addrh = addr.Bytes()
 		addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
 		addr = common.BytesToAddress(addrh)
@@ -180,7 +180,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			addr := tMod.Address
 			addrh := crypto.Keccak256(addr.Bytes())
-			if oracle.PreventHashingInSecureTrie {
+			if oracle.AccountPreventHashingInSecureTrie {
 				addrh = addr.Bytes()
 				addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
 				addr = common.BytesToAddress(addrh)
