@@ -1,4 +1,5 @@
 use ark_std::{end_timer, start_timer};
+use halo2_base::QuantumCell;
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -162,7 +163,13 @@ impl Circuit<Fr> for AggregationCircuit {
         // Step 1: snark aggregation circuit
         // ==============================================
         #[cfg(not(feature = "disable_proof_aggregation"))]
-        let (barycentric_assignments, accumulator_instances, snark_inputs) = {
+        let (
+            barycentric_assignments,
+            challenge_le,
+            evaluation_le,
+            accumulator_instances,
+            snark_inputs,
+        ) = {
             config
                 .range()
                 .load_lookup_table(&mut layouter)
@@ -170,85 +177,105 @@ impl Circuit<Fr> for AggregationCircuit {
 
             let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-            let (barycentric_assignments, accumulator_instances, snark_inputs) = layouter
-                .assign_region(
-                    || "aggregation",
-                    |region| -> Result<
-                        (
-                            Vec<CRTInteger<Fr>>,
-                            Vec<AssignedValue<Fr>>,
-                            Vec<AssignedValue<Fr>>,
-                        ),
-                        Error,
-                    > {
-                        if first_pass {
-                            first_pass = false;
-                            return Ok((vec![], vec![], vec![]));
-                        }
+            let (
+                barycentric_assignments,
+                challenge_le,
+                evaluation_le,
+                accumulator_instances,
+                snark_inputs,
+            ) = layouter.assign_region(
+                || "aggregation",
+                |region| -> Result<
+                    (
+                        Vec<CRTInteger<Fr>>,
+                        Vec<QuantumCell<Fr>>,
+                        Vec<QuantumCell<Fr>>,
+                        Vec<AssignedValue<Fr>>,
+                        Vec<AssignedValue<Fr>>,
+                    ),
+                    Error,
+                > {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok((vec![], vec![], vec![], vec![], vec![]));
+                    }
 
-                        // stores accumulators for all snarks, including the padded ones
-                        let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
-                        // stores public inputs for all snarks, including the padded ones
-                        let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
-                        let mut ctx = Context::new(
-                            region,
-                            ContextParams {
-                                max_rows: config.flex_gate().max_rows,
-                                num_context_ids: 1,
-                                fixed_columns: config.flex_gate().constants.clone(),
-                            },
-                        );
+                    // stores accumulators for all snarks, including the padded ones
+                    let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
+                    // stores public inputs for all snarks, including the padded ones
+                    let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
+                    let mut ctx = Context::new(
+                        region,
+                        ContextParams {
+                            max_rows: config.flex_gate().max_rows,
+                            num_context_ids: 1,
+                            fixed_columns: config.flex_gate().constants.clone(),
+                        },
+                    );
 
-                        let barycentric_assignments = config.barycentric.assign2(
+                    let (barycentric_assignments, challenge_le, evaluation_le) =
+                        config.barycentric.assign2(
                             &mut ctx,
                             self.batch_hash.blob.coefficients,
                             self.batch_hash.blob.challenge_digest,
                             self.batch_hash.blob.evaluation,
                         );
 
-                        let ecc_chip = config.ecc_chip();
-                        let loader = Halo2Loader::new(ecc_chip, ctx);
+                    let ecc_chip = config.ecc_chip();
+                    let loader = Halo2Loader::new(ecc_chip, ctx);
 
-                        //
-                        // extract the assigned values for
-                        // - instances which are the public inputs of each chunk (prefixed with 12
-                        //   instances from previous accumulators)
-                        // - new accumulator to be verified on chain
-                        //
-                        let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
-                            &self.svk,
-                            &loader,
-                            &self.snarks_with_padding,
-                            self.as_proof(),
-                        );
-                        log::trace!("aggregation circuit during assigning");
-                        for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
-                            log::trace!("{}-th instance: {:?}", i, e.value)
-                        }
+                    //
+                    // extract the assigned values for
+                    // - instances which are the public inputs of each chunk (prefixed with 12
+                    //   instances from previous accumulators)
+                    // - new accumulator to be verified on chain
+                    //
+                    let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
+                        &self.svk,
+                        &loader,
+                        &self.snarks_with_padding,
+                        self.as_proof(),
+                    );
+                    log::trace!("aggregation circuit during assigning");
+                    for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
+                        log::trace!("{}-th instance: {:?}", i, e.value)
+                    }
 
-                        // extract the following cells for later constraints
-                        // - the accumulators
-                        // - the public inputs from each snark
-                        accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
-                        // the snark is not a fresh one, assigned_instances already contains an
-                        // accumulator so we want to skip the first 12 elements from the public
-                        // input
-                        snark_inputs.extend(
-                            assigned_aggregation_instances
-                                .iter()
-                                .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
-                        );
+                    // extract the following cells for later constraints
+                    // - the accumulators
+                    // - the public inputs from each snark
+                    accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
+                    // the snark is not a fresh one, assigned_instances already contains an
+                    // accumulator so we want to skip the first 12 elements from the public
+                    // input
+                    snark_inputs.extend(
+                        assigned_aggregation_instances
+                            .iter()
+                            .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
+                    );
 
-                        config.range().finalize(&mut loader.ctx_mut());
+                    config.range().finalize(&mut loader.ctx_mut());
 
-                        loader.ctx_mut().print_stats(&["Range"]);
+                    loader.ctx_mut().print_stats(&["Range"]);
 
-                        Ok((barycentric_assignments, accumulator_instances, snark_inputs))
-                    },
-                )?;
+                    Ok((
+                        barycentric_assignments,
+                        challenge_le,
+                        evaluation_le,
+                        accumulator_instances,
+                        snark_inputs,
+                    ))
+                },
+            )?;
 
             assert_eq!(snark_inputs.len(), MAX_AGG_SNARKS * DIGEST_LEN);
-            (barycentric_assignments, accumulator_instances, snark_inputs)
+            (
+                barycentric_assignments,
+                challenge_le,
+                evaluation_le,
+                accumulator_instances,
+                snark_inputs,
+            )
         };
         end_timer!(timer);
         // ==============================================

@@ -70,35 +70,41 @@ impl BarycentricEvaluationConfig {
         blob: [U256; BLOB_WIDTH],
         challenge_digest: U256,
         evaluation: U256,
-    ) -> Vec<CRTInteger<Fr>> {
-        // prechecks
-        let challenge_digest_le: Vec<QuantumCell<Fr>> = challenge_digest
-            .to_le_bytes()
-            .iter()
-            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
-            .collect::<Vec<_>>();
-        let evaluation_le: Vec<QuantumCell<Fr>> = evaluation
-            .to_le_bytes()
-            .iter()
-            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
-            .collect::<Vec<_>>();
+    ) -> (
+        Vec<CRTInteger<Fr>>,
+        Vec<QuantumCell<Fr>>,
+        Vec<QuantumCell<Fr>>,
+    ) {
+        // prechecks (challenge point z)
         let bls_modulus = U256::from_dec_str(
             "52435875175126190479447740508185965837690552500527637822603658699938581184513",
         )
         .expect("BLS_MODULUS from decimal string");
         let (_, challenge) = challenge_digest.div_mod(bls_modulus);
         let challenge_scalar = Scalar::from_raw(challenge.0);
-        let evaluation_scalar = Scalar::from_raw(evaluation.0);
         let challenge_digest_crt = self.scalar.load_private(
             ctx,
             Value::known(BigUint::from_bytes_le(&challenge_digest.to_le_bytes()).into()),
         );
+        let challenge_le: Vec<QuantumCell<Fr>> = challenge
+            .to_le_bytes()
+            .iter()
+            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
+            .collect::<Vec<_>>();
         let challenge_digest_mod = self.scalar.carry_mod(ctx, &challenge_digest_crt);
         let challenge_crt = self
             .scalar
             .load_private(ctx, Value::known(fe_to_biguint(&challenge_scalar).into()));
         self.scalar
             .assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
+
+        // prechecks (evaluation y)
+        let evaluation_le: Vec<QuantumCell<Fr>> = evaluation
+            .to_le_bytes()
+            .iter()
+            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
+            .collect::<Vec<_>>();
+        let evaluation_scalar = Scalar::from_raw(evaluation.0);
         let evaluation_crt = self
             .scalar
             .load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
@@ -109,17 +115,17 @@ impl BarycentricEvaluationConfig {
                 .collect::<Vec<_>>();
         let challenge_limb1 = self.scalar.range().gate.inner_product(
             ctx,
-            challenge_digest_le[0..11].to_vec(),
+            challenge_le[0..11].to_vec(),
             powers_of_256[0..11].to_vec(),
         );
         let challenge_limb2 = self.scalar.range().gate.inner_product(
             ctx,
-            challenge_digest_le[11..22].to_vec(),
+            challenge_le[11..22].to_vec(),
             powers_of_256[11..22].to_vec(),
         );
         let challenge_limb3 = self.scalar.range().gate.inner_product(
             ctx,
-            challenge_digest_le[22..32].to_vec(),
+            challenge_le[22..32].to_vec(),
             powers_of_256[22..32].to_vec(),
         );
         self.scalar.range().gate.assert_equal(
@@ -252,12 +258,16 @@ impl BarycentricEvaluationConfig {
         self.scalar
             .assert_equal(ctx, &evaluation_computed, &evaluation_crt);
 
-        blob_crts
-            .into_iter()
-            .chain(std::iter::once(challenge_digest_crt))
-            .chain(std::iter::once(challenge_crt))
-            .chain(std::iter::once(evaluation_crt))
-            .collect()
+        (
+            blob_crts
+                .into_iter()
+                .chain(std::iter::once(challenge_digest_crt))
+                .chain(std::iter::once(challenge_crt))
+                .chain(std::iter::once(evaluation_crt))
+                .collect(),
+            challenge_le,
+            evaluation_le,
+        )
     }
 
     pub fn assign(
