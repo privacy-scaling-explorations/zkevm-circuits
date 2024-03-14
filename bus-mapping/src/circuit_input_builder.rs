@@ -855,7 +855,11 @@ fn keccak_inputs_pi_circuit(
                 .chain(num_txs.to_be_bytes())
         }))
         // Tx Hashes
-        .chain(l1transactions.iter().flat_map(|&tx| tx.hash.to_fixed_bytes()))
+        .chain(
+            l1transactions
+                .iter()
+                .flat_map(|&tx| tx.hash.to_fixed_bytes()),
+        )
         .collect::<Vec<u8>>();
     let data_hash = H256(keccak256(&data_bytes));
     log::debug!(
@@ -864,11 +868,11 @@ fn keccak_inputs_pi_circuit(
     );
 
     let chunk_txbytes = transactions
-        .into_iter()
+        .iter()
         .filter(|&tx| tx.tx_type != TxType::L1Msg)
         .flat_map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<u8>>();
-    let chunk_txbytes_hash = H256(keccak256(&chunk_txbytes));
+    let chunk_txbytes_hash = H256(keccak256(chunk_txbytes));
 
     let after_state_root = block_headers
         .last_key_value()
@@ -903,7 +907,7 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
     inputs.push(dummy_hash_data);
 
     let chunk_txbytes = txs
-        .into_iter()
+        .iter()
         .filter(|tx| tx.tx_type != TxType::L1Msg)
         .flat_map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<u8>>();

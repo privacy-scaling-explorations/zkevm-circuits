@@ -863,7 +863,7 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         debug_assert_eq!(offset, public_data.q_chunk_txbytes_start_offset());
-        
+
         // 2. Assign chunk tx bytes.
         let (offset, chunk_txbytes_hash_rlc_cell) =
             self.assign_chunk_txbytes(region, offset, public_data, tx_value_cells, challenges)?;
