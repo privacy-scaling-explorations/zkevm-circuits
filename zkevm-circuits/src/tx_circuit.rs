@@ -2589,6 +2589,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut supplemental_data: Vec<Value<F>> = vec![];
+        let mut txbytes_hash_assignment: Option<AssignedCell<F, F>> = None;
         let mut tx_value_cells = vec![];
         let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
             // l1 msg does not have sign data
@@ -2964,15 +2965,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 *offset,
                 || chunk_txbytes_len,
             )?;
-            let txbytes_hash_assignment = region.assign_advice(
+            txbytes_hash_assignment = Some(region.assign_advice(
                 || "chunk_txbytes_hash",
                 self.chunk_txbytes_hash,
                 *offset,
                 || chunk_txbytes_hash,
-            )?;
-            if is_last_tx {
-                tx_value_cells.push(txbytes_hash_assignment);
-            }
+            )?);
 
             // 2nd phase columns
             for (col_anno, col, col_val) in [
@@ -3109,6 +3107,9 @@ impl<F: Field> TxCircuitConfig<F> {
             )?;
 
             *offset += 1;
+        }
+        if is_last_tx {
+            tx_value_cells.push(txbytes_hash_assignment.unwrap());
         }
         Ok((tx_value_cells, supplemental_data))
     }
