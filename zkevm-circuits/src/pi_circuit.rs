@@ -1510,7 +1510,7 @@ impl<F: Field> PiCircuitConfig<F> {
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
         // 4844_debug
-        self.q_keccak.enable(region, offset)?;
+        // self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, pi_hash_rlc_cell, connections))
     }
