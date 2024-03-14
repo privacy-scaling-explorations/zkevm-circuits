@@ -461,7 +461,9 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // hold the raw public input's value (e.g. gas_limit in block_context)
         let rpi = meta.advice_column_in(SecondPhase);
         // hold the raw public input's bytes
-        let rpi_bytes = meta.advice_column();
+        // 4844_debug
+        // let rpi_bytes = meta.advice_column();
+        let rpi_bytes = meta.advice_column_in(SecondPhase);
         // hold the accumulated value of rpi_bytes (e.g. gas_limit in block_context)
         let rpi_bytes_acc = meta.advice_column_in(SecondPhase);
         // hold the accumulated value of rlc(rpi_bytes, keccak_input)
