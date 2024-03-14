@@ -684,29 +684,29 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         //                  |   lo    |     ..    |      ...      | pi_hash_rlc |       32       |
 
         // 4844_debug
-        // meta.lookup_any("keccak(rpi)", |meta| {
-        //     let q_keccak = meta.query_selector(q_keccak);
+        meta.lookup_any("keccak(rpi)", |meta| {
+            let q_keccak = meta.query_selector(q_keccak);
 
-        //     let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
-        //     let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
-        //     let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
+            let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
+            let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
 
-        //     let input_exprs = vec![
-        //         1.expr(), // q_enable = true
-        //         1.expr(), // is_final = true
-        //         rpi_rlc,
-        //         rpi_length,
-        //         output,
-        //     ];
-        //     let keccak_table_exprs = keccak_table.table_exprs(meta);
-        //     assert_eq!(input_exprs.len(), keccak_table_exprs.len());
+            let input_exprs = vec![
+                1.expr(), // q_enable = true
+                1.expr(), // is_final = true
+                rpi_rlc,
+                rpi_length,
+                output,
+            ];
+            let keccak_table_exprs = keccak_table.table_exprs(meta);
+            assert_eq!(input_exprs.len(), keccak_table_exprs.len());
 
-        //     input_exprs
-        //         .into_iter()
-        //         .zip(keccak_table_exprs)
-        //         .map(|(input, table)| (q_keccak.expr() * input, table))
-        //         .collect()
-        // });
+            input_exprs
+                .into_iter()
+                .zip(keccak_table_exprs)
+                .map(|(input, table)| (q_keccak.expr() * input, table))
+                .collect()
+        });
 
         // 3. constrain block_table
         meta.create_gate(
@@ -1027,6 +1027,8 @@ impl<F: Field> PiCircuitConfig<F> {
             .take(public_data.max_txs)
             .enumerate()
         {
+            // 4844_debug
+            log::trace!("=> Assign L1Msg - count: {:?}", i);
             let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
                 region,
                 offset,
@@ -1084,10 +1086,11 @@ impl<F: Field> PiCircuitConfig<F> {
             while public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
                 tx_copy_idx += 1;
             }
-            region.constrain_equal(
-                tx_hash_rlc_cell.cell(),
-                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
-            )?;
+            // 4844_debug
+            // region.constrain_equal(
+            //     tx_hash_rlc_cell.cell(),
+            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+            // )?;
         }
 
         // Assign row for validating lookup to check:
@@ -1175,6 +1178,8 @@ impl<F: Field> PiCircuitConfig<F> {
             .take(public_data.max_txs)
             .enumerate()
         {
+            // 4844_debug
+            log::trace!("=> Assign L2 RLC(rlp_signed) - count: {:?}", i);
             let is_full_l2tx = i == (public_data.max_txs - 1);
             let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
             let tx_hash_len = rlp_signed.len();
@@ -1207,7 +1212,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
             // 4844_debug
             // region.constrain_equal(
-            //     tx_hash_rlc_cell.cell(),
+            //     tx_hash_rlc_cell.cell(), // column 322
             //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
             // )?;
 
@@ -1278,7 +1283,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 || chunk_txbytes_hash_rlc,
             )?
         };
-        self.q_keccak.enable(region, offset)?;
+        // 4844_debug
+        // differential, chunk bytes hash
+        // self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, chunk_txbytes_hash_rlc_cell))
     }
@@ -1495,7 +1502,8 @@ impl<F: Field> PiCircuitConfig<F> {
             );
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
-        self.q_keccak.enable(region, offset)?;
+        // 4844_debug
+        // self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, pi_hash_rlc_cell, connections))
     }
