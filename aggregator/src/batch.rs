@@ -256,9 +256,7 @@ impl BatchHash {
         //
         // This is eventually used in the chunk PI hash (defined above).
         for chunk in self.chunks_with_padding.iter() {
-            if !chunk.is_padding && !chunk.tx_bytes.is_empty() {
-                res.push(chunk.tx_bytes.clone());
-            }
+            res.push(chunk.tx_bytes.clone());
         }
 
         // flattened RLP-signed tx bytes for all L2 txs in batch.
@@ -274,6 +272,7 @@ impl BatchHash {
         //     keccak256(chunk[MAX_AGG_SNARKS-1].tx_bytes)
         // )
         let blob_data = self.to_blob_data();
+        res.push(blob_data.to_metadata_bytes());
         res.push(
             std::iter::empty()
                 .chain(keccak256(blob_data.to_metadata_bytes()))

@@ -297,10 +297,13 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_public_input_hash
             // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
             // - batch_data_hash_preimage
+            // - chunk[i]'s tx_data_hash for i in [0, MAX_AGG_SNARKS)
+            // - batch's metadata
+            // - z's preimage
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                MAX_AGG_SNARKS + 3,
+                MAX_AGG_SNARKS * 2 + 4,
                 "error extracting preimages"
             );
             end_timer!(timer);
@@ -425,6 +428,11 @@ impl Circuit<Fr> for AggregationCircuit {
             &self.batch_hash,
             &barycentric_assignments,
         )?;
+
+        blob_data_exports
+            .chunk_data_digests
+            .iter()
+            .for_each(|chunk_data_digest| {});
 
         end_timer!(witness_time);
         Ok(())
