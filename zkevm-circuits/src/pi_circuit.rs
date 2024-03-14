@@ -10,7 +10,7 @@ mod test;
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, rlc}, table::KeccakTable,
+    evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable,
     tx_circuit::TX_HASH_RLC_OFFSET,
 };
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
