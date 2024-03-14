@@ -20,7 +20,7 @@ pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
     //     y
     // ]
     //
-    // In total there are 232 bytes. Therefore 2 pi rounds are required,
+    // In total there are 200 bytes. Therefore 2 keccak-f rounds are required,
     // as in a single round we can absorb 136 bytes (INPUT_LEN_PER_ROUND).
     let pi_rounds = 2;
     // Hash for each chunk is derived from hashing the chunk's
@@ -33,7 +33,8 @@ pub(crate) fn get_max_keccak_updates(max_snarks: usize) -> usize {
     //     tx_data_hash
     // ]
     //
-    // Each chunk hash therefore also requires 2 keccak rounds for 200 bytes.
+    // In total there are 168 bytes, therefore each chunk hash
+    // also requires 2 keccak rounds for 168 bytes.
     let chunk_hash_rounds = 2 * max_snarks;
     let data_hash_rounds = get_data_hash_keccak_updates(max_snarks);
 
@@ -194,12 +195,14 @@ pub(crate) fn parse_hash_preimage_cells(
     Vec<&[AssignedCell<Fr, Fr>]>,
     &[AssignedCell<Fr, Fr>],
 ) {
-    // each pi hash has INPUT_LEN_PER_ROUND bytes as input
-    // keccak will pad the input with another INPUT_LEN_PER_ROUND bytes
     // we extract all those bytes
+    // batch_pi_hash's input has 200 bytes which means
+    // its keccak takes two rounds of keccak-f permutation
     let batch_pi_hash_preimage = &hash_input_cells[0..INPUT_LEN_PER_ROUND * 2];
     let mut chunk_pi_hash_preimages = vec![];
     for i in 0..MAX_AGG_SNARKS {
+        // each chunk_pi_hash's input has 168 bytes which means
+        // each chunk takes two rounds of keccak-f permutation
         chunk_pi_hash_preimages.push(
             &hash_input_cells[INPUT_LEN_PER_ROUND * 2 * (i + 1)..INPUT_LEN_PER_ROUND * 2 * (i + 2)],
         );

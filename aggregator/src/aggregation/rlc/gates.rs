@@ -143,10 +143,28 @@ impl RlcConfig {
     }
 
     #[inline]
+    pub(crate) fn one_hundred_and_sixty_eight_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 10,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn two_hundred_and_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
+        Cell {
+            region_index,
+            row_offset: 11,
+            column: self.fixed.into(),
+        }
+    }
+
+    #[inline]
     pub(crate) fn empty_keccak_cell_i(&self, region_index: RegionIndex, index: usize) -> Cell {
         Cell {
             region_index,
-            row_offset: 10 + index,
+            row_offset: 12 + index,
             column: self.fixed.into(),
         }
     }

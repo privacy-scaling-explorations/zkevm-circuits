@@ -173,7 +173,8 @@ pub(crate) struct ExtractedHashCells {
 // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
 // padded
 // 7. the hash input length are correct
-// - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+// - hashes[0] has 200 bytes
+// - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
@@ -247,8 +248,6 @@ pub(crate) fn extract_hash_cells(
     //      chunk[i].tx_data_hash)
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
-    // (4) chunk[i].tx_bytes
-    // (5) preimage of z
     // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, keccak_capacity)
         .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
@@ -497,7 +496,8 @@ fn copy_constraints(
 // 6. chunk[i]'s chunk_pi_hash_rlc_cells == chunk[i-1].chunk_pi_hash_rlc_cells when chunk[i] is
 // padded
 // 7. the hash input length are correct
-// - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+// - hashes[0] has 200 bytes
+// - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
 // - batch's data_hash length is 32 * number_of_valid_snarks
 // 8. batch data hash is correct w.r.t. its RLCs
 // 9. is_final_cells are set correctly
@@ -820,14 +820,24 @@ pub(crate) fn conditional_constraints(
                 }
 
                 // 7. the hash input length are correct
-                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - hashes[0] has 200 bytes
+                // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
                 // - batch's data_hash length is 32 * number_of_valid_snarks
 
-                // - first MAX_AGG_SNARKS + 1 hashes all have 136 bytes input
+                // - hashes[0] has 200 bytes
+                let batch_pi_hash_input_cell = hash_input_len_cells[2].cell();
+                region.constrain_equal(
+                    batch_pi_hash_input_cell,
+                    rlc_config
+                        .two_hundred_and_thirty_two_cell(batch_pi_hash_input_cell.region_index),
+                )?;
+
+                // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
                 hash_input_len_cells
                     .iter()
-                    .skip(1)
-                    .take((MAX_AGG_SNARKS + 1) * 2)
+                    // TODO: why skip 3?
+                    .skip(3)
+                    .take(MAX_AGG_SNARKS * 2)
                     .chunks(2)
                     .into_iter()
                     .try_for_each(|chunk| {
@@ -835,7 +845,7 @@ pub(crate) fn conditional_constraints(
                         region.constrain_equal(
                             cur_hash_len.cell(),
                             rlc_config
-                                .one_hundred_and_thirty_six_cell(cur_hash_len.cell().region_index),
+                                .one_hundred_and_sixty_eight_cell(cur_hash_len.cell().region_index),
                         )
                     })?;
 

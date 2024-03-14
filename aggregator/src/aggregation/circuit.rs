@@ -297,12 +297,10 @@ impl Circuit<Fr> for AggregationCircuit {
             // - batch_public_input_hash
             // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
             // - batch_data_hash_preimage
-            // - z
-            // - y
             let preimages = self.batch_hash.extract_hash_preimages();
             assert_eq!(
                 preimages.len(),
-                MAX_AGG_SNARKS + 5,
+                MAX_AGG_SNARKS + 3,
                 "error extracting preimages"
             );
             end_timer!(timer);

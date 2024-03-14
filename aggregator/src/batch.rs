@@ -1,7 +1,7 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
 
-use eth_types::{Field, H256, U256};
+use eth_types::{Field, ToBigEndian, H256, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
@@ -201,7 +201,17 @@ impl BatchHash {
         //      chunk[0].prev_state_root ||
         //      chunk[k-1].post_state_root ||
         //      chunk[k-1].withdraw_root ||
-        //      batch_data_hash )
+        //      batch_data_hash ||
+        //      z ||
+        //      y )
+        // TODO: make BLS_MODULUS into a static variable using lazy_static!()
+        let (_, z) = self.blob.challenge_digest.div_mod(
+            U256::from_str_radix(
+                "0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001",
+                16,
+            )
+            .unwrap(),
+        );
         let batch_public_input_hash_preimage = [
             self.chain_id.to_be_bytes().as_ref(),
             self.chunks_with_padding[0].prev_state_root.as_bytes(),
@@ -212,6 +222,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             self.data_hash.as_bytes(),
+            &z.to_be_bytes(),
+            &self.blob.evaluation.to_be_bytes(),
         ]
         .concat();
         res.push(batch_public_input_hash_preimage);
