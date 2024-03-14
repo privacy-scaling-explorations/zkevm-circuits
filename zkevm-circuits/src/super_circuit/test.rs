@@ -421,7 +421,8 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
     }
 }
 
-#[ignore]
+// 4844_debug
+// #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_ec_ops_txs() {
@@ -434,7 +435,8 @@ fn serial_test_super_circuit_ec_ops_txs() {
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
-#[ignore]
+// 4844_debug
+// #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_precompile_oog() {
@@ -447,7 +449,8 @@ fn serial_test_super_circuit_precompile_oog() {
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
-#[ignore]
+// 4844_debug
+// #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_invalid_precompile() {
@@ -460,7 +463,8 @@ fn serial_test_super_circuit_invalid_precompile() {
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, 1, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
 
-#[ignore]
+// 4844_debug
+// #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_precompile_invalid_ec_pairing_fq_overflow() {
