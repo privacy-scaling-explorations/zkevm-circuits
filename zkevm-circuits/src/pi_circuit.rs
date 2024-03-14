@@ -1072,9 +1072,10 @@ impl<F: Field> PiCircuitConfig<F> {
             }
         }
 
+        // 4844_debug
         // Copy tx_hashes to tx table
-        log::trace!("=> Data bytes - tx_copy_cells: {:?}", tx_copy_cells);
-        log::trace!("=> Data bytes - tx_value_cells: {:?}", tx_value_cells);
+        // log::trace!("=> Data bytes - tx_copy_cells: {:?}", tx_copy_cells);
+        // log::trace!("=> Data bytes - tx_value_cells: {:?}", tx_value_cells);
 
         let mut tx_copy_idx = 0;
         for tx_hash_rlc_cell in tx_copy_cells.into_iter() {
@@ -1121,8 +1122,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 || data_hash_rlc,
             )?
         };
-        // 4844_debug
-        // self.q_keccak.enable(region, offset)?;
+        self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, data_hash_rlc_cell))
     }
@@ -1211,9 +1211,6 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_copy_idx += 1;
             }
 
-            // Copy tx_hashes to tx table
-            log::trace!("=> Chunk txbytes - tx_hash_rlc_cell: {:?}", tx_hash_rlc_cell);
-            
             region.constrain_equal(
                 tx_hash_rlc_cell.cell(),
                 tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
@@ -1225,9 +1222,6 @@ impl<F: Field> PiCircuitConfig<F> {
                 chunk_txbytes_length_op = final_cells[RPI_LENGTH_ACC_CELL_IDX].clone();
             }
         }
-
-        // 4844_debug
-        log::trace!("=> Chunk txbytes - tx_value_cells: {:?}", tx_value_cells);
 
         // Assign paddings
         for (i, rlp_signed) in iter::empty()
@@ -1296,9 +1290,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 || chunk_txbytes_hash_rlc,
             )?
         };
-        // 4844_debug
-        // differential, chunk bytes hash
-        // self.q_keccak.enable(region, offset)?;
+        self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, chunk_txbytes_hash_rlc_cell))
     }
@@ -1521,8 +1513,7 @@ impl<F: Field> PiCircuitConfig<F> {
             log::trace!("=> pi_hash_rlc: {:?}", pi_hash_rlc);
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
-        // 4844_debug
-        // self.q_keccak.enable(region, offset)?;
+        self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, pi_hash_rlc_cell, connections))
     }
