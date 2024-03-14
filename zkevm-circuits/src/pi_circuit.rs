@@ -10,7 +10,7 @@ mod test;
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
 use crate::{
-    evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable,
+    evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, rlc}, table::KeccakTable,
     tx_circuit::TX_HASH_RLC_OFFSET,
 };
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -863,6 +863,18 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         debug_assert_eq!(offset, public_data.q_chunk_txbytes_start_offset());
+
+        // 4844_debug
+        let data_bytes = public_data.data_bytes();
+        log::trace!("=> calculated data bytes: {:?}", rlc_be_bytes(&data_bytes, challenges.evm_word()));
+        let data_hash = public_data.get_data_hash();
+
+        let chunk_bytes = public_data.chunk_txbytes();
+        log::trace!("=> calculated chunk_bytes: {:?}", rlc_be_bytes(&chunk_bytes, challenges.evm_word()));
+        let chunk_txbytes_hash = public_data.get_chunk_txbytes_hash();
+
+        let pi_bytes = public_data.pi_bytes(data_hash, chunk_txbytes_hash);
+        log::trace!("=> calculated pi_bytes: {:?}", rlc_be_bytes(&pi_bytes, challenges.evm_word()));
 
         // 2. Assign chunk tx bytes.
         let (offset, chunk_txbytes_hash_rlc_cell) =

@@ -899,6 +899,8 @@ pub fn multi_keccak<F: Field>(
 
     // 4844_debug
     let multi_keccak_bytes = bytes.iter().map(|bts| rlc_be_bytes(bts, challenges.evm_word())).collect::<Vec<Value<F>>>();
+    let multi_keccak_lens = bytes.iter().map(|bts| bts.len()).collect::<Vec<usize>>();
+    log::trace!("=> multi_keccak_lens: {:?}", multi_keccak_lens);
     log::trace!("=> multi_keccak_bytes: {:?}", multi_keccak_bytes);
 
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
