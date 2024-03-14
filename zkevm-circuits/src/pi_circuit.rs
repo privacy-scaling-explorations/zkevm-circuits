@@ -1086,6 +1086,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_hash_rlc_cell.cell(),
                 tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
             )?;
+            tx_copy_idx += 1;
         }
 
         // Assign row for validating lookup to check:
@@ -1217,6 +1218,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_hash_rlc_cell.cell(),
                 tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
             )?;
+            tx_copy_idx += 1;
 
             if is_full_l2tx {
                 chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
