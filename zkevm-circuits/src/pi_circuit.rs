@@ -1090,12 +1090,16 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Assign row for validating lookup to check:
         // data_hash == keccak256(rlc(data_bytes))
+        // 4844_debug
+        log::trace!("=> data_bytes_rlc: {:?}", data_bytes_rlc);
         data_bytes_rlc.unwrap().copy_advice(
             || "data_bytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
             offset,
         )?;
+        // 4844_debug
+        log::trace!("=> data_bytes_length: {:?}", data_bytes_length);
         data_bytes_length.unwrap().copy_advice(
             || "data_bytes_length in the rpi_length_acc col",
             region,
@@ -1107,6 +1111,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 &public_data.get_data_hash().to_fixed_bytes(),
                 challenges.evm_word(),
             );
+            // 4844_debug
+            log::trace!("=> data_hash_rlc_cell: {:?}", data_hash_rlc);
             region.assign_advice(
                 || "data_hash_rlc",
                 self.rpi_rlc_acc,
@@ -1252,12 +1258,16 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Assign row for validating lookup to check:
         // data_hash == keccak256(rlc(data_bytes))
+        // 4844_debug
+        log::trace!("=> chunk_txbytes_rlc_op: {:?}", chunk_txbytes_rlc_op);
         chunk_txbytes_rlc_op.unwrap().copy_advice(
             || "chunk_txbytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
             offset,
         )?;
+        // 4844_debug
+        log::trace!("=> chunk_txbytes_length_op: {:?}", chunk_txbytes_length_op);
         chunk_txbytes_length_op.unwrap().copy_advice(
             || "chunk_txbytes_length in the rpi_length_acc col",
             region,
@@ -1269,6 +1279,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 &public_data.get_chunk_txbytes_hash().to_fixed_bytes(),
                 challenges.evm_word(),
             );
+            // 4844_debug
+            log::trace!("=> chunk_txbytes_hash_rlc: {:?}", chunk_txbytes_hash_rlc);
             region.assign_advice(
                 || "chunk_txbytes_hash_rlc",
                 self.rpi_rlc_acc,
@@ -1476,12 +1488,16 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Assign row for validating lookup to check:
         // pi_hash == keccak256(rlc(pi_bytes))
+        // 4844_debug
+        log::trace!("=> pi_bytes_rlc: {:?}", pi_bytes_rlc);
         pi_bytes_rlc.copy_advice(
             || "pi_bytes_rlc in the rpi col",
             region,
             self.raw_public_inputs,
             offset,
         )?;
+        // 4844_debug
+        log::trace!("=> pi_bytes_length: {:?}", pi_bytes_length);
         pi_bytes_length.copy_advice(
             || "pi_bytes_length in the rpi_length_acc col",
             region,
@@ -1493,6 +1509,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 &public_data.get_pi().to_fixed_bytes(),
                 challenges.evm_word(),
             );
+            // 4844_debug
+            log::trace!("=> pi_hash_rlc: {:?}", pi_hash_rlc);
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
         // 4844_debug
