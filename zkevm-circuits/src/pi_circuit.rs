@@ -1218,10 +1218,10 @@ impl<F: Field> PiCircuitConfig<F> {
             log::trace!("=> chunk_txbytes - tx_value_cells: {:?}", tx_value_cells);
 
             // 4844_debug
-            // region.constrain_equal(
-            //     tx_hash_rlc_cell.cell(), // column 322
-            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
-            // )?;
+            region.constrain_equal(
+                tx_hash_rlc_cell.cell(),
+                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
+            )?;
 
             if is_full_l2tx {
                 chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
