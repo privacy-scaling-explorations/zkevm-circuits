@@ -682,29 +682,31 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // q_keccak = 1     |pi_bs_rlc|     ..    |      ...      | pi_hash_rlc |      136       |
         //   pi hash        |   hi    |     ..    |      ...      |     ...     |       16       |
         //                  |   lo    |     ..    |      ...      | pi_hash_rlc |       32       |
-        meta.lookup_any("keccak(rpi)", |meta| {
-            let q_keccak = meta.query_selector(q_keccak);
 
-            let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
-            let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
-            let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+        // 4844_debug
+        // meta.lookup_any("keccak(rpi)", |meta| {
+        //     let q_keccak = meta.query_selector(q_keccak);
 
-            let input_exprs = vec![
-                1.expr(), // q_enable = true
-                1.expr(), // is_final = true
-                rpi_rlc,
-                rpi_length,
-                output,
-            ];
-            let keccak_table_exprs = keccak_table.table_exprs(meta);
-            assert_eq!(input_exprs.len(), keccak_table_exprs.len());
+        //     let rpi_rlc = meta.query_advice(rpi, Rotation::cur());
+        //     let rpi_length = meta.query_advice(rpi_length_acc, Rotation::cur());
+        //     let output = meta.query_advice(rpi_rlc_acc, Rotation::cur());
 
-            input_exprs
-                .into_iter()
-                .zip(keccak_table_exprs)
-                .map(|(input, table)| (q_keccak.expr() * input, table))
-                .collect()
-        });
+        //     let input_exprs = vec![
+        //         1.expr(), // q_enable = true
+        //         1.expr(), // is_final = true
+        //         rpi_rlc,
+        //         rpi_length,
+        //         output,
+        //     ];
+        //     let keccak_table_exprs = keccak_table.table_exprs(meta);
+        //     assert_eq!(input_exprs.len(), keccak_table_exprs.len());
+
+        //     input_exprs
+        //         .into_iter()
+        //         .zip(keccak_table_exprs)
+        //         .map(|(input, table)| (q_keccak.expr() * input, table))
+        //         .collect()
+        // });
 
         // 3. constrain block_table
         meta.create_gate(
@@ -1203,10 +1205,11 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_copy_idx += 1;
             }
 
-            region.constrain_equal(
-                tx_hash_rlc_cell.cell(),
-                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
-            )?;
+            // 4844_debug
+            // region.constrain_equal(
+            //     tx_hash_rlc_cell.cell(),
+            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
+            // )?;
 
             if is_full_l2tx {
                 chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();
