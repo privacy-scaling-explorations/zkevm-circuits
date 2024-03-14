@@ -461,8 +461,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // hold the raw public input's value (e.g. gas_limit in block_context)
         let rpi = meta.advice_column_in(SecondPhase);
         // hold the raw public input's bytes
-        // 4844_debug
-        // let rpi_bytes = meta.advice_column();
         let rpi_bytes = meta.advice_column_in(SecondPhase);
         // hold the accumulated value of rpi_bytes (e.g. gas_limit in block_context)
         let rpi_bytes_acc = meta.advice_column_in(SecondPhase);
@@ -684,8 +682,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // q_keccak = 1     |pi_bs_rlc|     ..    |      ...      | pi_hash_rlc |      136       |
         //   pi hash        |   hi    |     ..    |      ...      |     ...     |       16       |
         //                  |   lo    |     ..    |      ...      | pi_hash_rlc |       32       |
-
-        // 4844_debug
         meta.lookup_any("keccak(rpi)", |meta| {
             let q_keccak = meta.query_selector(q_keccak);
 
@@ -1029,8 +1025,6 @@ impl<F: Field> PiCircuitConfig<F> {
             .take(public_data.max_txs)
             .enumerate()
         {
-            // 4844_debug
-            log::trace!("=> Assign L1Msg - count: {:?}", i);
             let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, cells) = self.assign_field(
                 region,
                 offset,
@@ -1088,11 +1082,10 @@ impl<F: Field> PiCircuitConfig<F> {
             while public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
                 tx_copy_idx += 1;
             }
-            // 4844_debug
-            // region.constrain_equal(
-            //     tx_hash_rlc_cell.cell(),
-            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
-            // )?;
+            region.constrain_equal(
+                tx_hash_rlc_cell.cell(),
+                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+            )?;
         }
 
         // Assign row for validating lookup to check:
@@ -1181,8 +1174,6 @@ impl<F: Field> PiCircuitConfig<F> {
             .take(public_data.max_txs)
             .enumerate()
         {
-            // 4844_debug
-            log::trace!("=> Assign L2 RLC(rlp_signed) - count: {:?}", i);
             let is_full_l2tx = i == (public_data.max_txs - 1);
             let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
             let tx_hash_len = rlp_signed.len();
@@ -1213,11 +1204,6 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_copy_idx += 1;
             }
 
-            // 4844_debug
-            log::trace!("=> chunk_txbytes - tx_hash_rlc_cell: {:?}", tx_hash_rlc_cell);
-            log::trace!("=> chunk_txbytes - tx_value_cells: {:?}", tx_value_cells);
-
-            // 4844_debug
             region.constrain_equal(
                 tx_hash_rlc_cell.cell(),
                 tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),

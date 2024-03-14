@@ -127,9 +127,6 @@ fn build_eip1559_tx(id: usize) -> Transaction {
     let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
         .expect("decode tx's rlp bytes shall not fail");
 
-    // 4844_debug
-    log::trace!("=> eth_tx: {:?}", eth_tx);
-
     let eth_tx_req: Eip1559TransactionRequest = (&eth_tx).into();
     let typed_tx: TypedTransaction = eth_tx_req.into();
     let rlp_unsigned = typed_tx.rlp().to_vec();
@@ -150,9 +147,6 @@ fn build_eip1559_tx(id: usize) -> Transaction {
     tx.call_data = eth_tx.input.to_vec();
     tx.callee_address = eth_tx.to;
 
-    // 4844_debug
-    // TODO: Parsing always produces 0x0?
-    // tx.caller_address = eth_tx.from;
     tx.caller_address = H160::from_slice(&[
         0x20, 0x2b, 0xB2, 0xfa, 0xB1, 0xe3, 0x5D, 0x94, 0x0F, 0xde, 0x99, 0xb2, 0x14, 0xba, 0x49,
         0xDA, 0xfb, 0xce, 0xf6, 0x2A,
