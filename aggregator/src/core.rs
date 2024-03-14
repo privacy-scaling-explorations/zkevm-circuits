@@ -33,7 +33,10 @@ use zkevm_circuits::{
 };
 
 use crate::{
-    constants::{CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE, MAX_AGG_SNARKS},
+    constants::{
+        BATCH_Y_INDEX, BATCH_Z_INDEX, CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
+        MAX_AGG_SNARKS,
+    },
     util::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
@@ -155,6 +158,13 @@ pub(crate) struct ExtractedHashCells {
     is_final_cells: Vec<AssignedCell<Fr, Fr>>,
 }
 
+#[derive(Default)]
+pub(crate) struct ExpectedBlobCells {
+    pub(crate) z: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) y: Vec<AssignedCell<Fr, Fr>>,
+    pub(crate) chunk_tx_data_hashes: Vec<Vec<AssignedCell<Fr, Fr>>>,
+}
+
 /// Input the hash input bytes,
 /// assign the circuit for the hash function,
 /// return
@@ -184,7 +194,7 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     preimages: &[Vec<u8>],
-) -> Result<(Vec<AssignedCell<Fr, Fr>>, usize), Error> {
+) -> Result<(Vec<AssignedCell<Fr, Fr>>, ExpectedBlobCells, usize), Error> {
     let extracted_hash_cells = extract_hash_cells(
         &config.keccak_circuit_config,
         layouter,
@@ -217,7 +227,24 @@ pub(crate) fn assign_batch_hashes(
         &extracted_hash_cells,
     )?;
 
-    Ok((extracted_hash_cells.hash_output_cells, rlc_config_offset))
+    let batch_pi_input = &extracted_hash_cells.hash_input_cells[0..INPUT_LEN_PER_ROUND * 2];
+    let expected_blob_cells = ExpectedBlobCells {
+        z: batch_pi_input[BATCH_Z_INDEX..BATCH_Z_INDEX + 32].to_vec(),
+        y: batch_pi_input[BATCH_Y_INDEX..BATCH_Y_INDEX + 32].to_vec(),
+        chunk_tx_data_hashes: (0..MAX_AGG_SNARKS)
+            .into_iter()
+            .map(|i| {
+                extracted_hash_cells.hash_input_cells
+                    [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))]
+                    .to_vec()
+            })
+            .collect(),
+    };
+    Ok((
+        extracted_hash_cells.hash_output_cells,
+        expected_blob_cells,
+        rlc_config_offset,
+    ))
 }
 
 pub(crate) fn extract_hash_cells(

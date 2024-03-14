@@ -286,7 +286,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
         let timer = start_timer!(|| "load aux table");
 
-        let (hash_digest_cells, rlc_config_offset) = {
+        let (hash_digest_cells, expected_blob_cells, rlc_config_offset) = {
             config
                 .keccak_circuit_config
                 .load_aux_tables(&mut layouter)?;
@@ -315,7 +315,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 .iter()
                 .map(|chunk| !chunk.is_padding)
                 .collect::<Vec<_>>();
-            let (hash_digest_cells, rlc_config_offset) = assign_batch_hashes(
+            let (hash_digest_cells, expected_blob_cells, rlc_config_offset) = assign_batch_hashes(
                 &config,
                 &mut layouter,
                 challenges,
@@ -324,7 +324,7 @@ impl Circuit<Fr> for AggregationCircuit {
             )
             .map_err(|_e| Error::ConstraintSystemFailure)?;
             end_timer!(timer);
-            (hash_digest_cells, rlc_config_offset)
+            (hash_digest_cells, expected_blob_cells, rlc_config_offset)
         };
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
@@ -429,10 +429,39 @@ impl Circuit<Fr> for AggregationCircuit {
             &barycentric_assignments,
         )?;
 
-        blob_data_exports
-            .chunk_data_digests
-            .iter()
-            .for_each(|chunk_data_digest| {});
+        layouter.assign_region(
+            || "blob checks",
+            |mut region| -> Result<(), Error> {
+                for (chunk_data_digest, expected_chunk_tx_data_hash) in blob_data_exports
+                    .chunk_data_digests
+                    .iter()
+                    .zip_eq(expected_blob_cells.chunk_tx_data_hashes.iter())
+                {
+                    for (c, ec) in chunk_data_digest
+                        .iter()
+                        .zip_eq(expected_chunk_tx_data_hash.iter())
+                    {
+                        region.constrain_equal(c.cell(), ec.cell())?;
+                    }
+                }
+
+                // TODO: evaluation_le and challenge_le are all of type QuantumCell::Witness
+                //       which is not what we expected
+                // for (c, ec) in evaluation_le
+                //     .iter()
+                //     .zip_eq(expected_blob_cells.y.iter().rev()) {
+                //     region.constrain_equal(c.cell(), ec.cell())?;
+                // }
+                //
+                // for (c, ec) in challenge_le
+                //     .iter()
+                //     .zip_eq(expected_blob_cells.z.iter().rev()) {
+                //     region.constrain_equal(c.cell(), ec.cell())?;
+                // }
+
+                Ok(())
+            },
+        )?;
 
         end_timer!(witness_time);
         Ok(())
