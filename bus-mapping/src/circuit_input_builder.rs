@@ -32,7 +32,6 @@ use eth_types::{
     geth_types::TxType,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Address, GethExecTrace, ToBigEndian, ToWord, Word, H256,
-    Transaction as EthTransaction,
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -43,7 +42,7 @@ pub use execution::{
 use hex::decode_to_slice;
 
 use eth_types::sign_types::get_dummy_tx;
-use ethers_core::{types::{TransactionReceipt, TransactionRequest}, utils::{keccak256, rlp::Decodable}};
+use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
@@ -865,9 +864,9 @@ fn keccak_inputs_pi_circuit(
     );
 
     let chunk_txbytes = transactions
-        .iter()
+        .into_iter()
         .filter(|&tx| tx.tx_type != TxType::L1Msg)
-        .flat_map(|tx| tx.rlp_bytes)
+        .flat_map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<u8>>();
     let chunk_txbytes_hash = H256(keccak256(&chunk_txbytes));
 
@@ -904,9 +903,9 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
     inputs.push(dummy_hash_data);
 
     let chunk_txbytes = txs
-        .iter()
+        .into_iter()
         .filter(|tx| tx.tx_type != TxType::L1Msg)
-        .flat_map(|tx| tx.rlp_bytes)
+        .flat_map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<u8>>();
     inputs.push(chunk_txbytes);
 
