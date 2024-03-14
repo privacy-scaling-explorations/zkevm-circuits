@@ -866,14 +866,17 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // 4844_debug
         let data_bytes = public_data.data_bytes();
+        log::trace!("=> calculated data bytes len: {:?}", data_bytes.len());
         log::trace!("=> calculated data bytes: {:?}", rlc_be_bytes(&data_bytes, challenges.evm_word()));
         let data_hash = public_data.get_data_hash();
 
         let chunk_bytes = public_data.chunk_txbytes();
+        log::trace!("=> calculated chunk bytes len: {:?}", chunk_bytes.len());
         log::trace!("=> calculated chunk_bytes: {:?}", rlc_be_bytes(&chunk_bytes, challenges.evm_word()));
         let chunk_txbytes_hash = public_data.get_chunk_txbytes_hash();
 
         let pi_bytes = public_data.pi_bytes(data_hash, chunk_txbytes_hash);
+        log::trace!("=> calculated pi bytes len: {:?}", pi_bytes.len());
         log::trace!("=> calculated pi_bytes: {:?}", rlc_be_bytes(&pi_bytes, challenges.evm_word()));
 
         // 2. Assign chunk tx bytes.
