@@ -8,8 +8,6 @@ use halo2_proofs::{
 use log::{debug, trace};
 use rayon::{iter::IntoParallelRefIterator, prelude::ParallelIterator};
 use std::{env::var, vec};
-// 4844_debug
-use crate::util::rlc_be_bytes;
 
 const MAX_DEGREE: usize = 9;
 
@@ -896,12 +894,6 @@ pub fn multi_keccak<F: Field>(
     capacity: Option<usize>,
 ) -> Result<Vec<KeccakRow<F>>, Error> {
     log::info!("multi_keccak assign with capacity: {:?}", capacity);
-
-    // 4844_debug
-    let multi_keccak_bytes = bytes.iter().map(|bts| rlc_be_bytes(bts, challenges.evm_word())).collect::<Vec<Value<F>>>();
-    let multi_keccak_lens = bytes.iter().map(|bts| bts.len()).collect::<Vec<usize>>();
-    log::trace!("=> multi_keccak_lens: {:?}", multi_keccak_lens);
-    log::trace!("=> multi_keccak_bytes: {:?}", multi_keccak_bytes);
 
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
     if let Some(capacity) = capacity {
