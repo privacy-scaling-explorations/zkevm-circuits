@@ -320,7 +320,12 @@ pub(crate) fn extract_hash_cells(
                     hash_input_cells.len(),
                     max_keccak_updates * INPUT_LEN_PER_ROUND
                 );
-                assert_eq!(hash_output_cells.len(), (MAX_AGG_SNARKS + 5) * DIGEST_LEN);
+                let num_digests =
+                    (MAX_AGG_SNARKS * DIGEST_LEN + INPUT_LEN_PER_ROUND - 1) / INPUT_LEN_PER_ROUND;
+                assert_eq!(
+                    hash_output_cells.len(),
+                    (MAX_AGG_SNARKS + 1 + num_digests) * DIGEST_LEN
+                );
 
                 keccak_config
                     .keccak_table
@@ -825,18 +830,17 @@ pub(crate) fn conditional_constraints(
                 // - batch's data_hash length is 32 * number_of_valid_snarks
 
                 // - hashes[0] has 200 bytes
+                // note: hash_input_len_cells[0] is from dummy rows of keccak circuit.
                 let batch_pi_hash_input_cell = hash_input_len_cells[2].cell();
                 region.constrain_equal(
                     batch_pi_hash_input_cell,
-                    rlc_config
-                        .two_hundred_and_thirty_two_cell(batch_pi_hash_input_cell.region_index),
+                    rlc_config.two_hundred_cell(batch_pi_hash_input_cell.region_index),
                 )?;
 
                 // - hashes[1..MAX_AGG_SNARKS+1] has 168 bytes input
                 hash_input_len_cells
                     .iter()
-                    // TODO: why skip 3?
-                    .skip(3)
+                    .skip(3) // dummy (1) and batch pi hash (2)
                     .take(MAX_AGG_SNARKS * 2)
                     .chunks(2)
                     .into_iter()

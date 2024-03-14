@@ -39,13 +39,25 @@ impl RlcConfig {
             9,
             || Value::known(Fr::from(256)),
         )?;
+        region.assign_fixed(
+            || "const 168",
+            self.fixed,
+            10,
+            || Value::known(Fr::from(168)),
+        )?;
+        region.assign_fixed(
+            || "const 200",
+            self.fixed,
+            11,
+            || Value::known(Fr::from(200)),
+        )?;
 
         let empty_keccak = keccak256([]);
         for (i, &byte) in empty_keccak.iter().enumerate() {
             region.assign_fixed(
                 || "const empty_keccak[i]",
                 self.fixed,
-                10 + i,
+                12 + i,
                 || Value::known(Fr::from(byte as u64)),
             )?;
         }
@@ -152,7 +164,7 @@ impl RlcConfig {
     }
 
     #[inline]
-    pub(crate) fn two_hundred_and_thirty_two_cell(&self, region_index: RegionIndex) -> Cell {
+    pub(crate) fn two_hundred_cell(&self, region_index: RegionIndex) -> Cell {
         Cell {
             region_index,
             row_offset: 11,
