@@ -1073,8 +1073,8 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // Copy tx_hashes to tx table
-        log::trace!("tx_copy_cells: {:?}", tx_copy_cells);
-        log::trace!("tx_value_cells: {:?}", tx_value_cells);
+        log::trace!("=> Data bytes - tx_copy_cells: {:?}", tx_copy_cells);
+        log::trace!("=> Data bytes - tx_value_cells: {:?}", tx_value_cells);
 
         let mut tx_copy_idx = 0;
         for tx_hash_rlc_cell in tx_copy_cells.into_iter() {
@@ -1210,6 +1210,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_copy_idx += 1;
             }
 
+            // Copy tx_hashes to tx table
+            log::trace!("=> Chunk txbytes - tx_hash_rlc_cell: {:?}", tx_hash_rlc_cell);
+            
             region.constrain_equal(
                 tx_hash_rlc_cell.cell(),
                 tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
@@ -1220,6 +1223,9 @@ impl<F: Field> PiCircuitConfig<F> {
                 chunk_txbytes_length_op = final_cells[RPI_LENGTH_ACC_CELL_IDX].clone();
             }
         }
+
+        // 4844_debug
+        log::trace!("=> Chunk txbytes - tx_value_cells: {:?}", tx_value_cells);
 
         // Assign paddings
         for (i, rlp_signed) in iter::empty()
