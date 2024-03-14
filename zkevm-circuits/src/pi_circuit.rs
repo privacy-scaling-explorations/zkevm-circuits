@@ -1119,7 +1119,8 @@ impl<F: Field> PiCircuitConfig<F> {
                 || data_hash_rlc,
             )?
         };
-        self.q_keccak.enable(region, offset)?;
+        // 4844_debug
+        // self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, data_hash_rlc_cell))
     }
@@ -1209,6 +1210,10 @@ impl<F: Field> PiCircuitConfig<F> {
             while !public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
                 tx_copy_idx += 1;
             }
+
+            // 4844_debug
+            log::trace!("=> chunk_txbytes - tx_hash_rlc_cell: {:?}", tx_hash_rlc_cell);
+            log::trace!("=> chunk_txbytes - tx_value_cells: {:?}", tx_value_cells);
 
             // 4844_debug
             // region.constrain_equal(
@@ -1503,7 +1508,7 @@ impl<F: Field> PiCircuitConfig<F> {
             region.assign_advice(|| "pi_hash_rlc", self.rpi_rlc_acc, offset, || pi_hash_rlc)?
         };
         // 4844_debug
-        // self.q_keccak.enable(region, offset)?;
+        self.q_keccak.enable(region, offset)?;
 
         Ok((offset + 1, pi_hash_rlc_cell, connections))
     }
