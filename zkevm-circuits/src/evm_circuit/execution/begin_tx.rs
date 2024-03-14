@@ -5,28 +5,29 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::TransferWithGasFeeGadget,
+            common_gadget::TransferGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             is_precompiled,
             math_gadget::{
-                ContractCreateGadget, IsEqualWordGadget, IsZeroWordGadget, RangeCheckGadget,
+                ContractCreateGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
+                RangeCheckGadget,
             },
-            not, or,
+            not, rlc,
             tx::{BeginTxHelperGadget, TxDataGadget},
             AccountAddress, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag},
+    table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{
         word::{Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
 };
-use bus_mapping::state_db::CodeDB;
+use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
 use eth_types::{evm_types::PRECOMPILE_COUNT, keccak256, Field, OpsIdentity, ToWord, U256};
 use halo2_proofs::{
     circuit::Value,
@@ -41,10 +42,13 @@ pub(crate) struct BeginTxGadget<F> {
     call_callee_address: AccountAddress<F>,
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
-    transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
+    transfer_with_gas_fee: TransferGadget<F, true>,
     code_hash: WordLoHiCell<F>,
     is_empty_code_hash: IsEqualWordGadget<F, WordLoHi<Expression<F>>, WordLoHi<Expression<F>>>,
     caller_nonce_hash_bytes: Word32Cell<F>,
+    calldata_length: Cell<F>,
+    calldata_length_is_zero: IsZeroGadget<F>,
+    calldata_rlc: Cell<F>,
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroWordGadget<F, WordLoHiCell<F>>,
     is_caller_callee_equal: Cell<F>,
@@ -170,26 +174,36 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-
         // Transfer value from caller to callee, creating account if necessary.
-        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+        let transfer_with_gas_fee = TransferGadget::construct(
             cb,
             tx.caller_address.to_word(),
             tx.callee_address.to_word(),
             not::expr(callee_not_exists.expr()),
-            or::expr([tx.is_create.expr(), callee_not_exists.expr()]),
+            tx.is_create.expr(),
             tx.value.clone(),
-            tx.mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
+            Some(tx.mul_gas_fee_by_gas.product().clone()),
         );
 
         let caller_nonce_hash_bytes = cb.query_word32();
+        let calldata_length = cb.query_cell();
+        let calldata_length_is_zero = cb.is_zero(calldata_length.expr());
+        let calldata_rlc = cb.query_cell_phase2();
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal_word(
             "tx caller address equivalence",
             tx.caller_address.to_word(),
             create.caller_address(),
         );
+
+        cb.require_equal(
+            "tx nonce equivalence",
+            tx.nonce.expr(),
+            create.caller_nonce(),
+        );
+
+        // 1. Handle contract creation transaction.
         cb.condition(tx.is_create.expr(), |cb| {
             cb.require_equal_word(
                 "call callee address equivalence",
@@ -202,19 +216,43 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 )
                 .to_word(),
             );
-        });
-        cb.require_equal(
-            "tx nonce equivalence",
-            tx.nonce.expr(),
-            create.caller_nonce(),
-        );
-
-        // 1. Handle contract creation transaction.
-        cb.condition(tx.is_create.expr(), |cb| {
             cb.keccak_table_lookup(
                 create.input_rlc(cb),
                 create.input_length(),
                 caller_nonce_hash_bytes.to_word(),
+            );
+
+            cb.tx_context_lookup(
+                tx_id.expr(),
+                TxContextFieldTag::CallDataLength,
+                None,
+                WordLoHi::from_lo_unchecked(calldata_length.expr()),
+            );
+            // If calldata_length > 0 we use the copy circuit to calculate the calldata_rlc for the
+            // keccack input.
+            cb.condition(not::expr(calldata_length_is_zero.expr()), |cb| {
+                cb.copy_table_lookup(
+                    WordLoHi::from_lo_unchecked(tx_id.expr()),
+                    CopyDataType::TxCalldata.expr(),
+                    WordLoHi::zero(),
+                    CopyDataType::RlcAcc.expr(),
+                    0.expr(),
+                    calldata_length.expr(),
+                    0.expr(),
+                    calldata_length.expr(),
+                    calldata_rlc.expr(),
+                    0.expr(),
+                )
+            });
+            // If calldata_length == 0, the copy circuit will not contain any entry, so we skip the
+            // lookup and instead force calldata_rlc to be 0 for the keccack input.
+            cb.condition(calldata_length_is_zero.expr(), |cb| {
+                cb.require_equal("calldata_rlc = 0", calldata_rlc.expr(), 0.expr());
+            });
+            cb.keccak_table_lookup(
+                calldata_rlc.expr(),
+                calldata_length.expr(),
+                cb.curr.state.code_hash.to_word(),
             );
 
             cb.account_write(
@@ -435,6 +473,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             code_hash,
             is_empty_code_hash,
             caller_nonce_hash_bytes,
+            calldata_length,
+            calldata_length_is_zero,
+            calldata_rlc,
             create,
             callee_not_exists,
             is_caller_callee_equal,
@@ -468,18 +509,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
         let callee_exists =
             is_precompiled(&tx.to_or_contract_addr()) || !callee_code_hash.is_zero();
-        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
-        let must_create = tx.is_create();
-        if !callee_exists && (!tx.value.is_zero() || must_create) {
-            callee_code_hash = rws.next().account_codehash_pair().1;
-        }
-        let mut caller_balance_sub_value_pair = (zero, zero);
-        let mut callee_balance_pair = (zero, zero);
-        if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_balance_pair();
-            callee_balance_pair = rws.next().account_balance_pair();
-        };
-
+        self.transfer_with_gas_fee.assign(
+            region,
+            offset,
+            &mut rws,
+            callee_exists,
+            tx.value,
+            tx.is_create(),
+            Some(gas_fee),
+        )?;
         self.begin_tx.assign(region, offset, tx)?;
         self.tx.assign(region, offset, tx)?;
 
@@ -503,15 +541,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas() - step.gas_cost))?;
-        self.transfer_with_gas_fee.assign(
-            region,
-            offset,
-            caller_balance_sub_fee_pair,
-            caller_balance_sub_value_pair,
-            callee_balance_pair,
-            tx.value,
-            gas_fee,
-        )?;
         self.code_hash
             .assign_u256(region, offset, callee_code_hash)?;
         self.is_empty_code_hash.assign_u256(
@@ -536,6 +565,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             U256::from_big_endian(&untrimmed_contract_addr),
         )?;
+        self.calldata_length.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.call_data.len() as u64)),
+        )?;
+        self.calldata_length_is_zero
+            .assign(region, offset, F::from(tx.call_data.len() as u64))?;
+        let calldata_rlc = region
+            .challenges()
+            .keccak_input()
+            .map(|randomness| rlc::value(tx.call_data.iter().rev(), randomness));
+        self.calldata_rlc.assign(region, offset, calldata_rlc)?;
         self.create.assign(
             region,
             offset,

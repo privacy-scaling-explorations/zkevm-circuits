@@ -77,7 +77,8 @@ pub struct Block {
     // pub chunk_context: ChunkContext,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
-    /// Inputs to the SHA3 opcode
+    /// Inputs to the SHA3 opcode as well as data hashed during the EVM execution like init code
+    /// and address creation inputs.
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,

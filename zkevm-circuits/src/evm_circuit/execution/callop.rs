@@ -65,7 +65,7 @@ pub(crate) struct CallOpGadget<F> {
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
-    transfer: TransferGadget<F>,
+    transfer: TransferGadget<F, false>,
     // current handling Call* opcode's caller balance
     caller_balance: WordLoHi<Cell<F>>,
     // check if insufficient balance case
@@ -247,9 +247,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 caller_address.to_word(),
                 callee_address.to_word(),
                 not::expr(call_gadget.callee_not_exists.expr()),
-                0.expr(),
+                false.expr(),
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
+                None,
             )
         });
         // rwc_delta = 8 + is_delegatecall * 2 + call_gadget.rw_delta() +
@@ -872,20 +873,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
         // conditionally assign
-        if is_call && is_precheck_ok && !value.is_zero() {
-            if !callee_exists {
-                rws.next().account_codehash_pair(); // callee hash
-            }
-
-            let caller_balance_pair = rws.next().account_balance_pair();
-            let callee_balance_pair = rws.next().account_balance_pair();
-            self.transfer.assign(
-                region,
-                offset,
-                caller_balance_pair,
-                callee_balance_pair,
-                value,
-            )?;
+        if is_call && is_precheck_ok {
+            self.transfer
+                .assign(region, offset, &mut rws, callee_exists, value, false, None)?;
         }
 
         self.opcode

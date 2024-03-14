@@ -1,4 +1,5 @@
 use super::{
+    common_gadget::UpdateBalanceGadget,
     math_gadget::{
         ConstantDivisionGadget, IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
         LtGadget, LtWordGadget, MinMaxGadget,
@@ -674,6 +675,26 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         denominator: u64,
     ) -> ConstantDivisionGadget<F, N_BYTES> {
         ConstantDivisionGadget::construct(self, numerator, denominator)
+    }
+
+    // Common Gadget
+
+    pub(crate) fn increase_balance(
+        &mut self,
+        address: WordLoHi<Expression<F>>,
+        value: Word32Cell<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) -> UpdateBalanceGadget<F, 2, true> {
+        UpdateBalanceGadget::construct(self, address, &[value], reversion_info)
+    }
+
+    pub(crate) fn decrease_balance(
+        &mut self,
+        address: WordLoHi<Expression<F>>,
+        value: Word32Cell<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) -> UpdateBalanceGadget<F, 2, false> {
+        UpdateBalanceGadget::construct(self, address, &[value], reversion_info)
     }
 
     // Fixed
