@@ -1,5 +1,4 @@
 use ark_std::{end_timer, start_timer};
-use halo2_base::QuantumCell;
 use halo2_ecc::bigint::CRTInteger;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -445,19 +444,19 @@ impl Circuit<Fr> for AggregationCircuit {
                     }
                 }
 
-                // TODO: evaluation_le and challenge_le are all of type QuantumCell::Witness
-                //       which is not what we expected
-                // for (c, ec) in evaluation_le
-                //     .iter()
-                //     .zip_eq(expected_blob_cells.y.iter().rev()) {
-                //     region.constrain_equal(c.cell(), ec.cell())?;
-                // }
-                //
-                // for (c, ec) in challenge_le
-                //     .iter()
-                //     .zip_eq(expected_blob_cells.z.iter().rev()) {
-                //     region.constrain_equal(c.cell(), ec.cell())?;
-                // }
+                for (c, ec) in evaluation_le
+                    .iter()
+                    .zip_eq(expected_blob_cells.y.iter().rev())
+                {
+                    region.constrain_equal(c.cell(), ec.cell())?;
+                }
+
+                for (c, ec) in challenge_le
+                    .iter()
+                    .zip_eq(expected_blob_cells.z.iter().rev())
+                {
+                    region.constrain_equal(c.cell(), ec.cell())?;
+                }
 
                 Ok(())
             },
