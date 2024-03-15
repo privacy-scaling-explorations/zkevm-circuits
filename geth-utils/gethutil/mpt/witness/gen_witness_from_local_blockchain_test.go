@@ -991,7 +991,7 @@ func TestAccountWrongExtensionNode(t *testing.T) {
 
 	statedb.DisableLoadingRemoteAccounts()
 
-	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+	oracle.AccountPreventHashingInSecureTrie = true // to store the unchanged address
 
 	addr1 := common.HexToAddress("0x0023000000000000000000000000000000000000")
 	addr2 := common.HexToAddress("0x0023100000000000000000000000000000000000")

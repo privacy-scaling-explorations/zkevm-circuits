@@ -73,7 +73,6 @@ func obtainAccountProofAndConvertToWitness(tMod TrieModification, statedb *state
 	if oracle.AccountPreventHashingInSecureTrie {
 		addrh = addr.Bytes()
 		addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
-		addr = common.BytesToAddress(addrh)
 	}
 	accountAddr := trie.KeybytesToHex(addrh)
 
@@ -183,7 +182,6 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			if oracle.AccountPreventHashingInSecureTrie {
 				addrh = addr.Bytes()
 				addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
-				addr = common.BytesToAddress(addrh)
 			}
 			accountAddr := trie.KeybytesToHex(addrh)
 
@@ -530,6 +528,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				newKey := make([]byte, len(key))
 				copy(newKey, key)
 
+				addr_nibbles := trie.KeybytesToHex(addrh)
+				if isAccountProof {
+					newKey = make([]byte, len(addr_nibbles))
+					copy(newKey, addr_nibbles)
+				}
+
 				/*
 				Following the above example, the queried key `key` is [3, 5, 8, 1, 2, 4].
 				The path to E1 and its nibbles is [3, 5, 8, 1, 2, 3].
@@ -550,17 +554,33 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				var err error
 				for i := 0; i < 16; i++ {
 					newKey[keyIndex] = byte(i)
-					k := trie.HexToKeybytes(newKey)
-					ky := common.BytesToHash(k)
 					if isAccountProof {
-						proof, _, _, _, _, err = statedb.GetProof(addr)
+						var newAddrBytes []byte;
+						// TODO
+						for j := 0; j < 40; j = j + 2{
+							newAddrBytes = append(newAddrBytes, newKey[j] * 16 + newKey[j+1])
+						}
+
+						newAddr := common.BytesToAddress(newAddrBytes)
+
+						// newAddr = common.HexToAddress("0x0023200000000000000000000000000000000000")
+
+						var extNibbles [][]byte;
+						proof, _, extNibbles, _, _, err = statedb.GetProof(newAddr)
+						check(err)
+						if len(extNibbles[len(extNibbles)-1]) == 0 && !isBranch(proof[len(proof)-1]) {
+							break
+						}
 					} else {
+						k := trie.HexToKeybytes(newKey)
+						ky := common.BytesToHash(k)
 						proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
-					}
-					check(err)
-					if !isBranch(proof[len(proof)-1]) {
-						break
-					}
+						// TODO: extNibbles check
+						check(err)
+						if !isBranch(proof[len(proof)-1]) {
+							break
+						}
+					}	
 				}
 
 				branchRlp := proof[len(proof)-2] // the last element has to be a leaf
@@ -572,27 +592,40 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				nodes = append(nodes, bNode)
 
 				// Let's construct the leaf L1 that will have the correct key (the queried one)
+
+				// TODO: compute l properly - where the obtained and required key/address started to diff
 				l := keyIndex - len(nibbles)
-				// path will have nibbles up to the E1 nibbles (but without them) - in our example [3 5 8]
-				path := make([]byte, l)
-				copy(path, key[:l])
-				// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
+				if isAccountProof {
+					compact := trie.HexToCompact(addr_nibbles[l:])
 
-				// TODO: construct for account proof
+					compactLen := byte(len(compact))
 
-				compact := trie.HexToCompact(key[l:])
-				// Add RLP:
-				compactLen := byte(len(compact))
-				rlp2 := 128 + compactLen
-				rlp1 := 192 + compactLen + 1
-				// Constructed leaf L1:
-				constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
+					constructedLeaf := []byte{248,108,157,52,45,53,199,120,18,165,14,109,22,4,141,198,233,128,219,44,247,218,241,231,2,206,125,246,58,246,15,3,184,76,248,74,4,134,85,156,208,108,8,0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,112}
+					constructedLeaf[2] = 128 + compactLen
+					for i := 0; i < len(compact); i++ {
+						constructedLeaf[3 + i] = compact[i];
+					}
+					constructedLeaf[1] = byte(len(constructedLeaf)) - 2
 
-				// Add dummy value:
-				constructedLeaf = append(constructedLeaf, 0)
+					node := prepareAccountLeafNode(addr, addrh, proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, addr_nibbles, false, false, false)
+					nodes = append(nodes, node)
+				} else {
 
-				node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
-				nodes = append(nodes, node)
+					// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
+					compact := trie.HexToCompact(key[l:])
+					// Add RLP:
+					compactLen := byte(len(compact))
+					rlp2 := 128 + compactLen
+					rlp1 := 192 + compactLen + 1
+					// Constructed leaf L1:
+					constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
+
+					// Add dummy value:
+					constructedLeaf = append(constructedLeaf, 0)
+
+					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					nodes = append(nodes, node)
+				}
 			}
 		}
 	}
