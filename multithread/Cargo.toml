@@ -1,0 +1,2 @@
+[dev-dependencies]
+criterion = "0.3"
