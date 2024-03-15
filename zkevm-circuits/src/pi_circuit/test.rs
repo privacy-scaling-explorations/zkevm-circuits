@@ -136,18 +136,17 @@ fn run_size_check<
     assert_eq!(prover1.permutation(), prover2.permutation());
 }
 
-// 4844_debug
-// #[cfg(feature = "scroll")]
-// #[test]
-// fn variadic_size_check() {
-//     const MAX_TXS: usize = 8;
-//     const MAX_CALLDATA: usize = 200;
-//     const MAX_INNER_BLOCKS: usize = 4;
+#[cfg(feature = "scroll")]
+#[test]
+fn variadic_size_check() {
+    const MAX_TXS: usize = 8;
+    const MAX_CALLDATA: usize = 200;
+    const MAX_INNER_BLOCKS: usize = 4;
 
-//     let block_0 = empty_block();
-//     let block_1 = block_1tx();
-//     let block_2 = block_2txs();
+    let block_0 = empty_block();
+    let block_1 = block_1tx();
+    let block_2 = block_2txs();
 
-//     run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_0, block_2.clone()]);
-//     run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_1, block_2]);
-// }
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_0, block_2.clone()]);
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_1, block_2]);
+}
