@@ -63,17 +63,17 @@ struct SuperCircuitInstance<T> {
     pub sc_permu_alpha: T,
     pub sc_permu_gamma: T,
     pub sc_rwtable_row_prev_fingerprint: T,
-    pub sc_rwtable_row_next_fingerprint: T,
+    pub sc_rwtable_row_curr_fingerprint: T,
     pub sc_rwtable_prev_fingerprint: T,
-    pub sc_rwtable_next_fingerprint: T,
+    pub sc_rwtable_curr_fingerprint: T,
 
     // evm circuit
     pub ec_permu_alpha: T,
     pub ec_permu_gamma: T,
     pub ec_rwtable_row_prev_fingerprint: T,
-    pub ec_rwtable_row_next_fingerprint: T,
+    pub ec_rwtable_row_curr_fingerprint: T,
     pub ec_rwtable_prev_fingerprint: T,
-    pub ec_rwtable_next_fingerprint: T,
+    pub ec_rwtable_curr_fingerprint: T,
 }
 
 impl<T: Clone + Copy> SuperCircuitInstance<T> {
@@ -91,15 +91,15 @@ impl<T: Clone + Copy> SuperCircuitInstance<T> {
             sc_permu_alpha: iter_instances.next().unwrap(),
             sc_permu_gamma: iter_instances.next().unwrap(),
             sc_rwtable_row_prev_fingerprint: iter_instances.next().unwrap(),
-            sc_rwtable_row_next_fingerprint: iter_instances.next().unwrap(),
+            sc_rwtable_row_curr_fingerprint: iter_instances.next().unwrap(),
             sc_rwtable_prev_fingerprint: iter_instances.next().unwrap(),
-            sc_rwtable_next_fingerprint: iter_instances.next().unwrap(),
+            sc_rwtable_curr_fingerprint: iter_instances.next().unwrap(),
             ec_permu_alpha: iter_instances.next().unwrap(),
             ec_permu_gamma: iter_instances.next().unwrap(),
             ec_rwtable_row_prev_fingerprint: iter_instances.next().unwrap(),
-            ec_rwtable_row_next_fingerprint: iter_instances.next().unwrap(),
+            ec_rwtable_row_curr_fingerprint: iter_instances.next().unwrap(),
             ec_rwtable_prev_fingerprint: iter_instances.next().unwrap(),
-            ec_rwtable_next_fingerprint: iter_instances.next().unwrap(),
+            ec_rwtable_curr_fingerprint: iter_instances.next().unwrap(),
         }
     }
 }
@@ -401,13 +401,13 @@ where
                                 instance_i_plus_one.sc_permu_gamma.assigned(),
                             ),
                             (
-                                instance_i.sc_rwtable_row_next_fingerprint.assigned(),
+                                instance_i.sc_rwtable_row_curr_fingerprint.assigned(),
                                 instance_i_plus_one
                                     .sc_rwtable_row_prev_fingerprint
                                     .assigned(),
                             ),
                             (
-                                instance_i.sc_rwtable_next_fingerprint.assigned(),
+                                instance_i.sc_rwtable_curr_fingerprint.assigned(),
                                 instance_i_plus_one.sc_rwtable_prev_fingerprint.assigned(),
                             ),
                             // evm circuit
@@ -420,11 +420,11 @@ where
                                 instance_i_plus_one.ec_permu_gamma.assigned(),
                             ),
                             (
-                                instance_i.ec_rwtable_next_fingerprint.assigned(),
+                                instance_i.ec_rwtable_curr_fingerprint.assigned(),
                                 instance_i_plus_one.ec_rwtable_prev_fingerprint.assigned(),
                             ),
                             (
-                                instance_i.ec_rwtable_row_next_fingerprint.assigned(),
+                                instance_i.ec_rwtable_row_curr_fingerprint.assigned(),
                                 instance_i_plus_one
                                     .ec_rwtable_row_prev_fingerprint
                                     .assigned(),

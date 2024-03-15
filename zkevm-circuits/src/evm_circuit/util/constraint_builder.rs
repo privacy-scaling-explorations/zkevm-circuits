@@ -1872,11 +1872,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 let cell = self.query_cell_with_type(cell_type);
                 self.in_next_step = in_next_step;
 
-                // cb.step_XXXXXXX(|cb| {cb.context_lookup()})
-
-                // gate1: step_first_selector * (lookup_cell.expr() == by_pass_expr()) == 0
-                // lookup_gate = lookup(by_pass_expr())
-
                 // Require the stored value to equal the value of the expression
                 let name = format!("{} (stored expression)", name);
                 self.push_constraint(

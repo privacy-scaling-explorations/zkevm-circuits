@@ -704,7 +704,7 @@ impl CircuitInputBuilder<FixedCParams> {
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(Option<ExecStep>, Option<Call>), Error> {
         assert!(
-            self.circuits_params.max_rws().unwrap_or_default() > self.rws_reserve(),
+            self.circuits_params.max_rws().unwrap_or_default() > self.last_exec_step_rws_reserved(),
             "Fixed max_rws not enough for rws reserve"
         );
 
@@ -867,8 +867,8 @@ fn push_op<T: Op>(
 }
 
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
-    ///
-    pub fn rws_reserve(&self) -> usize {
+    /// return the rw row reserved for end_block/end_chunk
+    pub fn last_exec_step_rws_reserved(&self) -> usize {
         // rw ops reserved for EndBlock
         let end_block_rws = if self.chunk_ctx.is_last_chunk() && self.chunk_rws() > 0 {
             1
@@ -910,7 +910,8 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
             * 2
             + 4; // disabled and unused rows.
 
-        let max_rws = <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1 + self.rws_reserve();
+        let max_rws = <RWCounter as Into<usize>>::into(self.block_ctx.rwc) - 1
+            + self.last_exec_step_rws_reserved();
 
         // Computing the number of rows for the EVM circuit requires the size of ExecStep,
         // which is determined in the code of zkevm-circuits and cannot be imported here.
