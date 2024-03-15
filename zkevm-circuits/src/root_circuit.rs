@@ -105,6 +105,7 @@ impl<T: Clone + Copy> SuperCircuitInstance<T> {
 }
 
 /// UserChallange
+#[derive(Clone)]
 pub struct UserChallenge {
     /// column_indexes
     pub column_indexes: Vec<Column<Any>>,

@@ -113,7 +113,7 @@ impl RwTable {
             ]),
         }
     }
-    fn assign<F: Field>(
+    pub(crate) fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -390,7 +390,7 @@ impl<'a> RwTableCircuit<'a> {
 }
 
 #[derive(Clone)]
-struct RwTableCircuitConfig {
+pub(crate) struct RwTableCircuitConfig {
     pub rw_table: RwTable,
 }
 

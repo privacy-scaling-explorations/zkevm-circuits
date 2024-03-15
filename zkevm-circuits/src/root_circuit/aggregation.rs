@@ -699,6 +699,7 @@ pub mod test {
         let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
             &params,
             snarks.iter().map(SnarkOwned::as_snark),
+            None,
         )
         .unwrap();
         let instances = aggregation.instances();
@@ -719,6 +720,7 @@ pub mod test {
         let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
             &params,
             snarks.iter().map(SnarkOwned::as_snark),
+            None,
         )
         .unwrap();
         let mut instances = aggregation.instances();

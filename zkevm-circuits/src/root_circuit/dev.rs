@@ -1,9 +1,11 @@
-use super::{aggregate, AggregationConfig, Halo2Loader, KzgSvk, Snark, SnarkWitness, LIMBS};
+use super::{
+    aggregate, AggregationConfig, Halo2Loader, KzgSvk, Snark, SnarkWitness, UserChallenge, LIMBS,
+};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::{ff::Field as Halo2Field, serde::SerdeObject, CurveAffine, CurveExt},
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Circuit, ConstraintSystem, Error, Error::InvalidInstances},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
@@ -26,6 +28,7 @@ where
 {
     svk: KzgSvk<M>,
     snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
+    user_challenge: Option<(UserChallenge, Vec<M::Fr>)>,
     instances: Vec<M::Fr>,
     _marker: PhantomData<As>,
 }
@@ -53,6 +56,7 @@ where
     pub fn new(
         params: &ParamsKZG<M>,
         snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
+        user_challenge: Option<(UserChallenge, Vec<M::Fr>)>,
     ) -> Result<Self, snark_verifier::Error> {
         let snarks = snarks.into_iter().collect_vec();
 
@@ -71,6 +75,7 @@ where
 
         Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
+            user_challenge,
             snarks: snarks.into_iter().map_into().collect(),
             instances,
             _marker: PhantomData,
@@ -120,6 +125,7 @@ where
     fn without_witnesses(&self) -> Self {
         Self {
             svk: self.svk,
+            user_challenge: self.user_challenge.clone(),
             snarks: self
                 .snarks
                 .iter()
@@ -146,8 +152,36 @@ where
             |mut region| {
                 config.named_column_in_region(&mut region);
                 let ctx = RegionCtx::new(region, 0);
-                let (instances, accumulator_limbs, _, _) =
+                let (instances, accumulator_limbs, loader, proofs) =
                     config.aggregate::<M, As>(ctx, &self.svk, &self.snarks)?;
+
+                // aggregate user challenge for rwtable permutation challenge
+                let user_challenge = self.user_challenge.as_ref().map(|(challenge, _)| challenge);
+                let challenges = config.aggregate_user_challenges::<M, As>(
+                    loader.clone(),
+                    user_challenge,
+                    proofs,
+                )?;
+                if !challenges.is_empty() {
+                    let Some((_, expected_challenges)) = self.user_challenge.as_ref() else {
+                        return Err(InvalidInstances);
+                    };
+                    let expected_challenges_loaded = expected_challenges
+                        .iter()
+                        .map(|value| loader.assign_scalar(Value::known(*value)))
+                        .collect::<Vec<_>>();
+                    expected_challenges_loaded
+                        .iter()
+                        .zip(challenges.iter())
+                        .try_for_each(|(expected_challenge, challenge)| {
+                            loader.scalar_chip().assert_equal(
+                                &mut loader.ctx_mut(),
+                                &expected_challenge.assigned(),
+                                &challenge.assigned(),
+                            )
+                        })?;
+                }
+
                 let instances = instances
                     .iter()
                     .flat_map(|instances| {
