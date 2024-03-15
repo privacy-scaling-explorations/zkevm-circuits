@@ -286,8 +286,8 @@ where
                     config.aggregate::<M, As>(ctx, &key.clone(), &self.snark_witnesses)?;
 
                 // aggregate user challenge for rwtable permutation challenge
-                let (_alpha, _gamma) = {
-                    let mut challenges = config.aggregate_user_challenges::<M, As>(
+                let (alpha, gamma) = {
+                    let (mut challenges, _) = config.aggregate_user_challenges::<M, As>(
                         loader.clone(),
                         self.user_challenges,
                         proofs,
@@ -330,20 +330,6 @@ where
                             (zero_const, one_const, total_chunk_const)
                         };
 
-                        // TODO remove me
-                        let (_hardcode_alpha, _hardcode_gamma) = {
-                            (
-                                loader
-                                    .scalar_chip()
-                                    .assign_constant(&mut loader.ctx_mut(), M::Fr::from(101))
-                                    .unwrap(),
-                                loader
-                                    .scalar_chip()
-                                    .assign_constant(&mut loader.ctx_mut(), M::Fr::from(103))
-                                    .unwrap(),
-                            )
-                        };
-
                         // `first.sc_rwtable_row_prev_fingerprint ==
                         // first.ec_rwtable_row_prev_fingerprint` will be checked inside circuit
                         vec![
@@ -354,17 +340,11 @@ where
                             (first_chunk.initial_rwc.assigned(), &one_const),
                             // constraint permutation fingerprint
                             // challenge: alpha
-                            // TODO remove hardcode
-                            (first_chunk.sc_permu_alpha.assigned(), &_hardcode_alpha),
-                            (first_chunk.ec_permu_alpha.assigned(), &_hardcode_alpha),
-                            // (first_chunk.sc_permu_alpha.assigned(), &alpha.assigned()),
-                            // (first_chunk.ec_permu_alpha.assigned(), &alpha.assigned()),
+                            (first_chunk.sc_permu_alpha.assigned(), &alpha.assigned()),
+                            (first_chunk.ec_permu_alpha.assigned(), &alpha.assigned()),
                             // challenge: gamma
-                            // TODO remove hardcode
-                            (first_chunk.sc_permu_gamma.assigned(), &_hardcode_gamma),
-                            (first_chunk.ec_permu_gamma.assigned(), &_hardcode_gamma),
-                            // (first_chunk.sc_permu_gamma.assigned(), &gamma.assigned()),
-                            // (first_chunk.ec_permu_gamma.assigned(), &gamma.assigned()),
+                            (first_chunk.sc_permu_gamma.assigned(), &gamma.assigned()),
+                            (first_chunk.ec_permu_gamma.assigned(), &gamma.assigned()),
                             // fingerprint
                             (
                                 first_chunk.ec_rwtable_prev_fingerprint.assigned(),

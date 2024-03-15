@@ -140,7 +140,7 @@ pub fn chunk_convert<F: Field>(
             if start == 0 {
                 (None, RwMap::from(skipped.take(size).collect::<Vec<_>>()))
             } else {
-                // here have `chunk.ctx.idx - 1` because each chunk first row are probagated from
+                // here have `chunk.ctx.idx - 1` because each chunk first row are propagated from
                 // prev chunk. giving idx>0 th chunk, there will be (idx-1) placeholders cant' count
                 // in real order
                 let mut skipped = skipped.skip(start - 1 - (chunk.ctx.idx - 1));
@@ -152,7 +152,7 @@ pub fn chunk_convert<F: Field>(
             }
         };
 
-        // Comupute cur fingerprints from last fingerprints and current Rw rows
+        // Compute cur fingerprints from last fingerprints and current Rw rows
         let by_address_rw_fingerprints = get_permutation_fingerprint_of_rwmap(
             &by_address_rws,
             chunk.fixed_param.max_rws,

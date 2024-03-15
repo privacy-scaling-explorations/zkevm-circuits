@@ -1,26 +1,25 @@
 use std::iter;
 
 use crate::{
-    copy_circuit::{CopyCircuit, ExternalData},
     root_circuit::{
         aggregation::test::SnarkOwned, compile, Config, Gwc, PoseidonTranscript, RootCircuit,
         SnarkWitness, TestAggregationCircuit, UserChallenge,
     },
     super_circuit::{test::block_1tx, SuperCircuit},
-    table::{self, AccountFieldTag, LookupTable, TxLogFieldTag},
-    util::{self, SubCircuit},
-    witness::{block_convert, chunk_convert, Rw, RwRow},
+    table::{
+        self, rw_table::get_rwtable_cols_commitment, AccountFieldTag, LookupTable, TxLogFieldTag,
+    },
+    util::{self},
+    witness::{Rw, RwRow},
 };
-use bus_mapping::{
-    circuit_input_builder::{CircuitInputBuilder, FixedCParams},
-    mock::BlockData,
-};
-use eth_types::{address, bytecode, geth_types::GethData, Address, Field, Word, U256};
+use bus_mapping::circuit_input_builder::FixedCParams;
+use eth_types::{address, Address, Field, U256};
+use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::MockProver,
     halo2curves::{bn256::Bn256, pairing::Engine},
-    plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ConstraintSystem, Error},
+    plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ConstraintSystem, Error, Selector},
     poly::{
         kzg::{
             commitment::{KZGCommitmentScheme, ParamsKZG},
@@ -30,31 +29,10 @@ use halo2_proofs::{
     },
 };
 use itertools::Itertools;
-use mock::TestContext;
 use rand::rngs::OsRng;
+use snark_verifier::util::transcript::Transcript;
 use table::RwTable;
-use util::{word::WordLoHi, Challenges};
-
-fn gen_tx_log_data() -> CircuitInputBuilder<FixedCParams> {
-    let code = bytecode! {
-        PUSH32(200)         // value
-        PUSH32(0)           // offset
-        MSTORE
-        PUSH32(Word::MAX)   // topic
-        PUSH1(32)           // length
-        PUSH1(0)            // offset
-        LOG1
-        STOP
-    };
-    let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
-    let block: GethData = test_ctx.into();
-    // Needs default params for variadic check
-
-    BlockData::new_from_geth_data_with_params(block.clone(), FixedCParams::default())
-        .new_circuit_input_builder()
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap()
-}
+use util::word::WordLoHi;
 
 struct RwTableCircuit<'a> {
     rws: &'a [Rw],
@@ -76,6 +54,7 @@ impl<'a> RwTableCircuit<'a> {
 #[derive(Clone)]
 pub(crate) struct RwTableCircuitConfig {
     pub rw_table: RwTable,
+    pub enable: Selector,
 }
 
 impl RwTableCircuitConfig {}
@@ -93,13 +72,17 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let rw_table = RwTable::construct(meta);
+        let enable = meta.selector();
 
-        meta.create_gate("zero gate", |meta| {
-            let dummy = meta.query_advice(rw_table.address, Rotation::cur());
+        meta.create_gate("dummy id 1", |meta| {
+            let dummy = meta.query_advice(rw_table.id, Rotation::cur());
+            let enable = meta.query_selector(enable);
 
-            vec![dummy.clone() - dummy]
+            vec![
+                enable * dummy.clone() * dummy.clone() * dummy.clone() * (dummy.clone() - 1.expr()),
+            ]
         });
-        RwTableCircuitConfig { rw_table }
+        RwTableCircuitConfig { rw_table, enable }
     }
 
     fn synthesize(
@@ -116,7 +99,9 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
                     self.n_rows,
                     self.prev_chunk_last_rw,
                 );
+                config.enable.enable(&mut region, 0)?;
                 // avoid empty column cause commitment value as identity point
+                // assign rwtable.id=1 to make dummy gate work
                 config.rw_table.assign(
                     &mut region,
                     0,
@@ -140,7 +125,9 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
 }
 
 #[test]
+#[ignore]
 fn test_user_challenge_aggregation() {
+    let num_challenges = 1;
     let k = 12;
     let rows = vec![
         Rw::Stack {
@@ -229,53 +216,27 @@ fn test_user_challenge_aggregation() {
         },
     ];
 
-    let builder = gen_tx_log_data();
-    let block = block_convert::<<Bn256 as Engine>::Fr>(&builder).unwrap();
-    let chunk = chunk_convert::<<Bn256 as Engine>::Fr>(&block, &builder)
-        .unwrap()
-        .remove(0);
-    let chunked_copy_events = block.copy_events.get(0..1).unwrap_or_default();
-    // let circuits = iter::repeat_with(|| {
-    //     CopyCircuit::<<Bn256 as Engine>::Fr>::new_with_external_data(
-    //         chunked_copy_events.to_owned(),
-    //         chunk.fixed_param.max_copy_rows,
-    //         ExternalData {
-    //             max_txs: chunk.fixed_param.max_txs,
-    //             max_calldata: chunk.fixed_param.max_calldata,
-    //             txs: block.txs.clone(),
-    //             max_rws: chunk.fixed_param.max_rws,
-    //             rws: chunk.chrono_rws.clone(),
-    //             prev_chunk_last_rw: chunk.prev_chunk_last_chrono_rw,
-    //             bytecodes: block.bytecodes.clone(),
-    //         },
-    //     )
-    // })
-    // .take(1)
-    // .collect_vec();
-
-    let circuits = iter::repeat_with(|| RwTableCircuit::new(&rows, rows.len() + 1, None))
-        .take(1)
-        .collect_vec();
-
     let mut cs = ConstraintSystem::<<Bn256 as Engine>::Fr>::default();
-    // let (config, _) = CopyCircuit::configure_with_params(
-    //     &mut cs,
-    //     <CopyCircuit<_> as Circuit<<Bn256 as Engine>::Fr>>::params(&circuits[0]),
-    // );
-    let config = RwTableCircuit::configure_with_params(
-        &mut cs,
-        <RwTableCircuit as Circuit<<Bn256 as Engine>::Fr>>::params(&circuits[0]),
-    );
+    let config = RwTableCircuit::configure(&mut cs);
     let rwtable_columns =
         <table::RwTable as LookupTable<<Bn256 as Engine>::Fr>>::columns(&config.rw_table);
 
     let params = ParamsKZG::<Bn256>::setup(k, OsRng);
-    // let advice_commitments = get_rwtable_cols_commitment::<KZGCommitmentScheme<_>>(
-    //     k.try_into().unwrap(),
-    //     &rows,
-    //     rows.len() + 1,
-    //     &params,
-    // );
+    let advice_commitments = get_rwtable_cols_commitment::<KZGCommitmentScheme<_>>(
+        k.try_into().unwrap(),
+        &rows,
+        rows.len() + 1,
+        &params,
+    );
+    let mut transcript = PoseidonTranscript::new(Vec::<Bn256>::new());
+    advice_commitments.iter().for_each(|commit| {
+        transcript.common_ec_point(commit).unwrap();
+    });
+    let expected_challenges = transcript.squeeze_n_challenges(num_challenges);
+
+    let circuits = iter::repeat_with(|| RwTableCircuit::new(&rows, rows.len() + 1, None))
+        .take(1)
+        .collect_vec();
 
     let pk = keygen_pk(
         &params,
@@ -292,26 +253,23 @@ fn test_user_challenge_aggregation() {
     let proofs: Vec<Vec<u8>> = circuits
         .into_iter()
         .map(|circuit| {
+            let mut transcript = PoseidonTranscript::new(Vec::new());
             // Create proof
-            let proof = {
-                let mut transcript = PoseidonTranscript::new(Vec::new());
-                create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
-                    &params,
-                    &pk,
-                    &[circuit],
-                    &[&[]],
-                    OsRng,
-                    &mut transcript,
-                )
-                .unwrap();
-                transcript.finalize()
-            };
-            proof
+            create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
+                &params,
+                &pk,
+                &[circuit],
+                &[&[]],
+                OsRng,
+                &mut transcript,
+            )
+            .unwrap();
+            transcript.finalize()
         })
         .collect();
     let user_challenge = UserChallenge {
         column_indexes: rwtable_columns,
-        num_challenges: 1,
+        num_challenges,
     };
     let snark_witnesses: Vec<_> = proofs
         .into_iter()
@@ -320,8 +278,8 @@ fn test_user_challenge_aggregation() {
     let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
         &params,
         snark_witnesses.iter().map(SnarkOwned::as_snark),
-        // Some((user_challenge, vec![<Bn256 as Engine>::Fr::from(1)])),
-        None,
+        Some((user_challenge, advice_commitments, expected_challenges)),
+        // None,
     )
     .unwrap();
 

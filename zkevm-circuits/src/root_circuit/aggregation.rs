@@ -15,7 +15,7 @@ use snark_verifier::{
         self,
         halo2::{
             halo2_wrong_ecc::{self, integer::rns::Rns, maingate::*, EccConfig},
-            Scalar,
+            EcPoint, Scalar,
         },
         native::NativeLoader,
     },
@@ -233,7 +233,13 @@ impl AggregationConfig {
         loader: Rc<Halo2Loader<'c, M::G1Affine>>,
         user_challenges: Option<&UserChallenge>,
         proofs: Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
-    ) -> Result<Vec<LoadedScalar<'c, M::G1Affine>>, Error>
+    ) -> Result<
+        (
+            Vec<LoadedScalar<'c, M::G1Affine>>,
+            Vec<EcPoint<'c, M::G1Affine, EccChip<M::G1Affine>>>,
+        ),
+        Error,
+    >
     where
         M: MultiMillerLoop,
         M::Fr: Field,
@@ -253,8 +259,6 @@ impl AggregationConfig {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
 
-        // Verify the cheap part and get accumulator (left-hand and right-hand side of
-        // pairing) of individual proof.
         let witnesses = proofs
             .iter()
             .flat_map(|proof| {
@@ -279,9 +283,11 @@ impl AggregationConfig {
             .map(|user_challenges| user_challenges.num_challenges)
             .unwrap_or_default();
 
-        Ok((0..num_challenges)
-            .map(|_| transcript.squeeze_challenge())
-            .collect_vec())
+        let witnesses = witnesses
+            .into_iter()
+            .cloned()
+            .collect::<Vec<EcPoint<'c, M::G1Affine, EccChip<M::G1Affine>>>>();
+        Ok((transcript.squeeze_n_challenges(num_challenges), witnesses))
     }
 
     /// Aggregate snarks into a single accumulator and decompose it into
@@ -333,6 +339,7 @@ impl AggregationConfig {
             .iter()
             .map(|snark| {
                 let protocol = snark.protocol.loaded(&loader);
+
                 let instances = snark.loaded_instances(&loader);
                 let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
                 let proof = PlonkSuccinctVerifier::<As>::read_proof(

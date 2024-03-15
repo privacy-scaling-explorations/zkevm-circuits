@@ -48,6 +48,9 @@ use std::{
 pub use transaction::{Transaction, TransactionContext};
 pub use withdrawal::{Withdrawal, WithdrawalContext};
 
+/// number of execution state fields
+pub const N_EXEC_STATE: usize = 10;
+
 /// Runtime Config
 ///
 /// Default to mainnet block
@@ -341,6 +344,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         }
     }
 
+    // chunking and mutable bumping chunk_ctx once condition match
+    // return true on bumping to next chunk
     fn check_and_chunk(
         &mut self,
         geth_trace: &GethExecTrace,
@@ -493,15 +498,14 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
         rw: RW,
         tx: Option<&Transaction>,
     ) {
-        let STEP_STATE_LEN = 10;
         let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
 
-        let rw_counters = (0..STEP_STATE_LEN)
+        let rw_counters = (0..N_EXEC_STATE)
             .map(|_| self.block_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
         // just bump rwc in chunk_ctx as block_ctx rwc to assure same delta apply
-        let rw_counters_inner_chunk = (0..STEP_STATE_LEN)
+        let rw_counters_inner_chunk = (0..N_EXEC_STATE)
             .map(|_| self.chunk_ctx.rwc.inc_pre())
             .collect::<Vec<RWCounter>>();
 
@@ -537,7 +541,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             ]
         };
 
-        debug_assert_eq!(STEP_STATE_LEN, tags.len());
+        debug_assert_eq!(N_EXEC_STATE, tags.len());
         let state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
         tags.iter()
@@ -865,15 +869,15 @@ fn push_op<T: Op>(
 impl<C: CircuitsParams> CircuitInputBuilder<C> {
     ///
     pub fn rws_reserve(&self) -> usize {
-        // This is the last chunk of a block, reserve for EndBlock, not EndChunk
+        // rw ops reserved for EndBlock
         let end_block_rws = if self.chunk_ctx.is_last_chunk() && self.chunk_rws() > 0 {
             1
         } else {
             0
         };
-        // This is not the last chunk, reserve for EndChunk
+        // rw ops reserved for EndChunk
         let end_chunk_rws = if !self.chunk_ctx.is_last_chunk() {
-            10
+            N_EXEC_STATE
         } else {
             0
         };

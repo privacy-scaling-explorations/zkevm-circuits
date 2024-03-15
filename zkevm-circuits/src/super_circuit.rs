@@ -259,7 +259,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
 
-        // constraint chronological/by address rwtable fingerprint must be the same in last chunk
+        // chronological/by address rwtable fingerprint must be the same in last chunk
         // last row.
         meta.create_gate(
             "chronological rwtable fingerprint == by address rwtable fingerprint",
@@ -283,7 +283,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
 
-        // constraint chronological/by address rwtable `row fingerprint` must be the same in first
+        // chronological/by address rwtable `row fingerprint` must be the same in first
         // chunk first row.
         // `row fingerprint` is not a constant so root circuit can NOT constraint it.
         // so we constraints here by gate

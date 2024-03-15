@@ -116,10 +116,10 @@ pub enum Target {
     TxReceipt,
     /// Means the target of the operation is the TxLog.
     TxLog,
-    /// StepState
-    StepState,
 
-    /// padding operation.
+    /// Chunking: StepState
+    StepState,
+    /// Chunking: padding operation.
     Padding,
 }
 
@@ -916,7 +916,7 @@ pub enum StepStateField {
     LogID,
 }
 
-/// Represents an CallContext read/write operation.
+/// StepStateOp represents exec state store and load
 #[derive(Clone, PartialEq, Eq)]
 pub struct StepStateOp {
     /// field of CallContext

@@ -22,13 +22,14 @@ use std::{iter, marker::PhantomData, rc::Rc};
 
 /// Aggregation circuit for testing purpose.
 #[derive(Clone)]
+#[allow(clippy::type_complexity)]
 pub struct TestAggregationCircuit<'a, M: MultiMillerLoop, As>
 where
     M::G1Affine: CurveAffine,
 {
     svk: KzgSvk<M>,
     snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
-    user_challenge: Option<(UserChallenge, Vec<M::Fr>)>,
+    user_challenge: Option<(UserChallenge, Vec<M::G1Affine>, Vec<M::Fr>)>,
     instances: Vec<M::Fr>,
     _marker: PhantomData<As>,
 }
@@ -53,10 +54,11 @@ where
 {
     /// Create an Aggregation circuit with aggregated accumulator computed.
     /// Returns `None` if any given snark is invalid.
+    #[allow(clippy::type_complexity)]
     pub fn new(
         params: &ParamsKZG<M>,
         snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
-        user_challenge: Option<(UserChallenge, Vec<M::Fr>)>,
+        user_challenge: Option<(UserChallenge, Vec<M::G1Affine>, Vec<M::Fr>)>,
     ) -> Result<Self, snark_verifier::Error> {
         let snarks = snarks.into_iter().collect_vec();
 
@@ -156,16 +158,43 @@ where
                     config.aggregate::<M, As>(ctx, &self.svk, &self.snarks)?;
 
                 // aggregate user challenge for rwtable permutation challenge
-                let user_challenge = self.user_challenge.as_ref().map(|(challenge, _)| challenge);
-                let challenges = config.aggregate_user_challenges::<M, As>(
+                let user_challenge = self
+                    .user_challenge
+                    .as_ref()
+                    .map(|(challenge, _, _)| challenge);
+                let (challenges, commitments) = config.aggregate_user_challenges::<M, As>(
                     loader.clone(),
                     user_challenge,
                     proofs,
                 )?;
                 if !challenges.is_empty() {
-                    let Some((_, expected_challenges)) = self.user_challenge.as_ref() else {
+                    let Some((_, expected_commitments, expected_challenges)) =
+                        self.user_challenge.as_ref()
+                    else {
                         return Err(InvalidInstances);
                     };
+                    // check commitment equality
+                    let expected_commitments_loaded = expected_commitments
+                        .iter()
+                        .map(|expected_commitment| {
+                            loader.ecc_chip().assign_point(
+                                &mut loader.ctx_mut(),
+                                Value::known(*expected_commitment),
+                            )
+                        })
+                        .collect::<Result<Vec<_>, Error>>()?;
+                    expected_commitments_loaded
+                        .iter()
+                        .zip(commitments.iter())
+                        .try_for_each(|(expected_commitment, commitment)| {
+                            loader.ecc_chip().assert_equal(
+                                &mut loader.ctx_mut(),
+                                expected_commitment,
+                                &commitment.assigned(),
+                            )
+                        })?;
+
+                    // check challenge equality
                     let expected_challenges_loaded = expected_challenges
                         .iter()
                         .map(|value| loader.assign_scalar(Value::known(*value)))
