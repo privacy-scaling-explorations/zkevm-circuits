@@ -2,7 +2,7 @@ use eth_types::{ToLittleEndian, U256};
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions},
     utils::{fe_to_biguint, modulus},
-    QuantumCell,
+    AssignedValue, QuantumCell,
 };
 use halo2_ecc::{
     bigint::CRTInteger,
@@ -10,7 +10,7 @@ use halo2_ecc::{
     halo2_base::Context,
 };
 use halo2_proofs::{
-    circuit::Value,
+    circuit::{AssignedCell, Value},
     halo2curves::{bls12_381::Scalar, bn256::Fr, ff::PrimeField},
 };
 use itertools::Itertools;
@@ -72,8 +72,8 @@ impl BarycentricEvaluationConfig {
         evaluation: U256,
     ) -> (
         Vec<CRTInteger<Fr>>,
-        Vec<QuantumCell<Fr>>,
-        Vec<QuantumCell<Fr>>,
+        Vec<AssignedValue<Fr>>,
+        Vec<AssignedValue<Fr>>,
     ) {
         // prechecks (challenge point z)
         let bls_modulus = U256::from_dec_str(
@@ -86,11 +86,13 @@ impl BarycentricEvaluationConfig {
             ctx,
             Value::known(BigUint::from_bytes_le(&challenge_digest.to_le_bytes()).into()),
         );
-        let challenge_le: Vec<QuantumCell<Fr>> = challenge
-            .to_le_bytes()
-            .iter()
-            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
-            .collect::<Vec<_>>();
+        let challenge_le = self.scalar.range().gate.assign_witnesses(
+            ctx,
+            challenge
+                .to_le_bytes()
+                .iter()
+                .map(|&x| Value::known(Fr::from(x as u64))),
+        );
         let challenge_digest_mod = self.scalar.carry_mod(ctx, &challenge_digest_crt);
         let challenge_crt = self
             .scalar
@@ -99,11 +101,13 @@ impl BarycentricEvaluationConfig {
             .assert_equal(ctx, &challenge_digest_mod, &challenge_crt);
 
         // prechecks (evaluation y)
-        let evaluation_le: Vec<QuantumCell<Fr>> = evaluation
-            .to_le_bytes()
-            .iter()
-            .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
-            .collect::<Vec<_>>();
+        let evaluation_le = self.scalar.range().gate.assign_witnesses(
+            ctx,
+            evaluation
+                .to_le_bytes()
+                .iter()
+                .map(|&x| Value::known(Fr::from(x as u64))),
+        );
         let evaluation_scalar = Scalar::from_raw(evaluation.0);
         let evaluation_crt = self
             .scalar
@@ -115,17 +119,23 @@ impl BarycentricEvaluationConfig {
                 .collect::<Vec<_>>();
         let challenge_limb1 = self.scalar.range().gate.inner_product(
             ctx,
-            challenge_le[0..11].to_vec(),
+            challenge_le[0..11]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[0..11].to_vec(),
         );
         let challenge_limb2 = self.scalar.range().gate.inner_product(
             ctx,
-            challenge_le[11..22].to_vec(),
+            challenge_le[11..22]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[11..22].to_vec(),
         );
         let challenge_limb3 = self.scalar.range().gate.inner_product(
             ctx,
-            challenge_le[22..32].to_vec(),
+            challenge_le[22..32]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[22..32].to_vec(),
         );
         self.scalar.range().gate.assert_equal(
@@ -145,17 +155,23 @@ impl BarycentricEvaluationConfig {
         );
         let evaluation_limb1 = self.scalar.range().gate.inner_product(
             ctx,
-            evaluation_le[0..11].to_vec(),
+            evaluation_le[0..11]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[0..11].to_vec(),
         );
         let evaluation_limb2 = self.scalar.range().gate.inner_product(
             ctx,
-            evaluation_le[11..22].to_vec(),
+            evaluation_le[11..22]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[11..22].to_vec(),
         );
         let evaluation_limb3 = self.scalar.range().gate.inner_product(
             ctx,
-            evaluation_le[22..32].to_vec(),
+            evaluation_le[22..32]
+                .iter()
+                .map(|&x| QuantumCell::Existing(x)),
             powers_of_256[22..32].to_vec(),
         );
         self.scalar.range().gate.assert_equal(

@@ -188,8 +188,8 @@ impl Circuit<Fr> for AggregationCircuit {
                 |region| -> Result<
                     (
                         Vec<CRTInteger<Fr>>,
-                        Vec<QuantumCell<Fr>>,
-                        Vec<QuantumCell<Fr>>,
+                        Vec<AssignedValue<Fr>>,
+                        Vec<AssignedValue<Fr>>,
                         Vec<AssignedValue<Fr>>,
                         Vec<AssignedValue<Fr>>,
                     ),
