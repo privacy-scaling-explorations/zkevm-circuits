@@ -34,7 +34,7 @@ use zkevm_circuits::{
 
 use crate::{
     constants::{
-        BATCH_Y_INDEX, BATCH_Z_INDEX, CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
+        BATCH_Y_OFFSET, BATCH_Z_OFFSET, CHAIN_ID_LEN, DIGEST_LEN, INPUT_LEN_PER_ROUND, LOG_DEGREE,
         MAX_AGG_SNARKS,
     },
     util::{
@@ -229,8 +229,8 @@ pub(crate) fn assign_batch_hashes(
 
     let batch_pi_input = &extracted_hash_cells.hash_input_cells[0..INPUT_LEN_PER_ROUND * 2];
     let expected_blob_cells = ExpectedBlobCells {
-        z: batch_pi_input[BATCH_Z_INDEX..BATCH_Z_INDEX + 32].to_vec(),
-        y: batch_pi_input[BATCH_Y_INDEX..BATCH_Y_INDEX + 32].to_vec(),
+        z: batch_pi_input[BATCH_Z_OFFSET..BATCH_Z_OFFSET + 32].to_vec(),
+        y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
         chunk_tx_data_hashes: (0..MAX_AGG_SNARKS)
             .into_iter()
             .map(|i| {

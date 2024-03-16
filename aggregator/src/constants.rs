@@ -44,8 +44,8 @@ pub(crate) const CHUNK_DATA_HASH_INDEX: usize = 104;
 // - z                  32 bytes
 // - y                  32 bytes
 
-pub(crate) const BATCH_Z_INDEX: usize = 136;
-pub(crate) const BATCH_Y_INDEX: usize = 168;
+pub(crate) const BATCH_Z_OFFSET: usize = 136;
+pub(crate) const BATCH_Y_OFFSET: usize = 168;
 
 // ================================
 // aggregator parameters
