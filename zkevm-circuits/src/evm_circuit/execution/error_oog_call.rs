@@ -141,11 +141,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             U256::zero()
         };
 
+        if is_call_or_callcode == 1 {
+            rws.offset_sub(1);
+        }
+
+        rws.offset_add(is_call_or_callcode);
+
         let cd_offset = rws.next().stack_value();
         let cd_length = rws.next().stack_value();
-
         let rd_offset = rws.next().stack_value();
         let rd_length = rws.next().stack_value();
+
+        rws.offset_add(1);
 
         let callee_code_hash = rws.next().account_codehash_pair().0;
 

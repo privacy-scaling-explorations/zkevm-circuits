@@ -166,6 +166,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         );
 
         let (is_warm, external_address) = if is_extcodecopy {
+            rws.next();
             (
                 rws.next().tx_access_list_value_pair().0,
                 rws.next().stack_value(),
@@ -174,12 +175,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             (false, U256::zero())
         };
 
-        if is_extcodecopy {
-            rws.next(); // Skip external address
-        }
+        if !is_extcodecopy {
+            rws.offset_reset();
+        };
 
         let dst_offset = rws.next().stack_value();
+
         let src_offset = rws.next().stack_value();
+
         let copy_size = rws.next().stack_value();
 
         self.opcode

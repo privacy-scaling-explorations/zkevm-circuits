@@ -184,8 +184,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let mut rws = StepRws::new(block, step);
 
-        let [external_address, memory_offset, code_offset, memory_length] =
-            [0, 1, 2, 3].map(|_| rws.next().stack_value());
+        let external_address = rws.next().stack_value();
+        let memory_offset = rws.next().stack_value();
+        let code_offset = rws.next().stack_value();
+        let memory_length = rws.next().stack_value();
+
         self.external_address_word
             .assign_u256(region, offset, external_address)?;
         let memory_address =
@@ -201,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             call.is_persistent,
         )?;
 
-        rws.offset_add(3);
+        rws.offset_add(4);
 
         let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm

@@ -294,7 +294,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let mut rws = StepRws::new(block, step);
 
-        let [memory_offset, length] = [0, 1].map(|_| rws.next().stack_value());
+        let memory_offset = rws.next().stack_value();
+        let length = rws.next().stack_value();
 
         let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
@@ -324,7 +325,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         if call.is_create() && call.is_success {
             let values: Vec<_> = (4..4 + length.as_usize())
-                .map(|_| rws.next().memory_value())
+                .map(|index| block.get_rws(step, index).memory_value())
                 .collect();
             self.deployed_code_rlc.assign(
                 region,
