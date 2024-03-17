@@ -64,12 +64,14 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
 fn get_coinbase_constant() -> Address {
-    let default_coinbase = if cfg!(feature = "scroll") {
-        Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
-    } else {
-        Address::zero()
-    };
-    read_env_var("COINBASE", default_coinbase)
+    // 4844_debug
+    // let default_coinbase = if cfg!(feature = "scroll") {
+    //     Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
+    // } else {
+    //     Address::zero()
+    // };
+    // read_env_var("COINBASE", default_coinbase)
+    read_env_var("COINBASE", Address::zero())
 }
 
 fn get_difficulty_constant() -> Word {
