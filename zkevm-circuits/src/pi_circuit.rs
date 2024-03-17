@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
+use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
     evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable,
