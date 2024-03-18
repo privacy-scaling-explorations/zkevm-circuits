@@ -399,7 +399,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			l := len(proof1)
 			var node Node
 			if isAccountProof {
-				node = prepareAccountLeafNode(addr, addrh, proof1[l-1], proof2[l-1], nil, key, false, false, false)
+				node = prepareAccountLeafNode(addr, addrh, proof1[l-1], proof2[l-1], nil, nil, key, false, false, false)
 			} else {
 				node = prepareStorageLeafNode(proof1[l-1], proof2[l-1], nil, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 			}
@@ -442,7 +442,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if isAccountProof {
 				// Add account leaf after branch placeholder:
 				if !isModifiedExtNode {
-					leafNode = prepareAccountLeafNode(addr, addrh, proof1[len1-1], proof2[len2-1], neighbourNode, key, false, false, false)
+					leafNode = prepareAccountLeafNode(addr, addrh, proof1[len1-1], proof2[len2-1], nil, neighbourNode, key, false, false, false)
 				} else {
 					isSModExtension := false
 					isCModExtension := false
@@ -533,6 +533,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					newKey = make([]byte, len(addr_nibbles))
 					copy(newKey, addr_nibbles)
 				}
+				
+				start := keyIndex - len(nibbles)
 
 				/*
 				Following the above example, the queried key `key` is [3, 5, 8, 1, 2, 4].
@@ -541,8 +543,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				*/
 				for i := 0; i < len(nibbles); i++ {
 					n := nibbles[i]
-					if key[i] != n {
-						newKey[i] = n
+					if key[start + i] != n {
+						newKey[start + i] = n
 					}
 				}
 
@@ -556,15 +558,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					newKey[keyIndex] = byte(i)
 					if isAccountProof {
 						var newAddrBytes []byte;
-						// TODO
 						for j := 0; j < 40; j = j + 2{
 							newAddrBytes = append(newAddrBytes, newKey[j] * 16 + newKey[j+1])
 						}
-
 						newAddr := common.BytesToAddress(newAddrBytes)
-
-						// newAddr = common.HexToAddress("0x0023200000000000000000000000000000000000")
-
 						var extNibbles [][]byte;
 						proof, _, extNibbles, _, _, err = statedb.GetProof(newAddr)
 						check(err)
@@ -574,10 +571,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					} else {
 						k := trie.HexToKeybytes(newKey)
 						ky := common.BytesToHash(k)
-						proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
-						// TODO: extNibbles check
+						var extNibbles [][]byte;
+						proof, _, extNibbles, _, _, err = statedb.GetStorageProof(addr, ky)
 						check(err)
-						if !isBranch(proof[len(proof)-1]) {
+						if len(extNibbles[len(extNibbles)-1]) == 0 && !isBranch(proof[len(proof)-1]) {
 							break
 						}
 					}	
@@ -593,10 +590,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 				// Let's construct the leaf L1 that will have the correct key (the queried one)
 
-				// TODO: compute l properly - where the obtained and required key/address started to diff
-				l := keyIndex - len(nibbles)
 				if isAccountProof {
-					compact := trie.HexToCompact(addr_nibbles[l:])
+					compact := trie.HexToCompact(addr_nibbles[start:])
 
 					compactLen := byte(len(compact))
 
@@ -607,12 +602,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					}
 					constructedLeaf[1] = byte(len(constructedLeaf)) - 2
 
-					node := prepareAccountLeafNode(addr, addrh, proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, addr_nibbles, false, false, false)
+					node := prepareAccountLeafNode(addr, addrh, proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, addr_nibbles, false, false, false)
 					nodes = append(nodes, node)
 				} else {
 
 					// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
-					compact := trie.HexToCompact(key[l:])
+					compact := trie.HexToCompact(key[start:])
 					// Add RLP:
 					compactLen := byte(len(compact))
 					rlp2 := 128 + compactLen

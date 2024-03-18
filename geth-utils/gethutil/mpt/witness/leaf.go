@@ -122,7 +122,7 @@ func getStorageRootCodeHashValue(leaf []byte, storageStart int) ([]byte, []byte)
 	return storageRootValue, codeHashValue
 }
 
-func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, neighbourNode, addressNibbles []byte, isPlaceholder, isSModExtension, isCModExtension bool) Node {
+func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, constructedLeaf, neighbourNode, addressNibbles []byte, isPlaceholder, isSModExtension, isCModExtension bool) Node {
 	// For non existing account proof there are two cases:
 	// 1. A leaf is returned that is not at the required address (wrong leaf).
 	// 2. A branch is returned as the last element of getProof and
@@ -174,12 +174,19 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 
 	// wrongValue is used only for proof that account doesn't exist
 
+	wrongLeaf := leafC
+	wrongLen := keyLenC
+	if constructedLeaf != nil {
+		wrongLeaf = constructedLeaf
+		wrongLen = int(constructedLeaf[2]) - 128
+	}
+
 	offset := 0
-	nibblesNum := (keyLenC - 1) * 2
-	wrongRlpBytes[0] = leafC[0]
-	wrongRlpBytes[1] = leafC[1]
-	wrongValue[0] = leafC[2] // length
-	if leafC[3] != 32 {      // odd number of nibbles
+	nibblesNum := (wrongLen - 1) * 2
+	wrongRlpBytes[0] = wrongLeaf[0]
+	wrongRlpBytes[1] = wrongLeaf[1]
+	wrongValue[0] = wrongLeaf[2] // length
+	if wrongLeaf[3] != 32 {      // odd number of nibbles
 		nibblesNum = nibblesNum + 1
 		wrongValue[1] = addressNibbles[64-nibblesNum] + 48
 		offset = 1
@@ -327,7 +334,7 @@ func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, pr
 
 		// When generating a proof that account doesn't exist, the length of both proofs is the same (doesn't reach
 		// this code).
-		return prepareAccountLeafNode(addr, addrh, leafS, leafC, nil, key, false, isSModExtension, isCModExtension)
+		return prepareAccountLeafNode(addr, addrh, leafS, leafC, nil, nil, key, false, isSModExtension, isCModExtension)
 	} else {
 		var leaf []byte
 		isSPlaceholder := false
@@ -387,7 +394,7 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 		leaf[4+i] = remainingNibbles[2*i+offset]*16 + remainingNibbles[2*i+1+offset]
 	}
 
-	node := prepareAccountLeafNode(addr, addrh, leaf, leaf, nil, key, true, false, false)
+	node := prepareAccountLeafNode(addr, addrh, leaf, leaf, nil, nil, key, true, false, false)
 
 	node.Account.ValueRlpBytes[0][0] = 184
 	node.Account.ValueRlpBytes[0][1] = 70
