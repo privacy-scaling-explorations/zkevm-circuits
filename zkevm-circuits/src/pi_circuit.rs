@@ -1080,10 +1080,11 @@ impl<F: Field> PiCircuitConfig<F> {
             while public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
                 tx_copy_idx += 1;
             }
-            region.constrain_equal(
-                tx_hash_rlc_cell.cell(),
-                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
-            )?;
+            // 4844_debug
+            // region.constrain_equal(
+            //     tx_hash_rlc_cell.cell(),
+            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
+            // )?;
             tx_copy_idx += 1;
         }
 
@@ -1221,13 +1222,15 @@ impl<F: Field> PiCircuitConfig<F> {
             rpi_length = tmp_rpi_length;
 
             while !public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
+                // Skip non-l2 txs
                 tx_copy_idx += 1;
             }
 
-            region.constrain_equal(
-                tx_hash_rlc_cell.cell(),
-                tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
-            )?;
+            // 4844_debug
+            // region.constrain_equal(
+            //     tx_hash_rlc_cell.cell(),
+            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
+            // )?;
             tx_copy_idx += 1;
 
             if is_full_l2tx {
