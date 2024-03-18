@@ -85,7 +85,6 @@ fn empty_block() -> Block<Fr> {
     }
 }
 
-// 4844_debug
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_simple_pi() {

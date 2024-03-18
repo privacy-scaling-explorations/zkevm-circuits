@@ -64,13 +64,6 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
 fn get_coinbase_constant() -> Address {
-    // 4844_debug
-    // let default_coinbase = if cfg!(feature = "scroll") {
-    //     Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
-    // } else {
-    //     Address::zero()
-    // };
-    // read_env_var("COINBASE", default_coinbase)
     read_env_var("COINBASE", Address::zero())
 }
 
@@ -307,8 +300,7 @@ impl PublicData {
     fn q_chunk_txbytes_start_offset(&self) -> usize {
         self.data_bytes_end_offset()
             + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
-            // 4844_debug
-            + 1 // an empty header row is provided for calculating differential len
+            + 1 // an empty header row is provided for calculating differential len in chunk_txbytes section.
             + 1 // new row
     }
 
@@ -710,7 +702,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 .collect()
         });
 
-        // 4844_debug
+        // Look up L1Msg TxHash in data bytes section from TxTable
         meta.lookup_any("tx.hash (L1Msg)", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_tx_hashes, Rotation::cur()),
@@ -734,7 +726,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 .collect()
         });
 
-        // 4844_debug
+        // Look up L2 TxHashRLC = RLC(rlp_signed) in chunk_txbytes from TxTable
         meta.lookup_any("tx.TxHashRLC (L2)", |meta| {
             let enable = and::expr([
                 meta.query_fixed(q_chunk_txbytes, Rotation::cur()),
@@ -757,7 +749,6 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 .map(|(input, table)| (enable.clone() * input, table))
                 .collect()
         });
-
 
         // 3. constrain block_table
         meta.create_gate(
@@ -1125,20 +1116,6 @@ impl<F: Field> PiCircuitConfig<F> {
             }
         }
 
-        let mut tx_copy_idx = 0;
-        for tx_hash_rlc_cell in tx_copy_cells.into_iter() {
-            // Skip L2 messages
-            while public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
-                tx_copy_idx += 1;
-            }
-            // 4844_debug
-            // region.constrain_equal(
-            //     tx_hash_rlc_cell.cell(),
-            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_OFFSET - 1].cell(),
-            // )?;
-            tx_copy_idx += 1;
-        }
-
         // Assign row for validating lookup to check:
         // data_hash == keccak256(rlc(data_bytes))
         data_bytes_rlc.unwrap().copy_advice(
@@ -1167,7 +1144,6 @@ impl<F: Field> PiCircuitConfig<F> {
         };
         self.q_keccak.enable(region, offset)?;
 
-        // 4844_debug
         // After the data bytes, an empty header row is provided for the chunk_txbytes section
         Ok((offset + 2, data_hash_rlc_cell)) 
     }
@@ -1230,7 +1206,6 @@ impl<F: Field> PiCircuitConfig<F> {
         let n_txs = transactions.len();
         let mut chunk_txbytes_rlc_op = None;
         let mut chunk_txbytes_length_op = None;
-        let mut tx_copy_idx: usize = 0;
 
         // The RLC of all l2 tx.rlp_signed
         let chunk_bytes = transactions
@@ -1272,18 +1247,6 @@ impl<F: Field> PiCircuitConfig<F> {
             offset = tmp_offset;
             rpi_rlc_acc = tmp_rpi_rlc_acc;
             rpi_length = tmp_rpi_length;
-
-            while !public_data.transactions[tx_copy_idx].is_chunk_l2_tx() {
-                // Skip non-l2 txs
-                tx_copy_idx += 1;
-            }
-
-            // 4844_debug
-            // region.constrain_equal(
-            //     tx_hash_rlc_cell.cell(),
-            //     tx_value_cells[tx_copy_idx * TX_LEN + TX_HASH_RLC_OFFSET - 1].cell(),
-            // )?;
-            tx_copy_idx += 1;
 
             if is_full_l2tx {
                 chunk_txbytes_rlc_op = final_cells[RPI_RLC_ACC_CELL_IDX].clone();

@@ -384,8 +384,7 @@ impl TxTable {
         )
     }
 
-    // 4844_debug
-    /// Return l1 pi exprs
+    /// Return l1 PICircuit exprs
     pub fn l1_pi_exprs<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
@@ -393,7 +392,7 @@ impl TxTable {
             meta.query_advice(self.value, Rotation::next()), // offset 22: TxType
         ]
     }
-    /// Return l2 pi exprs
+    /// Return l2 PICircuit exprs
     pub fn l2_pi_exprs<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_fixed(self.q_enable, Rotation::cur()),
