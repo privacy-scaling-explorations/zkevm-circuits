@@ -910,7 +910,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // 2. Assign chunk tx bytes.
         let (offset, chunk_txbytes_hash_rlc_cell) =
-            self.assign_chunk_txbytes(region, offset, public_data, tx_value_cells, challenges)?;
+            self.assign_chunk_txbytes(region, offset, public_data, challenges)?;
         debug_assert_eq!(offset, public_data.pi_bytes_start_offset());
 
         // 3. Assign public input bytes.
@@ -1178,7 +1178,6 @@ impl<F: Field> PiCircuitConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         public_data: &PublicData,
-        tx_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>), Error> {
         // Initialise the RLC accumulator and length values.
@@ -1229,7 +1228,7 @@ impl<F: Field> PiCircuitConfig<F> {
             // As the field TxHashRLC is already RLC-accumulated, it's guaranteed to fit within the
             // scalar field. Therefore, the variable field assignment method
             // assign_field is not necessary.
-            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, tx_hash_rlc_cell, final_cells) = self
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, final_cells) = self
                 .assign_tx_hash_rlc(
                     region,
                     offset,
@@ -1264,7 +1263,7 @@ impl<F: Field> PiCircuitConfig<F> {
             let tx_hash_rlc = rlc_be_bytes(&rlp_signed, challenges.keccak_input());
             let tx_hash_len = rlp_signed.len();
 
-            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, _, final_cells) = self
+            let (tmp_offset, tmp_rpi_rlc_acc, tmp_rpi_length, final_cells) = self
                 .assign_tx_hash_rlc(
                     region,
                     offset,
@@ -1341,7 +1340,6 @@ impl<F: Field> PiCircuitConfig<F> {
             usize,
             Value<F>,
             Value<F>,
-            AssignedCell<F, F>,
             [Option<AssignedCell<F, F>>; 3],
         ),
         Error,
@@ -1402,7 +1400,6 @@ impl<F: Field> PiCircuitConfig<F> {
             offset + 1,
             rpi_rlc_acc,
             rpi_length,
-            rpi_bytes_cell,
             [final_rpi_cell, final_rpi_rlc_cell, final_rpi_length_cell],
         ))
     }
