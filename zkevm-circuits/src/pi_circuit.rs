@@ -11,7 +11,6 @@ use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData};
 
 use crate::{
     evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable,
-    tx_circuit::TX_HASH_RLC_OFFSET,
 };
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{geth_types::TxType, Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
@@ -36,7 +35,7 @@ use crate::{
         RPI_LENGTH_ACC_CELL_IDX, RPI_RLC_ACC_CELL_IDX, TIMESTAMP_OFFSET,
     },
     state_circuit::StateCircuitExports,
-    tx_circuit::{CHAIN_ID_OFFSET as CHAIN_ID_OFFSET_IN_TX, TX_HASH_OFFSET, TX_LEN},
+    tx_circuit::{CHAIN_ID_OFFSET as CHAIN_ID_OFFSET_IN_TX, TX_LEN},
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
 use bus_mapping::util::read_env_var;
@@ -904,7 +903,6 @@ impl<F: Field> PiCircuitConfig<F> {
             0, /* offset == 0 */
             public_data,
             block_value_cells,
-            tx_value_cells,
             challenges,
         )?;
         debug_assert_eq!(offset, public_data.q_chunk_txbytes_start_offset());
@@ -948,7 +946,6 @@ impl<F: Field> PiCircuitConfig<F> {
         offset: usize,
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
-        tx_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(usize, AssignedCell<F, F>), Error> {
         // Initialise the RLC accumulator and length values.
@@ -1359,7 +1356,7 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || chunk_txbytes_rlc,
         )?;
-        let rpi_bytes_cell =
+        let _rpi_bytes_cell =
             region.assign_advice(|| "rlp_bytes", self.rpi_field_bytes, offset, || tx_hash_rlc)?;
         let rpi_rlc_cell =
             region.assign_advice(|| "rpi_rlc_acc", self.rpi_rlc_acc, offset, || rpi_rlc_acc)?;
