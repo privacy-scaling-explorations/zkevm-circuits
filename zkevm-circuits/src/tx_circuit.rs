@@ -88,6 +88,8 @@ use itertools::Itertools;
 pub const TX_LEN: usize = 28;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
+/// Offset of TxHashRLC tag in the tx table. TxHashRLC = RLC(tx.rlp_signed)
+pub const TX_HASH_RLC_OFFSET: usize = 20;
 /// Offset of ChainID tag in the tx table
 pub const CHAIN_ID_OFFSET: usize = 12;
 /// Offset of HashLength in the tx table
@@ -2576,6 +2578,7 @@ impl<F: Field> TxCircuitConfig<F> {
         chunk_txbytes_len_acc: Value<F>,
         chunk_txbytes_hash: Value<F>,
         pows_of_rand: &mut Vec<Value<F>>,
+        is_last_tx: bool,
         challenges: &Challenges<Value<F>>,
     ) -> Result<FixedRowsAssignmentResult<F>, Error> {
         let keccak_input = challenges.keccak_input();
@@ -2586,6 +2589,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let sign_hash_rlc = rlc_be_bytes(&sign_hash, evm_word);
         let hash_rlc = rlc_be_bytes(&hash, evm_word);
         let mut supplemental_data: Vec<Value<F>> = vec![];
+        let mut txbytes_hash_assignment: Option<AssignedCell<F, F>> = None;
         let mut tx_value_cells = vec![];
         let rlp_sign_tag_length = if tx.tx_type.is_l1_msg() {
             // l1 msg does not have sign data
@@ -2961,7 +2965,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 *offset,
                 || chunk_txbytes_len,
             )?;
-            tx_value_cells.push(region.assign_advice(
+            txbytes_hash_assignment = Some(region.assign_advice(
                 || "chunk_txbytes_hash",
                 self.chunk_txbytes_hash,
                 *offset,
@@ -3103,6 +3107,9 @@ impl<F: Field> TxCircuitConfig<F> {
             )?;
 
             *offset += 1;
+        }
+        if is_last_tx {
+            tx_value_cells.push(txbytes_hash_assignment.unwrap());
         }
         Ok((tx_value_cells, supplemental_data))
     }
@@ -3823,6 +3830,7 @@ impl<F: Field> TxCircuit<F> {
                         chunk_txbytes_len_acc,
                         chunk_txbytes_hash,
                         &mut pows_of_rand,
+                        is_last_tx,
                         challenges,
                     )?;
 

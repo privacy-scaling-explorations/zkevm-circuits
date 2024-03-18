@@ -383,6 +383,23 @@ impl TxTable {
             },
         )
     }
+
+    /// Return l1 PICircuit exprs
+    pub fn l1_pi_exprs<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
+            meta.query_advice(self.value, Rotation::cur()), // offset 21: TxHash
+            meta.query_advice(self.value, Rotation::next()), // offset 22: TxType
+        ]
+    }
+    /// Return l2 PICircuit exprs
+    pub fn l2_pi_exprs<F: Field>(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
+            meta.query_advice(self.value, Rotation::cur()), // offset 20: TxHashRLC
+            meta.query_advice(self.value, Rotation::prev()), // offset 19: TxHashLength
+        ]
+    }
 }
 
 impl<F: Field> LookupTable<F> for TxTable {
