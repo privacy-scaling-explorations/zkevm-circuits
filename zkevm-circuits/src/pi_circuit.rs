@@ -738,7 +738,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let input_exprs = vec![
                 1.expr(), // q_enable = true
                 l2_tx_hash_rlc,
-                meta.query_advice(rpi_length_acc, Rotation::cur()) - meta.query_advice(rpi_length_acc, Rotation::prev()), // len differential
+                meta.query_advice(rpi_length_acc, Rotation::cur())
+                    - meta.query_advice(rpi_length_acc, Rotation::prev()), // len differential
             ];
             let tx_table_l2_pi_exprs = tx_table.l2_pi_exprs(meta);
             assert_eq!(input_exprs.len(), tx_table_l2_pi_exprs.len());
@@ -1145,7 +1146,7 @@ impl<F: Field> PiCircuitConfig<F> {
         self.q_keccak.enable(region, offset)?;
 
         // After the data bytes, an empty header row is provided for the chunk_txbytes section
-        Ok((offset + 2, data_hash_rlc_cell)) 
+        Ok((offset + 2, data_hash_rlc_cell))
     }
 
     /// Assign chunk txbytes, the pre-image to chunk_txbytes_hash
@@ -1335,15 +1336,7 @@ impl<F: Field> PiCircuitConfig<F> {
         is_last_l2tx: bool,
         pows_of_rand: &mut Vec<Value<F>>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<
-        (
-            usize,
-            Value<F>,
-            Value<F>,
-            [Option<AssignedCell<F, F>>; 3],
-        ),
-        Error,
-    > {
+    ) -> Result<(usize, Value<F>, Value<F>, [Option<AssignedCell<F, F>>; 3]), Error> {
         let (mut final_rpi_cell, mut final_rpi_rlc_cell, mut final_rpi_length_cell) =
             (None, None, None);
 
