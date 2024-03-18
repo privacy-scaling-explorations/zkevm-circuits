@@ -1120,17 +1120,19 @@ impl<F: Field> PiCircuitConfig<F> {
 
     /// Assign chunk txbytes, the pre-image to chunk_txbytes_hash
     /// i.e. keccak256(rlc(chunk_txbytes)) == chunk_txbytes_hash.
-    /// 
-    /// The layout of the chunk_txbytes_hash section of the PI circuit differs slightly from other sections.
-    /// Instead of one byte per row, each row copies the TxHashRLC field from TxCircuit, which is an RLC summary 
-    /// of rlp_signed (including tx_type byte) of a L2 tx. This is to ensure the fixed length of an otherwise
-    /// variable length section. 
-    /// 
-    /// The rip_length_acc field, subsequently, accumulates the length of the rlp_signed data for each tx and the RLC multiplier
-    /// at each row is the power of rand corresponding to the differential length.
-    /// 
-    /// At the last row, the accumulation gives the correct ChunkTxbytesRLC, which is compared with the Keccak table record.
-    /// 
+    ///
+    /// The layout of the chunk_txbytes_hash section of the PI circuit differs slightly from other
+    /// sections. Instead of one byte per row, each row copies the TxHashRLC field from
+    /// TxCircuit, which is an RLC summary of rlp_signed (including tx_type byte) of a L2 tx.
+    /// This is to ensure the fixed length of an otherwise variable length section.
+    ///
+    /// The rip_length_acc field, subsequently, accumulates the length of the rlp_signed data for
+    /// each tx and the RLC multiplier at each row is the power of rand corresponding to the
+    /// differential length.
+    ///
+    /// At the last row, the accumulation gives the correct ChunkTxbytesRLC, which is compared with
+    /// the Keccak table record.
+    ///
     /// |       rpi       |     rpi_bytes     |                       rpi_rlc_acc                      |         rpi_length_acc        |  q_keccak |
     /// | ChunkTxbytesRLC | l2tx[0].TxHashRLC | prev * rand^l2tx[0].rlp_signed.len + l2tx[0].TxHashRLC | prev + l2tx[0].rlp_signed.len |     0     |
     /// | ChunkTxbytesRLC | l2tx[1].TxHashRLC | prev * rand^l2tx[1].rlp_signed.len + l2tx[1].TxHashRLC | prev + l2tx[1].rlp_signed.len |     0     |
@@ -1140,7 +1142,6 @@ impl<F: Field> PiCircuitConfig<F> {
     /// |     Padding     |      Padding      |                        Padding                         |            Padding            |     0     |
     /// |       ...       |        ...        |                           ...                          |              ...              |     0     |
     /// | ChunkTxbytesRLC |        N/A        |                   ChunkTxbytesHashRLC                  | Len(Concat(l2txs::rlp_signed))|     1     |
-    /// 
     fn assign_chunk_txbytes(
         &self,
         region: &mut Region<'_, F>,
