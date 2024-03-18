@@ -1161,16 +1161,16 @@ impl<F: Field> PiCircuitConfig<F> {
     /// At the last row, the accumulation gives the correct ChunkTxbytesRLC, which is compared with
     /// the Keccak table record.
     ///
-    /// |       rpi       |     rpi_bytes     |                       rpi_rlc_acc                      |         rpi_length_acc        |  q_keccak |
-    /// |                                          (empty header row; this is for differential len calculation)                                    |
-    /// | ChunkTxbytesRLC | l2tx[0].TxHashRLC | prev * rand^l2tx[0].rlp_signed.len + l2tx[0].TxHashRLC | prev + l2tx[0].rlp_signed.len |     0     |
-    /// | ChunkTxbytesRLC | l2tx[1].TxHashRLC | prev * rand^l2tx[1].rlp_signed.len + l2tx[1].TxHashRLC | prev + l2tx[1].rlp_signed.len |     0     |
-    /// |       ...       |        ...        |                           ...                          |               ...             |     0     |
-    /// | ChunkTxbytesRLC | l2tx[n].TxHashRLC | prev * rand^l2tx[n].rlp_signed.len + l2tx[n].TxHashRLC | prev + l2tx[n].rlp_signed.len |     0     | <- Last non-padding row
-    /// |       ...       |        ...        |                           ...                          |              ...              |     0     |
-    /// |     Padding     |      Padding      |                        Padding                         |            Padding            |     0     |
-    /// |       ...       |        ...        |                           ...                          |              ...              |     0     |
-    /// | ChunkTxbytesRLC |        N/A        |                   ChunkTxbytesHashRLC                  | Len(Concat(l2txs::rlp_signed))|     1     |
+    /// |       rpi       |      rpi_bytes      |                         rpi_rlc_acc                        |          rpi_length_acc         |  q_keccak |
+    /// |                                              (empty header row; this is for differential len calculation)                                        |
+    /// | ChunkTxbytesRLC | l2tx\[0\].TxHashRLC | prev * rand^l2tx\[0\].rlp_signed.len + l2tx\[0\].TxHashRLC | prev + l2tx\[0\].rlp_signed.len |     0     |
+    /// | ChunkTxbytesRLC | l2tx\[1\].TxHashRLC | prev * rand^l2tx\[1\].rlp_signed.len + l2tx\[1\].TxHashRLC | prev + l2tx\[1\].rlp_signed.len |     0     |
+    /// |       ...       |         ...         |                             ...                            |                ...              |     0     |
+    /// | ChunkTxbytesRLC | l2tx\[n\].TxHashRLC | prev * rand^l2tx\[n\].rlp_signed.len + l2tx\[n\].TxHashRLC | prev + l2tx\[n\].rlp_signed.len |     0     | <- Last non-padding row
+    /// |       ...       |         ...         |                             ...                            |                ...              |     0     |
+    /// |     Padding     |       Padding       |                          Padding                           |             Padding             |     0     |
+    /// |       ...       |         ...         |                             ...                            |                ...              |     0     |
+    /// | ChunkTxbytesRLC |         N/A         |                     ChunkTxbytesHashRLC                    |  Len(Concat(l2txs::rlp_signed)) |     1     |
     fn assign_chunk_txbytes(
         &self,
         region: &mut Region<'_, F>,
