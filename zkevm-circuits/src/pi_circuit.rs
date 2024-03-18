@@ -9,9 +9,7 @@ mod test;
 
 use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData};
 
-use crate::{
-    evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable,
-};
+use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{geth_types::TxType, Address, Field, Hash, ToBigEndian, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
