@@ -307,6 +307,8 @@ impl PublicData {
     fn q_chunk_txbytes_start_offset(&self) -> usize {
         self.data_bytes_end_offset()
             + 1 // a row is reserved for the keccak256(rlc(data_bytes)) == data_hash lookup.
+            // 4844_debug
+            + 1 // an empty header row is provided for calculating differential len
             + 1 // new row
     }
 
@@ -707,6 +709,55 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 .map(|(input, table)| (q_keccak.expr() * input, table))
                 .collect()
         });
+
+        // 4844_debug
+        meta.lookup_any("tx.hash (L1Msg)", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_tx_hashes, Rotation::cur()),
+                not::expr(meta.query_advice(is_rpi_padding, Rotation::cur())),
+            ]);
+
+            let l1_tx_hash = meta.query_advice(rpi, Rotation::cur());
+
+            let input_exprs = vec![
+                1.expr(), // q_enable = true
+                l1_tx_hash,
+                (TxType::L1Msg as u64).expr(),
+            ];
+            let tx_table_l1_pi_exprs = tx_table.l1_pi_exprs(meta);
+            assert_eq!(input_exprs.len(), tx_table_l1_pi_exprs.len());
+
+            input_exprs
+                .into_iter()
+                .zip(tx_table_l1_pi_exprs)
+                .map(|(input, table)| (enable.clone() * input, table))
+                .collect()
+        });
+
+        // 4844_debug
+        meta.lookup_any("tx.TxHashRLC (L2)", |meta| {
+            let enable = and::expr([
+                meta.query_fixed(q_chunk_txbytes, Rotation::cur()),
+                not::expr(meta.query_advice(is_rpi_padding, Rotation::cur())),
+            ]);
+
+            let l2_tx_hash_rlc = meta.query_advice(rpi_bytes, Rotation::cur());
+
+            let input_exprs = vec![
+                1.expr(), // q_enable = true
+                l2_tx_hash_rlc,
+                meta.query_advice(rpi_length_acc, Rotation::cur()) - meta.query_advice(rpi_length_acc, Rotation::prev()), // len differential
+            ];
+            let tx_table_l2_pi_exprs = tx_table.l2_pi_exprs(meta);
+            assert_eq!(input_exprs.len(), tx_table_l2_pi_exprs.len());
+
+            input_exprs
+                .into_iter()
+                .zip(tx_table_l2_pi_exprs)
+                .map(|(input, table)| (enable.clone() * input, table))
+                .collect()
+        });
+
 
         // 3. constrain block_table
         meta.create_gate(
@@ -1116,7 +1167,9 @@ impl<F: Field> PiCircuitConfig<F> {
         };
         self.q_keccak.enable(region, offset)?;
 
-        Ok((offset + 1, data_hash_rlc_cell))
+        // 4844_debug
+        // After the data bytes, an empty header row is provided for the chunk_txbytes section
+        Ok((offset + 2, data_hash_rlc_cell)) 
     }
 
     /// Assign chunk txbytes, the pre-image to chunk_txbytes_hash
@@ -1135,6 +1188,7 @@ impl<F: Field> PiCircuitConfig<F> {
     /// the Keccak table record.
     ///
     /// |       rpi       |     rpi_bytes     |                       rpi_rlc_acc                      |         rpi_length_acc        |  q_keccak |
+    /// |                                          (empty header row; this is for differential len calculation)                                    |
     /// | ChunkTxbytesRLC | l2tx[0].TxHashRLC | prev * rand^l2tx[0].rlp_signed.len + l2tx[0].TxHashRLC | prev + l2tx[0].rlp_signed.len |     0     |
     /// | ChunkTxbytesRLC | l2tx[1].TxHashRLC | prev * rand^l2tx[1].rlp_signed.len + l2tx[1].TxHashRLC | prev + l2tx[1].rlp_signed.len |     0     |
     /// |       ...       |        ...        |                           ...                          |               ...             |     0     |
@@ -1168,8 +1222,6 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // Assign chunk txbytes
         // Summary field TxHashRLC from TxTable is the RLC of a transaction's rlp_signed bytes.
-        // Its accumulation correctness is verified within the RLP Circuit and lookup-constrained
-        // from the TxCircuit.
         let transactions = public_data
             .transactions
             .iter()

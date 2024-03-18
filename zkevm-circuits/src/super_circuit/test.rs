@@ -421,7 +421,8 @@ fn precomiple_super_circuits_params(max_txs: usize, max_calldata: usize) -> Circ
     }
 }
 
-#[ignore]
+// 4844_debug
+// #[ignore]
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_super_circuit_ec_ops_txs() {
