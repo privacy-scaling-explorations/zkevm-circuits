@@ -9,8 +9,7 @@ use crate::{
     table::{
         self, rw_table::get_rwtable_cols_commitment, AccountFieldTag, LookupTable, TxLogFieldTag,
     },
-    util::{self},
-    witness::{Rw, RwRow},
+    witness::Rw,
 };
 use bus_mapping::circuit_input_builder::FixedCParams;
 use eth_types::{address, Address, Field, U256};
@@ -32,7 +31,6 @@ use itertools::Itertools;
 use rand::rngs::OsRng;
 use snark_verifier::util::transcript::Transcript;
 use table::RwTable;
-use util::word::WordLoHi;
 
 struct RwTableCircuit<'a> {
     rws: &'a [Rw],
@@ -100,24 +98,7 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
                     self.prev_chunk_last_rw,
                 );
                 config.enable.enable(&mut region, 0)?;
-                // avoid empty column cause commitment value as identity point
-                // assign rwtable.id=1 to make dummy gate work
-                config.rw_table.assign(
-                    &mut region,
-                    0,
-                    &RwRow {
-                        rw_counter: Value::known(F::ONE),
-                        is_write: Value::known(F::ONE),
-                        tag: Value::known(F::ONE),
-                        id: Value::known(F::ONE),
-                        address: Value::known(F::ONE),
-                        field_tag: Value::known(F::ONE),
-                        storage_key: WordLoHi::new([F::ONE, F::ONE]).into_value(),
-                        value: WordLoHi::new([F::ONE, F::ONE]).into_value(),
-                        value_prev: WordLoHi::new([F::ONE, F::ONE]).into_value(),
-                        init_val: WordLoHi::new([F::ONE, F::ONE]).into_value(),
-                    },
-                )
+                Ok(())
             },
         )?;
         Ok(())
@@ -125,7 +106,6 @@ impl<'a, F: Field> Circuit<F> for RwTableCircuit<'a> {
 }
 
 #[test]
-#[ignore]
 fn test_user_challenge_aggregation() {
     let num_challenges = 1;
     let k = 12;
