@@ -334,7 +334,9 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
         config.load_byte_table(layouter)?;
-        config.pow_of_rand_table.assign(layouter, challenges)?;
+        config
+            .pow_of_rand_table
+            .assign(layouter, challenges, None)?;
         let export = config.execution.assign_block(layouter, block, challenges)?;
         self.exports.borrow_mut().replace(export);
         Ok(())
