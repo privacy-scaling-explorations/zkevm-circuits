@@ -203,7 +203,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let mut rws = StepRws::new(block, step);
 
-        let [memory_start, msize] = [0, 1].map(|_| rws.next().stack_value());
+        let memory_start = rws.next().stack_value();
+        let msize = rws.next().stack_value();
+
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;
@@ -223,8 +225,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             // It takes 6 + is_persistent reads or writes to reach the topic stack write section.
             // Each topic takes at least 1 stack read. They take an additional tx log write if the
             // call is persistent.
-            rws.offset_add(6 + is_persistent + topic * (1 + is_persistent));
-            rws.next().stack_value()
+            block
+                .get_rws(step, 6 + is_persistent + topic * (1 + is_persistent))
+                .stack_value()
         });
         for i in 0..4 {
             let topic = topics.next();

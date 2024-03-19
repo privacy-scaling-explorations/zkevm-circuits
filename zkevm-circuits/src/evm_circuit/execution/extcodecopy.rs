@@ -204,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             call.is_persistent,
         )?;
 
-        rws.offset_add(4);
+        rws.offset_add(3);
 
         let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
