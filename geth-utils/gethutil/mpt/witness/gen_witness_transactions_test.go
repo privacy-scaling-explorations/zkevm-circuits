@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"bytes"
 	"fmt"
 	"main/gethutil/mpt/trie"
 	"main/gethutil/mpt/types"
@@ -8,16 +9,40 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+func makeTransactions(n int) []*types.Transaction {
+	txs := make([]*types.Transaction, n)
+	key, _ := crypto.GenerateKey()
+	signer := types.LatestSigner(params.TestChainConfig)
+
+	for i := range txs {
+		amount := big.NewInt(int64(i)*10 ^ 9)
+		gas_price := big.NewInt(300_000)
+		data := make([]byte, 100)
+		// randomly assigned for debugging
+		data[3] = 3
+		data[4] = 3
+		data[5] = 3
+		data[6] = 3
+		data[7] = 3
+		tx := types.NewTransaction(uint64(i), common.Address{}, amount, 10*10^6, gas_price, data)
+		signedTx, err := types.SignTx(tx, signer, key)
+		if err != nil {
+			panic(err)
+		}
+		txs[i] = signedTx
+	}
+	return txs
+}
+
 /*
-TestNonHashedTransactionsStackTrieGetProof inserts 70 transactions into a stacktrie.
-For each of the 70 modifications of the trie it asks for a proof - GetProof is called before
+transactionsStackTrieInsertionTemplate inserts n transactions into a stacktrie.
+For each of the n modifications of the trie it asks for a proof - GetProof is called before
 and after the modification. The transactions in the trie are not hashed and thus GetProof
 does not require to query a database to get the preimages.
 
@@ -62,59 +87,84 @@ The first proof element is a branch with children at position 0 (branch B) and 1
 The second element is the 16-th transaction. For example, the third byte (16) represents
 the transaction index.
 */
-func TestNonHashedTransactionsStackTrieGetProof(t *testing.T) {
-	txs := make([]*types.Transaction, 70)
-	key, _ := crypto.GenerateKey()
-	signer := types.LatestSigner(params.TestChainConfig)
 
-	for i := range txs {
-		amount := math.BigPow(2, int64(i))
-		price := big.NewInt(300000)
-		data := make([]byte, 100)
-		tx := types.NewTransaction(uint64(i), common.Address{}, amount, 123457, price, data)
-		signedTx, err := types.SignTx(tx, signer, key)
-		if err != nil {
-			panic(err)
-		}
-		txs[i] = signedTx
-	}
-
+func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
+	txs := makeTransactions(n)
 	db := rawdb.NewMemoryDatabase()
 	stackTrie := trie.NewStackTrie(db)
 
-	stackTrie.UpdateAndGetProofs(db, types.Transactions(txs))
+	proofs, _ := stackTrie.UpdateAndGetProofs(db, types.Transactions(txs))
 
-	fmt.Println("===")
+	rlp_last_tx, _ := txs[n-1].MarshalBinary()
+	last_proofC := proofs[len(proofs)-1].GetProofC()
+
+	// Proof of the first tx is appended at the end of the proofs if len(tx) < 0x80
+	// That's why we minus 2 here.
+	if len(txs) > 1 && len(txs) < 256 {
+		last_proofC = proofs[len(proofs)-2].GetProofC()
+	}
+	last_leaf_proof := last_proofC[len(last_proofC)-1]
+
+	if !bytes.Equal(last_leaf_proof, rlp_last_tx) {
+		fmt.Println("- last_tx ", rlp_last_tx)
+		fmt.Println("- last_proof ", last_leaf_proof)
+		t.Fail()
+	}
+}
+
+func TestStackTrieInsertion_1Tx(t *testing.T) {
+	// Only one leaf
+	transactionsStackTrieInsertionTemplate(t, 1)
+}
+
+func TestStackTrieInsertion_2Txs(t *testing.T) {
+	// One ext. node and one leaf
+	transactionsStackTrieInsertionTemplate(t, 2)
+}
+
+func TestStackTrieInsertion_3Txs(t *testing.T) {
+	// One ext. node, one branch and one leaf
+	transactionsStackTrieInsertionTemplate(t, 3)
+}
+
+func TestStackTrieInsertion_4Txs(t *testing.T) {
+	// One ext. node, one branch and two leaves
+	transactionsStackTrieInsertionTemplate(t, 4)
+}
+
+func TestStackTrieInsertion_16Txs(t *testing.T) {
+	// One ext. node and one branch with full leaves (16 leaves)
+	transactionsStackTrieInsertionTemplate(t, 16)
+}
+
+func TestStackTrieInsertion_17Txs(t *testing.T) {
+	// One ext. node, 3 branches and 17 leaves.
+	// The original ext. node turns into a branch (B1) which has children at position 0 and 1.
+	// At position 0 of B1, it has a branch with full leaves
+	// At position 1 of B1, it has a newly leaf
+	transactionsStackTrieInsertionTemplate(t, 17)
+}
+
+func TestStackTrieInsertion_33Txs(t *testing.T) {
+	// Follow above test and have one more branch generated
+	transactionsStackTrieInsertionTemplate(t, 33)
+}
+
+func TestStackTrieInsertion_ManyTxs(t *testing.T) {
+	// Just randomly picking a large number.
+	// The cap of block gas limit is 30M, the minimum gas cost of a tx is 21k
+	// 30M / 21k ~= 1429
+	transactionsStackTrieInsertionTemplate(t, 2000)
 }
 
 /*
-TestHashedTransactionsStackTrieGetProof inserts 2 transactions into a stacktrie,
+batchedTransactionsStackTrieProofTemplate inserts n transactions into a stacktrie,
 the trie is then hashed (DeriveSha call).
-The proof is asked for one of the two transactions. The transactions in the trie are hashed and thus
+The proof is asked for one of the n transactions. The transactions in the trie are hashed and thus
 GetProof requires to query a database to get the preimages.
 */
-func TestHashedTransactionsStackTrieGetProof(t *testing.T) {
-	txs := make([]*types.Transaction, 2)
-	key, _ := crypto.GenerateKey()
-	signer := types.LatestSigner(params.TestChainConfig)
-
-	for i := range txs {
-		amount := math.BigPow(2, int64(i))
-		price := big.NewInt(300000)
-		data := make([]byte, 100)
-		data[3] = 3
-		data[4] = 3
-		data[5] = 3
-		data[6] = 3
-		data[7] = 3
-		tx := types.NewTransaction(uint64(i), common.Address{}, amount, 123457, price, data)
-		signedTx, err := types.SignTx(tx, signer, key)
-		if err != nil {
-			panic(err)
-		}
-		txs[i] = signedTx
-	}
-
+func batchedTransactionsStackTrieProofTemplate(n int) {
+	txs := makeTransactions(n)
 	db := rawdb.NewMemoryDatabase()
 	stackTrie := trie.NewStackTrie(db)
 
@@ -130,7 +180,35 @@ func TestHashedTransactionsStackTrieGetProof(t *testing.T) {
 		return
 	}
 
-	fmt.Println(proofS)
-
+	fmt.Println("proofS", proofS)
 	fmt.Println("===")
+}
+
+func TestBatchedTxsProof_1Tx(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(1)
+}
+
+func TestBatchedTxsProof_2Txs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(2)
+}
+
+func TestBatchedTxsProof_3Txs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(3)
+}
+func TestBatchedTxsProof_4Txs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(4)
+}
+
+func TestBatchedTxsProof_16Txs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(16)
+}
+
+func TestBatchedTxsProof_17Txs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(17)
+}
+func TestBatchedTxsProof_33Txs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(33)
+}
+func TestBatchedTxsProof_ManyTxs(t *testing.T) {
+	batchedTransactionsStackTrieProofTemplate(2000)
 }

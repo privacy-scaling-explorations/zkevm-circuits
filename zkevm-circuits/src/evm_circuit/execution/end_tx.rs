@@ -75,10 +75,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = UpdateBalanceGadget::construct(
-            cb,
+        let gas_fee_refund = cb.increase_balance(
             tx_caller_address.to_word(),
-            vec![mul_gas_price_by_refund.product().clone()],
+            mul_gas_price_by_refund.product().clone(),
             None,
         );
 
@@ -111,7 +110,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             false.expr(),
             mul_effective_tip_by_gas_used.product().clone(),
             None,
-            true,
         );
 
         let end_tx = EndTxHelperGadget::construct(
@@ -152,11 +150,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas() - step.gas_left;
-
         let mut rws = StepRws::new(block, step);
-
         rws.offset_add(2);
-
         let (refund, _) = rws.next().tx_refund_value_pair();
         let (caller_balance, caller_balance_prev) = rws.next().account_balance_pair();
         let (coinbase_code_hash_prev, _) = rws.next().account_codehash_pair();
@@ -213,18 +208,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
         self.coinbase_code_hash_is_zero
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
-        if !coinbase_reward.is_zero() {
-            if coinbase_code_hash_prev.is_zero() {
-                rws.offset_add(1)
-            }
-            let coinbase_balance_pair = rws.next().account_balance_pair();
-            self.coinbase_reward.assign(
-                region,
-                offset,
-                coinbase_balance_pair,
-                effective_tip * gas_used,
-            )?;
-        }
+        self.coinbase_reward.assign(
+            region,
+            offset,
+            &mut rws,
+            !coinbase_code_hash_prev.is_zero(),
+            coinbase_reward,
+            false,
+        )?;
         self.is_persistent.assign(
             region,
             offset,
