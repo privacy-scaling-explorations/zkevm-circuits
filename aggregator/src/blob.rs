@@ -158,8 +158,8 @@ mod tests {
         for z in 0..10 {
             let z = Scalar::from(u64::try_from(13241234 + z).unwrap());
             assert_eq!(
-                reth_point_evaluation(z, blob.coefficients()),
-                interpolate(z, blob.coefficients())
+                reth_point_evaluation(z, blob.coefficients().map(|c| Scalar::from_raw(c.0))),
+                interpolate(z, blob.coefficients().map(|c| Scalar::from_raw(c.0)))
             );
         }
     }
