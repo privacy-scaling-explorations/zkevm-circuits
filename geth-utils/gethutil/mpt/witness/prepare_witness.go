@@ -1,14 +1,18 @@
 package witness
 
 import (
+	"fmt"
 	"math/big"
 
 	"main/gethutil/mpt/oracle"
 	"main/gethutil/mpt/state"
 	"main/gethutil/mpt/trie"
+	"main/gethutil/mpt/types"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 const valueLen = 34
@@ -43,6 +47,7 @@ const (
 	StorageChanged
 	StorageDoesNotExist
 	AccountCreate
+	TransactionInsertion
 )
 
 type TrieModification struct {
@@ -97,7 +102,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	} else if tMod.Type == AccountDestructed {
 		statedb.DeleteAccount(tMod.Address)
 	}
-	// No statedb change in case of AccountDoesNotExist.
+	// No statedb change in case of AccountDoesNotExist and TransactionInsertion
 
 	statedb.IntermediateRoot(false)
 
@@ -198,6 +203,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
+			fmt.Println("Storage ProofS:", len(storageProof), storageProof)
 
 			sRoot := statedb.GetTrie().Hash()
 
@@ -218,6 +224,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			storageProof1, neighbourNode2, extNibbles2, isLastLeaf2, isNeighbourNodeHashed2, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
+			fmt.Println("Storage ProofC:", len(storageProof1), storageProof1)
 
 			aNode := aNeighbourNode2
 			aIsLastLeaf := aIsLastLeaf1
@@ -282,6 +289,36 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 	return nodes
 }
 
+// prepareStackTrieWitness obtains the GetProof proof before and after the modification for each
+// of the modification. It then converts the two proofs into an MPT circuit witness for each of
+// the modifications and stores it into a file.
+func prepareStackTrieWitness(testName string, list types.DerivableList) {
+	db := rawdb.NewMemoryDatabase()
+	stackTrie := trie.NewStackTrie(db)
+	proofs, _ := stackTrie.UpdateAndGetProofs(db, list)
+	root, _ := stackTrie.Commit()
+
+	var key []byte
+	var nodes []Node
+	// for i, proof := range proofs {
+	i := len(proofs) - 2
+	proof := proofs[i]
+	idx := i + 1
+	nodes = append(nodes, GetStartNode(testName, common.Hash{}, root, 0))
+	var node []Node
+	if (i <= 0x7f && len(proofs)-1 == i) || i == 127 {
+		key = rlp.AppendUint64(key[:0], uint64(0))
+		node = GenerateWitness(uint(0), key, key, &proof)
+	} else {
+		key = rlp.AppendUint64(key[:0], uint64(idx))
+		node = GenerateWitness(uint(idx), key, key, &proof)
+	}
+	nodes = append(nodes, node...)
+	nodes = append(nodes, GetEndNode())
+	// }
+	StoreNodes(testName, nodes)
+}
+
 // prepareWitness obtains the GetProof proof before and after the modification for each
 // of the modification. It then converts the two proofs into an MPT circuit witness for each of
 // the modifications and stores it into a file.
@@ -298,6 +335,170 @@ func prepareWitness(testName string, trieModifications []TrieModification, state
 func prepareWitnessSpecial(testName string, trieModifications []TrieModification, statedb *state.StateDB, specialTest byte) {
 	nodes := obtainTwoProofsAndConvertToWitness(trieModifications, statedb, specialTest)
 	StoreNodes(testName, nodes)
+}
+
+// For stack trie, we have the following combinations ([proofS] -> [proofC])
+//
+//	-[] [(empty)] -> [LEAF]
+//	-[] [LEAF] -> [EXT - BRANCH - LEAF]
+//	-[] [EXT - BRANCH] -> [EXT - BRANCH - LEAF]
+//	-[] [EXT - BRANCH] -> [BRANCH - LEAF] (modified extension)
+//	-[] [EXT] -> [BRANCH - BRANCH - BRANCH - LEAF] --> 144
+//	-[] [BRANCH - LEAF] -> [BRANCH - BRANCH - LEAF] (modified extension)
+//	-[] [BRANCH - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - (...BRANCH) - LEAF]
+//	-[] [BRANCH - BRANCH - BRANCH - EXT] -> [BRANCH - BRANCH - BRANCH - BRANCH - LEAF]
+//	-[] [BRANCH - BRANCH - LEAF ] -> [BRANCH - BRANCH - LEAF - BRANCH - LEAF]
+//	-[] [LEAF] -> [LEAF]
+//	-[] [EXT] -> [EXT]
+//	-[] [EXT - EXT] -> [EXT - EXT]
+//	-[] [EXT - LEAF] -> [LEAF]
+//	-[] [BRANCH - LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF]
+//	-[] [BRANCH - BRANCH - EXT - BRANCH - (LEAF)] -> [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH - LEAF]
+//	-[] [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH) - LEAF]
+//	-[] [LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - BRANCH - LEAF]
+func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []Node {
+	k := trie.KeybytesToHex(key)
+	k = k[:len(k)-1]
+	// padding k to 32 bytes
+	kk := make([]byte, 32-len(k))
+	k = append(k, kk...)
+	fmt.Println("txIdx", txIdx)
+
+	toBeHashed := make([][]byte, 0)
+	proofS := proof.GetProofS()
+	proofC := proof.GetProofC()
+	extNibblesS := proof.GetNibblesS()
+	extNibblesC := proof.GetNibblesC()
+
+	keyIndex := 0
+	len1 := len(proofS)
+	len2 := len(proofC)
+	minLen := min(len1, len2)
+
+	var nodes []Node
+	// Empty stack trie
+	if len1 == 0 {
+		leafNode := prepareTxLeafAndPlaceholderNode(1, proofC[0], k, false)
+		return append(nodes, leafNode)
+	}
+
+	upTo := minLen - 1
+	is_end_with_leaf := true
+	isStartWithExt := false
+	additionalBranch := true
+	if len1 > 0 {
+		is_end_with_leaf = isTxLeaf(proofS[len1-1])
+
+		if isTxExt(proofS[0]) {
+			isStartWithExt = true
+		}
+
+		// The length of proofS and proofC is equal and
+		// the last element of proofC is an extension
+		if len1 == len2 && isTxExt(proofC[len2-1]) {
+			additionalBranch = false
+		}
+
+		if isTxLeaf(proofS[len1-1]) && isTxLeaf(proofC[len2-1]) {
+			upTo = minLen
+		}
+	}
+
+	isExtension := false
+	extensionNodeInd := 0
+
+	var extListRlpBytes []byte
+	var extValues [][]byte
+	for i := 0; i < 4; i++ {
+		extValues = append(extValues, make([]byte, 34))
+	}
+
+	fmt.Println("upto", upTo)
+	for i := 0; i < upTo; i++ {
+		if !isBranch(proofS[i]) {
+			fmt.Println("extNibbleS/C", extNibblesS, extNibblesC)
+			areThereNibbles := len(extNibblesS) != 0
+			if areThereNibbles { // extension node
+				var numberOfNibbles byte
+				isExtension = true
+
+				// FIXME: handle the case of proofS(ext), proofC(branch), and it needs to add a branch placeholder at proofS?
+				numberOfNibbles, extListRlpBytes, extValues =
+					prepareExtensions(extNibblesS, extensionNodeInd, proofS[i], proofC[i])
+
+				keyIndex += int(numberOfNibbles)
+				// extensionNodeInd++
+				fmt.Println("Increase keyIdx", keyIndex)
+				continue
+			}
+
+			node := prepareTxLeafNode(txIdx+uint(i), proofS[len1-1], proofC[len2-1], k, nil, false, false, false)
+			nodes = append(nodes, node)
+		} else {
+			var extNode1 []byte = nil
+			var extNode2 []byte = nil
+			if isExtension {
+				extNode1 = proofS[i-1]
+				extNode2 = proofC[i-1]
+			}
+
+			bNode := prepareBranchNode(
+				proofS[i], proofC[i], extNode1, extNode2, extListRlpBytes,
+				extValues, k[keyIndex], k[keyIndex],
+				false, false, isExtension)
+			nodes = append(nodes, bNode)
+
+			keyIndex += 1
+
+			isExtension = false
+		}
+	}
+
+	// To address the length of proofS and proofC is not equal or the order of the type is matched.
+	if additionalBranch {
+		fmt.Println("extNibbleS/C", extNibblesS, extNibblesC)
+		leafRow0 := proofS[0] // To compute the drifted position.
+		isModifiedExtNode, _, _, bNode :=
+			addBranchAndPlaceholder(
+				proofS, proofC, extNibblesS, extNibblesC,
+				leafRow0, k, nil,
+				keyIndex, extensionNodeInd, additionalBranch,
+				false, false, is_end_with_leaf, &toBeHashed)
+
+		if !isStartWithExt {
+			nodes = append(nodes, bNode)
+		}
+
+		var leafNode Node
+		// Add a tx leaf after branch placeholder
+		if !isModifiedExtNode {
+			// if the last element of proofS is a leaf, it should be covered above
+			if is_end_with_leaf {
+				return nodes
+			}
+			leafNode = prepareTxLeafNode(txIdx, proofS[len1-1], proofC[len2-1], k, nil, isBranch(proofS[len1-1]), false, false)
+		} else {
+			fmt.Println("MODIFIED EXT CASE, IGNORE NOW!!")
+			// TODO might not fit our case bcs we have  [EXT - BRANCH] --> [BRANCH - LEAF]
+			// isSModExtension := false
+			// if len2 > len1 {
+			// 	isSModExtension = true
+			// }
+			// leafNode = prepareTxLeafAndPlaceholderNode(txIdx, proofC[len2-1], k, isSModExtension)
+
+			// When a proof element is a modified extension node (new extension node appears at the position
+			// of the existing extension node), additional rows are added (extension node before and after
+			// modification).
+			// leafNode = equipLeafWithModExtensionNode(nil, leafNode, common.Address{0}, proofS, proofC, proofC,
+			// 	extNibblesS, extNibblesC, k, nil,
+			// 	keyIndex, extensionNodeInd, numberOfNibbles, false, &toBeHashed)
+		}
+
+		nodes = append(nodes, leafNode)
+
+	}
+
+	return nodes
 }
 
 // updateStateAndPrepareWitness updates the state according to the specified keys and values and then
@@ -325,7 +526,9 @@ func updateStateAndPrepareWitness(testName string, keys, values []common.Hash, a
 // convertProofToWitness takes two GetProof proofs (before and after a single modification) and prepares
 // a witness for the MPT circuit. Alongside, it prepares the byte streams that need to be hashed
 // and inserted into the Keccak lookup table.
-func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []byte, proof1, proof2, extNibblesS, extNibblesC [][]byte, storage_key common.Hash, key []byte, neighbourNode []byte,
+func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []byte,
+	proof1, proof2, extNibblesS, extNibblesC [][]byte,
+	storage_key common.Hash, key []byte, neighbourNode []byte,
 	isAccountProof, nonExistingAccountProof, nonExistingStorageProof, isShorterProofLastLeaf bool) []Node {
 	toBeHashed := make([][]byte, 0)
 
@@ -467,9 +670,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			// of the existing extension node), additional rows are added (extension node before and after
 			// modification).
 			if isModifiedExtNode {
-				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
-					keyIndex, extensionNodeInd, numberOfNibbles, additionalBranch,
-					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
+				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, nil, extNibblesS, extNibblesC, key, neighbourNode,
+					keyIndex, extensionNodeInd, numberOfNibbles, isAccountProof, &toBeHashed)
 			}
 			nodes = append(nodes, leafNode)
 		} else {

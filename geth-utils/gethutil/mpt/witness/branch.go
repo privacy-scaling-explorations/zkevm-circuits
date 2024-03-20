@@ -1,10 +1,17 @@
 package witness
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/ethereum/go-ethereum/rlp"
 )
+
+func PrepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd byte,
+	isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
+	return prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes, extValues, key, driftedInd,
+		isBranchSPlaceholder, isBranchCPlaceholder, isExtension)
+}
 
 // isBranch takes GetProof element and returns whether the element is a branch.
 func isBranch(proofEl []byte) bool {
@@ -12,10 +19,26 @@ func isBranch(proofEl []byte) bool {
 	check(err)
 	c, err1 := rlp.CountValues(elems)
 	check(err1)
-	if c != 2 && c != 17 {
-		log.Fatal("Proof element is neither leaf or branch")
+	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
+	if c != 2 && c != 17 && c != 9 {
+		log.Fatal("Proof element is neither leaf or branch ", c, proofEl, elems)
 	}
 	return c == 17
+}
+
+func isTxLeaf(proofEl []byte) bool {
+	elems, _, err := rlp.SplitList(proofEl)
+	check(err)
+	c, err1 := rlp.CountValues(elems)
+	check(err1)
+	// 2: hashed node
+	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
+	// ext node is also 2
+	return (c == 9 || c == 2) && !isTxExt(proofEl)
+}
+
+func isTxExt(proofEl []byte) bool {
+	return proofEl[0] == 226 && proofEl[1]%16 == 0 && proofEl[2] == 160
 }
 
 // prepareBranchWitness takes the rows that are to be filled with branch data and it takes
@@ -29,6 +52,7 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 	rowInd := 1
 	colInd := branchNodeRLPLen - 1
 
+	// TODO: if input branch is a leaf node, it'll work abnormally
 	i := 0
 	insideInd := -1
 	for {
@@ -65,8 +89,11 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 	}
 }
 
-func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd byte,
+func prepareBranchNode(
+	branch1, branch2, extNode1, extNode2, extListRlpBytes []byte,
+	extValues [][]byte, key, driftedInd byte,
 	isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
+
 	extensionNode := ExtensionNode{
 		ListRlpBytes: extListRlpBytes,
 	}
@@ -154,12 +181,23 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 	var nibbles []byte
 	if leafKeyRow[0] != 248 {
-		keyLen := int(leafKeyRow[1] - 128)
-		if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
-			if leafKeyRow[2] < 32 { // extension node
-				nibbles = append(nibbles, leafKeyRow[2]-16)
-			} else { // leaf
-				nibbles = append(nibbles, leafKeyRow[2]-48)
+		keyLen := 0
+		if leafKeyRow[0] == 226 {
+			// In this case, we only have 1 nibble
+			// Prove: 226 - 192 = 34, the payload is 34 bytes and the 1st byte is RLP byte (aka 226)
+			// So, 33 bytes left, hash occupies 32 bytes in the end of the payload.
+			// 33 - 32 = 1, which is the nibble.
+			keyLen = 1
+			nibbles = append(nibbles, leafKeyRow[1]-16)
+			numberOfNibbles = 0
+		} else {
+			keyLen = int(leafKeyRow[1] - 128)
+			if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
+				if leafKeyRow[2] < 32 { // extension node
+					nibbles = append(nibbles, leafKeyRow[2]-16)
+				} else { // leaf
+					nibbles = append(nibbles, leafKeyRow[2]-48)
+				}
 			}
 		}
 		for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
@@ -192,12 +230,12 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
-func addBranchAndPlaceholder(proof1, proof2,
-	extNibblesS, extNibblesC [][]byte,
+func addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC [][]byte,
 	leafRow0, key, neighbourNode []byte,
 	keyIndex, extensionNodeInd int,
-	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool, toBeHashed *[][]byte) (bool, bool, int, Node) {
+	additionalBranch, isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf bool,
+	toBeHashed *[][]byte) (bool, bool, int, Node) {
+
 	len1 := len(proof1)
 	len2 := len(proof2)
 
@@ -210,14 +248,32 @@ func addBranchAndPlaceholder(proof1, proof2,
 		extValues = append(extValues, make([]byte, valueLen))
 	}
 
+	// For stack trie
+	// if 1 st node of proof2 is a branch node and 1st node of Proof1 is an ext node
+	need_placeholder_ext := isBranch(proof2[0]) && isTxExt(proof1[0])
+	if need_placeholder_ext {
+		fmt.Println("need_placeholder_ext", isTxLeaf(proof1[0]), isBranch(proof1[0]), proof1[0])
+		fmt.Println("need_placeholder_ext", isBranch(proof2[0]), proof2[0])
+		fmt.Println("nibble:", extNibblesS)
+	}
 	isExtension := (len1 == len2+2) || (len2 == len1+2)
-	if isExtension {
+	if isExtension || need_placeholder_ext {
 		var numNibbles byte
-		if len1 > len2 {
-			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[len1-3], proof1[len1-3])
+		var proof []byte
+		var extNibbles [][]byte
+		if need_placeholder_ext {
+			extNibbles = extNibblesS
+			proof = proof1[0]
 		} else {
-			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesC, extensionNodeInd, proof2[len2-3], proof2[len2-3])
+			if len1 > len2 {
+				extNibbles = extNibblesS
+				proof = proof1[len1-3]
+			} else {
+				extNibbles = extNibblesC
+				proof = proof2[len2-3]
+			}
 		}
+		numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibbles, extensionNodeInd, proof, proof)
 		numberOfNibbles = int(numNibbles)
 	}
 
@@ -254,35 +310,31 @@ func addBranchAndPlaceholder(proof1, proof2,
 
 	// TODO: fix
 	var extNode []byte
-	if isExtension {
-		if len1 > len2 {
-			extNode = proof1[len1-3]
-		} else {
-			extNode = proof2[len2-3]
+	if need_placeholder_ext {
+		extNode = proof1[0]
+		// FIXME should move to above and need to avoid above [len-3] operation
+		isExtension = need_placeholder_ext
+	} else {
+		if isExtension {
+			if len1 > len2 {
+				extNode = proof1[len1-3]
+			} else {
+				extNode = proof2[len2-3]
+			}
 		}
 	}
 
 	// Note that isModifiedExtNode happens also when we have a branch instead of shortExtNode
-	isModifiedExtNode := !isBranch(longExtNode) && !isShorterProofLastLeaf
+	isModifiedExtNode := (!isBranch(longExtNode) && !isShorterProofLastLeaf) || need_placeholder_ext
 
+	// We now get the first nibble of the leaf that was turned into branch.
+	// This first nibble presents the position of the leaf once it moved
+	// into the new branch.
+	driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 	if len1 > len2 {
-		// We now get the first nibble of the leaf that was turned into branch.
-		// This first nibble presents the position of the leaf once it moved
-		// into the new branch.
-		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
-
 		node = prepareBranchNode(proof1[len1-2], proof1[len1-2], extNode, extNode, extListRlpBytes, extValues,
 			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension)
-
-		// We now get the first nibble of the leaf that was turned into branch.
-		// This first nibble presents the position of the leaf once it moved
-		// into the new branch.
 	} else {
-		// We now get the first nibble of the leaf that was turned into branch.
-		// This first nibble presents the position of the leaf once it moved
-		// into the new branch.
-		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
-
 		node = prepareBranchNode(proof2[len2-2], proof2[len2-2], extNode, extNode, extListRlpBytes, extValues,
 			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension)
 	}

@@ -3,6 +3,7 @@ package witness
 import (
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 
 	"main/gethutil/mpt/oracle"
 
@@ -158,6 +159,37 @@ func (n *StorageNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(jsonData)
 }
 
+type TxNode struct {
+	Index           uint
+	Key             []byte
+	DriftedRlpBytes []byte
+	ListRlpBytes    [2][]byte
+	ValueRlpBytes   [2][]byte
+	IsModExtension  [2]bool
+	ModListRlpBytes [2][]byte
+}
+
+func (n *TxNode) MarshalJSON() ([]byte, error) {
+	jsonData := struct {
+		Index           string   `json:"Index"`
+		Key             string   `json:"key"`
+		DriftedRlpBytes string   `json:"drifted_rlp_bytes"`
+		ListRlpBytes    []string `json:"list_rlp_bytes"`
+		ValueRlpBytes   []string `json:"value_rlp_bytes"`
+		IsModExtension  [2]bool  `json:"is_mod_extension"`
+		ModListRlpBytes []string `json:"mod_list_rlp_bytes"`
+	}{
+		Index:           strconv.FormatInt(int64(n.Index), 10),
+		Key:             base64ToString(n.Key),
+		DriftedRlpBytes: base64ToString(n.DriftedRlpBytes),
+		ListRlpBytes:    encodeArray(n.ListRlpBytes[:]),
+		ValueRlpBytes:   encodeArray(n.ValueRlpBytes[:]),
+		IsModExtension:  n.IsModExtension,
+		ModListRlpBytes: encodeArray(n.ModListRlpBytes[:]),
+	}
+	return json.Marshal(jsonData)
+}
+
 type JSONableValues [][]byte
 
 func (u JSONableValues) MarshalJSON() ([]byte, error) {
@@ -173,6 +205,7 @@ type Node struct {
 	ExtensionBranch *ExtensionBranchNode `json:"extension_branch"`
 	Account         *AccountNode         `json:"account"`
 	Storage         *StorageNode         `json:"storage"`
+	Transaction     *TxNode              `json:"transaction"`
 	ModExtension    *ModExtensionNode    `json:"mod_extension"`
 	Values          JSONableValues       `json:"values"`
 	KeccakData      JSONableValues       `json:"keccak_data"`

@@ -230,6 +230,7 @@ func (st *StackTrie) getDiffIndex(key []byte) int {
 
 // Helper function to that inserts a (key, value) pair into
 // the trie.
+// https://github.dev/ethereum/go-ethereum/blob/00905f7dc406cfb67f64cd74113777044fb886d8/core/types/hashing.go#L105-L134
 func (st *StackTrie) insert(key, value []byte) {
 	switch st.nodeType {
 	case branchNode: /* Branch */
@@ -619,8 +620,10 @@ func (st *StackTrie) getNodeFromBranchRLP(branch []byte, idx int) []byte {
 }
 
 type StackProof struct {
-	proofS [][]byte
-	proofC [][]byte
+	proofS   [][]byte
+	proofC   [][]byte
+	nibblesS [][]byte
+	nibblesC [][]byte
 }
 
 func (sp *StackProof) GetProofS() [][]byte {
@@ -630,21 +633,78 @@ func (sp *StackProof) GetProofS() [][]byte {
 func (sp *StackProof) GetProofC() [][]byte {
 	return sp.proofC
 }
+func (sp *StackProof) GetNibblesS() [][]byte {
+	return sp.nibblesS
+}
+func (sp *StackProof) GetNibblesC() [][]byte {
+	return sp.nibblesC
+}
+
+func isBranch(proofEl []byte) bool {
+	elems, _, _ := rlp.SplitList(proofEl)
+	c, _ := rlp.CountValues(elems)
+	return c == 17
+}
+
+func isTxLeaf(proofEl []byte) bool {
+	elems, _, _ := rlp.SplitList(proofEl)
+	c, _ := rlp.CountValues(elems)
+
+	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
+	return c == 9 || c == 2
+}
+
+func printProof(ps [][]byte, idx []byte) {
+
+	enable := byte(150)
+	fmt.Print(" [")
+	for _, p := range ps {
+		if p[0] == 226 && p[1]%16 == 0 && p[2] == 160 {
+			fmt.Print("EXT - ")
+			if idx[0] > enable {
+				fmt.Print(" (", p, ") - ")
+			}
+		} else if isBranch((p)) {
+			fmt.Print("BRANCH - ")
+		} else if isTxLeaf(p) {
+			fmt.Print("LEAF - ")
+			if idx[0] > enable {
+				fmt.Print(" (", p, ") - ")
+			}
+		} else {
+			elems, _, _ := rlp.SplitList(p)
+			c, _ := rlp.CountValues(elems)
+			fmt.Print(c, " (", elems, ") - ")
+		}
+	}
+	fmt.Println("]")
+
+}
 
 func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value []byte) (StackProof, error) {
-	proofS, err := st.GetProof(db, indexBuf)
+	fmt.Println(" ====", indexBuf)
+	proofS, nibblesS, err := st.GetProof(db, indexBuf)
 	if err != nil {
 		return StackProof{}, err
 	}
+	len1 := len(proofS)
+	printProof(proofS, indexBuf)
 
 	st.Update(indexBuf, value)
 
-	proofC, err := st.GetProof(db, indexBuf)
+	proofC, nibblesC, err := st.GetProof(db, indexBuf)
 	if err != nil {
 		return StackProof{}, err
 	}
+	len2 := len(proofC)
+	printProof(proofC, indexBuf)
 
-	return StackProof{proofS, proofC}, nil
+	// fmt.Println(len1, len2)
+	if len1 >= len2 {
+		fmt.Println(KeybytesToHex(indexBuf))
+	}
+
+	return StackProof{proofS, proofC, nibblesS, nibblesC}, nil
 }
 
 // We refer to the link below for this function.
@@ -660,6 +720,7 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	// order is correct.
 	var indexBuf []byte
 	for i := 1; i < list.Len() && i <= 0x7f; i++ {
+		fmt.Print(i)
 		indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(i))
 		value := types.EncodeForDerive(list, i, valueBuf)
 		proof, err := st.UpdateAndGetProof(db, indexBuf, value)
@@ -672,6 +733,7 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	// special case when index is 0
 	// rlp.AppendUint64() encodes index 0 to [128]
 	if list.Len() > 0 {
+		fmt.Print("0")
 		indexBuf = rlp.AppendUint64(indexBuf[:0], 0)
 		value := types.EncodeForDerive(list, 0, valueBuf)
 		proof, err := st.UpdateAndGetProof(db, indexBuf, value)
@@ -682,6 +744,7 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	}
 
 	for i := 0x80; i < list.Len(); i++ {
+		fmt.Print(i)
 		indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(i))
 		value := types.EncodeForDerive(list, i, valueBuf)
 		proof, err := st.UpdateAndGetProof(db, indexBuf, value)
@@ -690,14 +753,16 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 		}
 		proofs = append(proofs, proof)
 	}
+	// fmt.Println("* ROOT", root)
 
 	return proofs, nil
 }
 
-func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, error) {
+func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, [][]byte, error) {
 	k := KeybytesToHex(key)
+	// fmt.Println("k", k)
 	if st.nodeType == emptyNode {
-		return [][]byte{}, nil
+		return [][]byte{}, nil, nil
 	}
 
 	// Note that when root is a leaf, this leaf should be returned even if you ask for a different key (than the key of
@@ -709,9 +774,10 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 	// in the S proof (another reason is that the S proof with a placeholder leaf would be an empty trie and thus with
 	// a root of an empty trie - which is not the case in S proof).
 	if st.nodeType == leafNode {
-		return [][]byte{st.val}, nil
+		return [][]byte{st.val}, nil, nil
 	}
 
+	var nibbles [][]byte
 	var proof [][]byte
 	var nodes []*StackTrie
 	c := st
@@ -738,6 +804,11 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 				panic(error)
 			}
 
+			element, _, _ := rlp.SplitList(c_rlp)
+			nibble := element[0] - 16
+			fmt.Println(" HASHED Ext nibble:", element)
+			nibbles = append(nibbles, []byte{nibble})
+
 			proof = append(proof, c_rlp)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
 
@@ -760,7 +831,6 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 		lNodes := len(nodes)
 		for i := lNodes - 1; i >= 0; i-- {
 			node := nodes[i]
-
 			if node.nodeType == leafNode {
 				rlp, error := db.Get(node.val)
 				if error != nil { // TODO: avoid error when RLP
@@ -771,11 +841,26 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 			} else if node.nodeType == branchNode || node.nodeType == extNode {
 				node.hash(false)
 
-				rlp, error := db.Get(node.val)
+				raw_rlp, error := db.Get(node.val)
 				if error != nil {
-					return nil, error
+					return nil, nil, error
 				}
-				proof = append(proof, rlp)
+				proof = append(proof, raw_rlp)
+				if node.nodeType == extNode {
+
+					rlp_flag := uint(raw_rlp[0])
+					if rlp_flag < 192 || rlp_flag >= 248 {
+						panic("should not happen!")
+					}
+
+					element, _, _ := rlp.SplitList(raw_rlp)
+					// fmt.Println("** ", element)
+
+					// FIXME only one nibble case
+					nibble := element[0] - 16
+					fmt.Println(" Ext nibble:", element)
+					nibbles = append(nibbles, []byte{nibble})
+				}
 			}
 
 		}
@@ -784,5 +869,5 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, er
 		slices.Reverse(proof)
 	}
 
-	return proof, nil
+	return proof, nibbles, nil
 }

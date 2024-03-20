@@ -120,13 +120,10 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 	}
 }
 
-// func TestJson(t *testing.T, n int) {
-// 	txs := makeTransactions(n)
-// 	db := rawdb.NewMemoryDatabase()
-// 	stackTrie := trie.NewStackTrie(db)
-
-// 	proofs, _ := stackTrie.UpdateAndGetProofs(db, types.Transactions(txs))
-// }
+func TestTransactionInsertion(t *testing.T) {
+	txs := makeTransactions(256)
+	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
+}
 
 func TestStackTrieInsertion_1Tx(t *testing.T) {
 	// Only one leaf
@@ -166,6 +163,12 @@ func TestStackTrieInsertion_33Txs(t *testing.T) {
 	transactionsStackTrieInsertionTemplate(t, 33)
 }
 
+func TestStackTrieInsertion_129Txs(t *testing.T) {
+	// The first tx (index 0) is inserted into position 8 of the top branch
+	// Th 129th tx is the neighbor of the first tx
+	transactionsStackTrieInsertionTemplate(t, 129)
+}
+
 func TestStackTrieInsertion_ManyTxs(t *testing.T) {
 	// Just randomly picking a large number.
 	// The cap of block gas limit is 30M, the minimum gas cost of a tx is 21k
@@ -190,7 +193,7 @@ func batchedTransactionsStackTrieProofTemplate(n int) {
 	var indexBuf []byte
 	indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(1))
 
-	proofS, err := stackTrie.GetProof(db, indexBuf)
+	proofS, _, err := stackTrie.GetProof(db, indexBuf)
 	if err != nil {
 		fmt.Println(err)
 		return
