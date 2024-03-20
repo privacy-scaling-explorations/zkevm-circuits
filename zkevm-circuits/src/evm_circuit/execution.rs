@@ -874,7 +874,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // constraint global rw counter value at first/last step via chunk_ctx_table lookup
         // we can't do it inside constraint_builder(cb)
-        // because lookup expression in constraint builder DONOT support apply conditional
+        // because lookup expression in constraint builder DO NOT support apply conditional
         // `step_first/step_last` selector at lookup cell.
         if execute_state_first_step_whitelist.contains(&execution_state) {
             meta.lookup_any("first must lookup initial rw_counter", |meta| {

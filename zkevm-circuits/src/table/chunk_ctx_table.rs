@@ -44,7 +44,7 @@ impl ChunkCtxTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let (q_enable, tag, value) = (meta.selector(), meta.fixed_column(), meta.advice_column());
 
-        // constraint NextChunkIndex = CurrentChunkIndex + 1
+        // constrain NextChunkIndex = CurrentChunkIndex + 1
         meta.create_gate("NextChunkIndex = CurrentChunkIndex + 1", |meta| {
             let q_enable = meta.query_selector(q_enable);
             let value_cur = meta.query_advice(value, Rotation::cur());

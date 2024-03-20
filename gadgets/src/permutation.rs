@@ -3,7 +3,7 @@
 //! power of gamma are defined in columns to trade more columns with less degrees
 use std::iter;
 #[rustfmt::skip]
-// | q_row_non_first | q_row_enable | q_row_last | alpha     | gamma     | gamma power 2   | ... | row fingerprint | accmulated fingerprint |
+// | q_row_non_first | q_row_enable | q_row_last | alpha     | gamma     | gamma power 2   | ... | row fingerprint | accumulated fingerprint |
 // |-----------------|--------------|------------|-----------|-----------|-----------------|     | --------------- | ---------------------- |
 // | 0               |1             |0           |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |
 // | 1               |1             |0           |alpha      | gamma     | gamma **2       | ... |  F              |  F                     |

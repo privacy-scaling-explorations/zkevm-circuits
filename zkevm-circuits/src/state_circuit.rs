@@ -540,7 +540,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
-                // TODO optimimise RwMap::table_assignments_prepad calls from 3 times -> 1
+                // TODO optimise RwMap::table_assignments_prepad calls from 3 times -> 1
                 let padded_rows = config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,

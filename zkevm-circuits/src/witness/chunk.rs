@@ -140,9 +140,8 @@ pub fn chunk_convert<F: Field>(
             if start == 0 {
                 (None, RwMap::from(skipped.take(size).collect::<Vec<_>>()))
             } else {
-                // here have `chunk.ctx.idx - 1` because each chunk first row are propagated from
-                // prev chunk. giving idx>0 th chunk, there will be (idx-1) placeholders cant' count
-                // in real order
+                // here we got `chunk.ctx.idx - 1` because each chunk first row are propagated from
+                // prev chunk. giving idx>0 th chunk, there will be (idx-1) placeholders.
                 let mut skipped = skipped.skip(start - 1 - (chunk.ctx.idx - 1));
                 let prev_chunk_last_by_address_rw = skipped.next();
                 (
