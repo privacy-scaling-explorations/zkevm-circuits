@@ -61,7 +61,18 @@ where
 }
 
 #[cfg(test)]
-use halo2_proofs::plonk::{Advice, Column};
+use crate::util::word::WordLoHi;
+
+#[cfg(test)]
+use crate::state_circuit::HashMap;
+#[cfg(test)]
+use crate::witness::{Rw, RwRow};
+
+#[cfg(test)]
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Advice, Column},
+};
 
 #[cfg(test)]
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -134,4 +145,51 @@ impl AdviceColumn {
             Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
         }
     }
+
+    pub(crate) fn rw_row_overrides<F: Field>(&self, row: &mut RwRow<Value<F>>, value: F) {
+        match self {
+            Self::IsWrite => row.is_write = Value::known(value),
+            Self::_Address => row.address = Value::known(value),
+            Self::_StorageKeyLo => {
+                row.storage_key = WordLoHi::new([Value::known(value), row.storage_key.hi()])
+            }
+            Self::_StorageKeyHi => {
+                row.storage_key = WordLoHi::new([row.storage_key.lo(), Value::known(value)])
+            }
+            Self::ValueLo => row.value = WordLoHi::new([Value::known(value), row.value.hi()]),
+            Self::ValueHi => row.value = WordLoHi::new([row.value.lo(), Value::known(value)]),
+            Self::ValuePrevLo => {
+                row.value_prev = WordLoHi::new([Value::known(value), row.value_prev.hi()])
+            }
+            Self::ValuePrevHi => {
+                row.value_prev = WordLoHi::new([row.value_prev.lo(), Value::known(value)])
+            }
+            Self::RwCounter => row.rw_counter = Value::known(value),
+            Self::Tag => row.tag = Value::known(value),
+            Self::InitialValueLo => {
+                row.init_val = WordLoHi::new([Value::known(value), row.init_val.hi()])
+            }
+            Self::InitialValueHi => {
+                row.init_val = WordLoHi::new([row.init_val.lo(), Value::known(value)])
+            }
+            _ => (),
+        };
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn rw_overrides_skip_first_padding<F: Field>(
+    rws: &[Rw],
+    overrides: &HashMap<(AdviceColumn, isize), F>,
+) -> Vec<RwRow<Value<F>>> {
+    let first_non_padding_index = 1;
+    let mut rws: Vec<RwRow<Value<F>>> = rws.iter().map(|row| row.table_assignment()).collect();
+
+    for ((column, row_offset), &f) in overrides {
+        let offset =
+            usize::try_from(isize::try_from(first_non_padding_index).unwrap() + *row_offset)
+                .unwrap();
+        column.rw_row_overrides(&mut rws[offset], f);
+    }
+    rws
 }

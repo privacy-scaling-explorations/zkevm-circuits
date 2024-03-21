@@ -1,5 +1,5 @@
 use eth_types::Field;
-use halo2::halo2curves::CurveExt;
+use halo2::{circuit::Region, halo2curves::CurveExt};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::{
@@ -15,7 +15,7 @@ use snark_verifier::{
         self,
         halo2::{
             halo2_wrong_ecc::{self, integer::rns::Rns, maingate::*, EccConfig},
-            Scalar,
+            EcPoint, Scalar,
         },
         native::NativeLoader,
     },
@@ -24,10 +24,19 @@ use snark_verifier::{
         PolynomialCommitmentScheme,
     },
     system::halo2::transcript,
-    util::arithmetic::{fe_to_limbs, FromUniformBytes, MultiMillerLoop, PrimeField},
-    verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
+    util::{
+        arithmetic::{fe_to_limbs, FromUniformBytes, MultiMillerLoop, PrimeField},
+        transcript::Transcript,
+    },
+    verifier::{
+        self,
+        plonk::{PlonkProof, PlonkProtocol},
+        SnarkVerifier,
+    },
 };
 use std::{io, iter, rc::Rc};
+
+use super::UserChallenge;
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
@@ -57,6 +66,8 @@ const R_P: usize = 60;
 pub type EccChip<C> = halo2_wrong_ecc::BaseFieldEccChip<C, LIMBS, BITS>;
 /// `Halo2Loader` with hardcoded `EccChip`.
 pub type Halo2Loader<'a, C> = loader::halo2::Halo2Loader<'a, C, EccChip<C>>;
+/// `LoadedScalar` with hardcoded `EccChip`.
+pub type LoadedScalar<'a, C> = Scalar<'a, C, EccChip<C>>;
 /// `PoseidonTranscript` with hardcoded parameter with 128-bits security.
 pub type PoseidonTranscript<C, S> =
     transcript::halo2::PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>;
@@ -97,9 +108,12 @@ impl<'a, C: CurveAffine> From<Snark<'a, C>> for SnarkWitness<'a, C> {
 /// SnarkWitness
 #[derive(Clone, Copy)]
 pub struct SnarkWitness<'a, C: CurveAffine> {
-    protocol: &'a PlonkProtocol<C>,
-    instances: Value<&'a Vec<Vec<C::Scalar>>>,
-    proof: Value<&'a [u8]>,
+    /// protocol
+    pub protocol: &'a PlonkProtocol<C>,
+    /// instance
+    pub instances: Value<&'a Vec<Vec<C::Scalar>>>,
+    /// proof
+    pub proof: Value<&'a [u8]>,
 }
 
 impl<'a, C: CurveAffine> SnarkWitness<'a, C> {
@@ -203,19 +217,26 @@ impl AggregationConfig {
         self.range_chip().load_table(layouter)
     }
 
-    /// Aggregate snarks into a single accumulator and decompose it into
-    /// `4 * LIMBS` limbs.
-    /// Returns assigned instances of snarks and aggregated accumulator limbs.
+    /// named columns in region
+    pub fn named_column_in_region<F: Field>(&self, region: &mut Region<'_, F>) {
+        // annotate advices columns of `main_gate`. We can't annotate fixed_columns of
+        // `main_gate` bcs there is no methods exported.
+        for (i, col) in self.main_gate_config.advices().iter().enumerate() {
+            region.name_column(|| format!("ROOT_main_gate_{}", i), *col);
+        }
+    }
+
+    /// Aggregate witnesses into challenge and return
     #[allow(clippy::type_complexity)]
-    pub fn aggregate<'a, M, As>(
+    pub fn aggregate_user_challenges<'c, M, As>(
         &self,
-        layouter: &mut impl Layouter<M::Fr>,
-        svk: &KzgSvk<M>,
-        snarks: impl IntoIterator<Item = SnarkWitness<'a, M::G1Affine>>,
+        loader: Rc<Halo2Loader<'c, M::G1Affine>>,
+        user_challenges: Option<&UserChallenge>,
+        proofs: Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
     ) -> Result<
         (
-            Vec<Vec<Vec<AssignedCell<M::Fr, M::Fr>>>>,
-            Vec<AssignedCell<M::Fr, M::Fr>>,
+            Vec<LoadedScalar<'c, M::G1Affine>>,
+            Vec<EcPoint<'c, M::G1Affine, EccChip<M::G1Affine>>>,
         ),
         Error,
     >
@@ -237,90 +258,150 @@ impl AggregationConfig {
     {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
-        let snarks = snarks.into_iter().collect_vec();
-        layouter.assign_region(
-            || "Aggregate snarks",
-            |mut region| {
-                // annotate advices columns of `main_gate`. We can't annotate fixed_columns of
-                // `main_gate` bcs there is no methods exported.
-                for (i, col) in self.main_gate_config.advices().iter().enumerate() {
-                    region.name_column(|| format!("ROOT_main_gate_{}", i), *col);
-                }
 
-                let ctx = RegionCtx::new(region, 0);
-
-                let ecc_chip = self.ecc_chip::<M::G1Affine>();
-                let loader = Halo2Loader::new(ecc_chip, ctx);
-
-                // Verify the cheap part and get accumulator (left-hand and right-hand side of
-                // pairing) of individual proof.
-                let (instances, accumulators) = snarks
-                    .iter()
-                    .map(|snark| {
-                        let protocol = snark.protocol.loaded(&loader);
-                        let instances = snark.loaded_instances(&loader);
-                        let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
-                        let proof = PlonkSuccinctVerifier::<As>::read_proof(
-                            svk,
-                            &protocol,
-                            &instances,
-                            &mut transcript,
-                        )
-                        .unwrap();
-                        let accumulators =
-                            PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof)
-                                .unwrap();
-                        (instances, accumulators)
+        let witnesses = proofs
+            .iter()
+            .flat_map(|proof| {
+                user_challenges
+                    .map(|user_challenges| {
+                        user_challenges
+                            .column_indexes
+                            .iter()
+                            .map(|col| &proof.witnesses[col.index()])
+                            .collect::<Vec<_>>()
                     })
-                    .collect_vec()
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                    .unwrap_or_default()
+            })
+            .collect_vec();
 
-                // Verify proof for accumulation of all accumulators into new one.
-                let accumulator = {
-                    let as_vk = Default::default();
-                    let as_proof = Vec::new();
-                    let accumulators = accumulators.into_iter().flatten().collect_vec();
-                    let mut transcript =
-                        PoseidonTranscript::new(&loader, Value::known(as_proof.as_slice()));
-                    let proof = <As as AccumulationScheme<_, _>>::read_proof(
-                        &as_vk,
-                        &accumulators,
-                        &mut transcript,
-                    )
-                    .unwrap();
-                    <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
-                };
+        let empty_proof = Vec::new();
+        let mut transcript = PoseidonTranscript::new(&loader, Value::known(empty_proof.as_slice()));
+        witnesses.iter().for_each(|rwtable_col_ec_point| {
+            transcript.common_ec_point(rwtable_col_ec_point).unwrap();
+        });
+        let num_challenges = user_challenges
+            .map(|user_challenges| user_challenges.num_challenges)
+            .unwrap_or_default();
 
-                let instances = instances
+        let witnesses = witnesses
+            .into_iter()
+            .cloned()
+            .collect::<Vec<EcPoint<'c, M::G1Affine, EccChip<M::G1Affine>>>>();
+        Ok((transcript.squeeze_n_challenges(num_challenges), witnesses))
+    }
+
+    /// Aggregate snarks into a single accumulator and decompose it into
+    /// `4 * LIMBS` limbs.
+    /// Returns assigned instances of snarks and aggregated accumulator limbs.
+    #[allow(clippy::type_complexity)]
+    pub fn aggregate<'a, 'c, M, As>(
+        &self,
+        ctx: RegionCtx<'c, M::Fr>,
+        svk: &KzgSvk<M>,
+        snarks: &[SnarkWitness<'a, M::G1Affine>],
+    ) -> Result<
+        (
+            Vec<Vec<Scalar<'c, M::G1Affine, EccChip<M::G1Affine>>>>,
+            Vec<AssignedCell<M::Fr, M::Fr>>,
+            Rc<Halo2Loader<'c, M::G1Affine>>,
+            Vec<PlonkProof<M::G1Affine, Rc<Halo2Loader<'c, M::G1Affine>>, As>>,
+        ),
+        Error,
+    >
+    where
+        M: MultiMillerLoop,
+        M::Fr: Field,
+        M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+        for<'b> As: PolynomialCommitmentScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                VerifyingKey = KzgSvk<M>,
+                Output = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+            > + AccumulationScheme<
+                M::G1Affine,
+                Rc<Halo2Loader<'b, M::G1Affine>>,
+                Accumulator = KzgAccumulator<M::G1Affine, Rc<Halo2Loader<'b, M::G1Affine>>>,
+                VerifyingKey = KzgAsVerifyingKey,
+            >,
+    {
+        let ecc_chip = self.ecc_chip::<M::G1Affine>();
+        let loader = Halo2Loader::<'c, _>::new(ecc_chip, ctx);
+
+        type PoseidonTranscript<'a, C, S> =
+            transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
+
+        let mut plonk_svp = vec![];
+        // Verify the cheap part and get accumulator (left-hand and right-hand side of
+        // pairing) of individual proof.
+        // Verify the cheap part and get accumulator (left-hand and right-hand side of
+        // pairing) of individual proof.
+        let (instances, accumulators) = snarks
+            .iter()
+            .map(|snark| {
+                let protocol = snark.protocol.loaded(&loader);
+
+                let instances = snark.loaded_instances(&loader);
+                let mut transcript = PoseidonTranscript::new(&loader, snark.proof());
+                let proof = PlonkSuccinctVerifier::<As>::read_proof(
+                    svk,
+                    &protocol,
+                    &instances,
+                    &mut transcript,
+                )
+                .unwrap();
+                let accumulators =
+                    PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof).unwrap();
+                plonk_svp.push(proof);
+                (instances, accumulators)
+            })
+            .collect_vec()
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+
+        // Verify proof for accumulation of all accumulators into new one.
+        let accumulator = {
+            let as_vk = Default::default();
+            let as_proof = Vec::new();
+            let accumulators = accumulators.into_iter().flatten().collect_vec();
+            let mut transcript =
+                PoseidonTranscript::new(&loader, Value::known(as_proof.as_slice()));
+            let proof = <As as AccumulationScheme<_, _>>::read_proof(
+                &as_vk,
+                &accumulators,
+                &mut transcript,
+            )
+            .unwrap();
+            <As as AccumulationScheme<_, _>>::verify(&as_vk, &accumulators, &proof).unwrap()
+        };
+
+        let instances = instances
+            .iter()
+            .map(|instances| {
+                instances
                     .iter()
-                    .map(|instances| {
+                    .flat_map(|instances| {
                         instances
                             .iter()
-                            .map(|instances| {
-                                instances
-                                    .iter()
-                                    .map(|instance| instance.assigned().to_owned())
-                                    .collect_vec()
-                            })
+                            .map(|instance| instance.to_owned())
                             .collect_vec()
                     })
-                    .collect_vec();
-                let accumulator_limbs = [accumulator.lhs, accumulator.rhs]
-                    .iter()
-                    .map(|ec_point| {
-                        loader
-                            .ecc_chip()
-                            .assign_ec_point_to_limbs(&mut loader.ctx_mut(), ec_point.assigned())
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect();
+                    .collect_vec()
+            })
+            .collect_vec();
 
-                Ok((instances, accumulator_limbs))
-            },
-        )
+        let accumulator_limbs = [accumulator.lhs, accumulator.rhs]
+            .iter()
+            .map(|ec_point| {
+                loader
+                    .ecc_chip()
+                    .assign_ec_point_to_limbs(&mut loader.ctx_mut(), ec_point.assigned())
+            })
+            .collect::<Result<Vec<_>, Error>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+
+        Ok((instances, accumulator_limbs, loader, plonk_svp))
     }
 }
 
@@ -625,6 +706,7 @@ pub mod test {
         let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
             &params,
             snarks.iter().map(SnarkOwned::as_snark),
+            None,
         )
         .unwrap();
         let instances = aggregation.instances();
@@ -645,6 +727,7 @@ pub mod test {
         let aggregation = TestAggregationCircuit::<Bn256, Gwc<_>>::new(
             &params,
             snarks.iter().map(SnarkOwned::as_snark),
+            None,
         )
         .unwrap();
         let mut instances = aggregation.instances();

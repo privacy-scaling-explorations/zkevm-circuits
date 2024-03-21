@@ -12,7 +12,7 @@ use crate::{
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.

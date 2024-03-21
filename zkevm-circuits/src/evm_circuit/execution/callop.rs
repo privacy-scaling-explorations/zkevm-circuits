@@ -21,9 +21,14 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    util::word::WordExpr,
+};
+
+use crate::{
+    evm_circuit::witness::Chunk,
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{WordExpr, WordLoHi, WordLoHiCell},
+        word::{WordLoHi, WordLoHiCell},
         Expr,
     },
 };
@@ -801,6 +806,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -1384,7 +1390,7 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(FixedCParams {
-                max_rws: 500,
+                max_rws: 1 << 12,
                 ..Default::default()
             })
             .run();

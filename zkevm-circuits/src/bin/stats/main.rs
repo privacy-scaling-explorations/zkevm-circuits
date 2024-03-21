@@ -31,11 +31,11 @@ use zkevm_circuits::{
     pi_circuit::{PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, SigTable,
-        TxTable, UXTable, WdTable,
+        BlockTable, BytecodeTable, ChunkCtxTable, CopyTable, ExpTable, KeccakTable, MptTable,
+        RwTable, SigTable, TxTable, UXTable, WdTable,
     },
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
-    util::{Challenges, SubCircuitConfig},
+    util::{chunk_ctx::ChunkContextConfig, Challenges, SubCircuitConfig},
 };
 
 fn main() {
@@ -222,7 +222,11 @@ fn get_exec_steps_occupancy() {
         keccak_table,
         LOOKUP_CONFIG[6].1,
         exp_table,
-        LOOKUP_CONFIG[7].1
+        LOOKUP_CONFIG[7].1,
+        sig_table,
+        LOOKUP_CONFIG[8].1,
+        chunk_ctx_table,
+        LOOKUP_CONFIG[9].1
     );
 }
 
@@ -265,6 +269,10 @@ fn record_stats<F: eth_types::Field>(
     stats.record_shared("u10_table", meta);
     let u16_table = UXTable::construct(meta);
     stats.record_shared("u16_table", meta);
+
+    let chunkctx_table = ChunkCtxTable::construct(meta);
+    // chunkctx table with gates
+    stats.record("chunkctx_table", meta);
 
     // Use a mock randomness instead of the randomness derived from the challenge
     // (either from mock or real prover) to help debugging assignments.
@@ -343,6 +351,10 @@ fn record_stats<F: eth_types::Field>(
     stats.record("state", meta);
     let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
     stats.record("exp", meta);
+
+    let sig_table = SigTable::construct(meta);
+
+    let chunk_ctx_config = ChunkContextConfig::new(meta, &challenges);
     let evm_circuit = EvmCircuitConfig::new(
         meta,
         EvmCircuitConfigArgs {
@@ -357,6 +369,7 @@ fn record_stats<F: eth_types::Field>(
             u8_table,
             u16_table,
             sig_table,
+            chunk_ctx_config,
             feature_config,
         },
     );

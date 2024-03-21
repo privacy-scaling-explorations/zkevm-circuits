@@ -1,10 +1,16 @@
-use super::{ExecStep, Rw, RwMap, Transaction};
+use std::collections::BTreeMap;
+
+use super::{
+    rw::{RwFingerprints, ToVec},
+    ExecStep, Rw, RwMap, Transaction,
+};
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
     instance::public_data_convert,
     table::BlockContextFieldTag,
-    util::{log2_ceil, word::WordLoHi, SubCircuit},
+    util::{log2_ceil, unwrap_value, word::WordLoHi, SubCircuit},
+    witness::Chunk,
 };
 use bus_mapping::{
     circuit_input_builder::{
@@ -14,25 +20,27 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{sign_types::SignData, Address, Field, ToScalar, Word, H256};
+
+use gadgets::permutation::get_permutation_fingerprints;
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
 // TODO: Remove fields that are duplicated in`eth_block`
-/// Block is the struct used by all circuits, which contains all the needed
-/// data for witness generation.
+/// [`Block`] is the struct used by all circuits, which contains blockwise
+/// data for witness generation. Used with [`Chunk`] for the i-th chunck witness.
 #[derive(Debug, Clone, Default)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
-    /// EndBlock step that is repeated after the last transaction and before
+    /// Padding step that is repeated after the last transaction and before
     /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
+    pub end_block: ExecStep,
     /// Read write events in the RwTable
     pub rws: RwMap,
+    /// Read write events in the RwTable, sorted by address
+    pub by_address_rws: Vec<Rw>,
     /// Bytecode used in the block
     pub bytecodes: CodeDB,
     /// The block context
@@ -57,6 +65,8 @@ pub struct Block<F> {
     pub precompile_events: PrecompileEvents,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
+    /// rw_table padding meta data
+    pub rw_padding_meta: BTreeMap<usize, i32>,
 }
 
 impl<F: Field> Block<F> {
@@ -129,9 +139,9 @@ impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
-    pub fn get_test_degree(&self) -> u32 {
+    pub fn get_test_degree(&self, chunk: &Chunk<F>) -> u32 {
         let num_rows_required_for_execution_steps: usize =
-            EvmCircuit::<F>::get_num_rows_required(self);
+            EvmCircuit::<F>::get_num_rows_required(self, chunk);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(self)
             .iter()
@@ -300,15 +310,35 @@ pub fn block_convert<F: Field>(
     let block = &builder.block;
     let code_db = &builder.code_db;
     let rws = RwMap::from(&block.container);
+    let by_address_rws = rws.table_assignments(false);
     rws.check_value();
+
+    // get padding statistics data via BtreeMap
+    // TODO we can implement it in more efficient version via range sum
+    let rw_padding_meta = builder
+        .chunks
+        .iter()
+        .fold(BTreeMap::new(), |mut map, chunk| {
+            assert!(
+                chunk.ctx.rwc.0.saturating_sub(1) <= builder.circuits_params.max_rws,
+                "max_rws size {} must larger than chunk rws size {}",
+                builder.circuits_params.max_rws,
+                chunk.ctx.rwc.0.saturating_sub(1),
+            );
+            // [chunk.ctx.rwc.0, builder.circuits_params.max_rws)
+            (chunk.ctx.rwc.0..builder.circuits_params.max_rws).for_each(|padding_rw_counter| {
+                *map.entry(padding_rw_counter).or_insert(0) += 1;
+            });
+            map
+        });
+
     let mut block = Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
         rws,
+        by_address_rws,
         txs: block.txs().to_vec(),
-        end_block_not_last: block.block_steps.end_block_not_last.clone(),
-        end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db.clone(),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
@@ -320,8 +350,13 @@ pub fn block_convert<F: Field>(
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         precompile_events: block.precompile_events.clone(),
         eth_block: block.eth_block.clone(),
+        end_block: block.end_block.clone(),
+        rw_padding_meta,
     };
     let public_data = public_data_convert(&block);
+
+    // We can use params from block
+    // because max_txs and max_calldata are independent from Chunk
     let rpi_bytes = public_data.get_pi_bytes(
         block.circuits_params.max_txs,
         block.circuits_params.max_withdrawals,
@@ -329,5 +364,35 @@ pub fn block_convert<F: Field>(
     );
     // PI Circuit
     block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
+
     Ok(block)
+}
+
+#[allow(dead_code)]
+fn get_rwtable_fingerprints<F: Field>(
+    alpha: F,
+    gamma: F,
+    prev_continuous_fingerprint: F,
+    rows: &Vec<Rw>,
+) -> RwFingerprints<F> {
+    let x = rows.to2dvec();
+    let fingerprints = get_permutation_fingerprints(
+        &x,
+        Value::known(alpha),
+        Value::known(gamma),
+        Value::known(prev_continuous_fingerprint),
+    );
+
+    fingerprints
+        .first()
+        .zip(fingerprints.last())
+        .map(|((first_acc, first_row), (last_acc, last_row))| {
+            RwFingerprints::new(
+                unwrap_value(*first_row),
+                unwrap_value(*last_row),
+                unwrap_value(*first_acc),
+                unwrap_value(*last_acc),
+            )
+        })
+        .unwrap_or_default()
 }

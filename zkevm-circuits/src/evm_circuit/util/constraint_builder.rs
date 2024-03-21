@@ -14,8 +14,8 @@ use crate::{
         util::{Cell, RandomLinearCombination},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
-        TxReceiptFieldTag,
+        chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
+        StepStateFieldTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::{
         build_tx_log_expression, query_expression,
@@ -95,6 +95,22 @@ impl<F: Field> StepStateTransition<F> {
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
             log_id: Transition::Any,
+        }
+    }
+
+    pub(crate) fn same() -> Self {
+        Self {
+            rw_counter: Transition::Same,
+            call_id: Transition::Same,
+            is_root: Transition::Same,
+            is_create: Transition::Same,
+            code_hash: Transition::Same,
+            program_counter: Transition::Same,
+            stack_pointer: Transition::Same,
+            gas_left: Transition::Same,
+            memory_word_size: Transition::Same,
+            reversible_write_counter: Transition::Same,
+            log_id: Transition::Same,
         }
     }
 }
@@ -571,6 +587,27 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                     _ => {}
                 }
             };
+        }
+
+        // Note: special case handling: inner_rw_counter shared the same Transition with
+        // rw_conuter
+        match &step_state_transition.rw_counter {
+            Transition::Same => self.require_equal(
+                "State transition (same) constraint of inner_rw_counter",
+                self.next.state.inner_rw_counter.expr(),
+                self.curr.state.inner_rw_counter.expr(),
+            ),
+            Transition::Delta(delta) => self.require_equal(
+                concat!("State transition (delta) constraint of inner_rw_counter"),
+                self.next.state.inner_rw_counter.expr(),
+                self.curr.state.inner_rw_counter.expr() + delta.clone(),
+            ),
+            Transition::To(to) => self.require_equal(
+                "State transition (to) constraint of inner_rw_counter",
+                self.next.state.inner_rw_counter.expr(),
+                to.clone(),
+            ),
+            _ => {}
         }
 
         constrain!(rw_counter);
@@ -1432,14 +1469,130 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    // RwTable Padding (Start tag)
+    pub(crate) fn chunk_context_lookup(
+        &mut self,
+        field_tag: ChunkCtxFieldTag,
+        value: Expression<F>,
+    ) {
+        self.add_lookup(
+            "chunk_ctx lookup",
+            Lookup::ChunkCtx {
+                field_tag: field_tag.expr(),
+                value,
+            },
+        );
+    }
 
+    pub(crate) fn step_state_lookup(&mut self, is_write: Expression<F>) {
+        self.rw_lookup(
+            "StepState lookup codehash",
+            is_write.clone(),
+            Target::StepState,
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                StepStateFieldTag::CodeHash.expr(),
+                WordLoHi::zero(),
+                self.curr.state.code_hash.to_word(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+            ),
+        );
+
+        [
+            (
+                "StepState lookup CallID",
+                self.curr.state.call_id.clone(),
+                StepStateFieldTag::CallID,
+            ),
+            (
+                "StepState lookup IsRoot",
+                self.curr.state.is_root.clone(),
+                StepStateFieldTag::IsRoot,
+            ),
+            (
+                "StepState lookup IsCreate",
+                self.curr.state.is_create.clone(),
+                StepStateFieldTag::IsCreate,
+            ),
+            (
+                "StepState lookup ProgramCounter",
+                self.curr.state.program_counter.clone(),
+                StepStateFieldTag::ProgramCounter,
+            ),
+            (
+                "StepState lookup StackPointer",
+                self.curr.state.stack_pointer.clone(),
+                StepStateFieldTag::StackPointer,
+            ),
+            (
+                "StepState lookup GasLeft",
+                self.curr.state.gas_left.clone(),
+                StepStateFieldTag::GasLeft,
+            ),
+            (
+                "StepState lookup MemoryWordSize",
+                self.curr.state.memory_word_size.clone(),
+                StepStateFieldTag::MemoryWordSize,
+            ),
+            (
+                "StepState lookup ReversibleWriteCounter",
+                self.curr.state.reversible_write_counter.clone(),
+                StepStateFieldTag::ReversibleWriteCounter,
+            ),
+            (
+                "StepState lookup LogID",
+                self.curr.state.log_id.clone(),
+                StepStateFieldTag::LogID,
+            ),
+        ]
+        .iter()
+        .for_each(|(name, cell, field_tag)| {
+            self.rw_lookup(
+                name,
+                is_write.clone(),
+                Target::StepState,
+                RwValues::new(
+                    0.expr(),
+                    0.expr(),
+                    field_tag.expr(),
+                    WordLoHi::zero(),
+                    WordLoHi::from_lo_unchecked(cell.expr()),
+                    WordLoHi::zero(),
+                    WordLoHi::zero(),
+                ),
+            );
+        });
+    }
+
+    // RwTable Start (Start tag)
+    #[allow(dead_code)]
     pub(crate) fn rw_table_start_lookup(&mut self, counter: Expression<F>) {
         self.rw_lookup_with_counter(
             "Start lookup",
             counter,
             0.expr(),
             Target::Start,
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+            ),
+        );
+    }
+
+    // RwTable Padding (Padding tag)
+    #[allow(dead_code)]
+    pub(crate) fn rw_table_padding_lookup(&mut self, counter: Expression<F>) {
+        self.rw_lookup_with_counter(
+            "Padding lookup",
+            counter,
+            0.expr(),
+            Target::Padding,
             RwValues::new(
                 0.expr(),
                 0.expr(),
@@ -1552,7 +1705,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Validation
-
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
@@ -1685,11 +1837,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
+
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
+
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
     }
 

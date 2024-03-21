@@ -34,7 +34,7 @@ use crate::{
     table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable, WdTable},
     tx_circuit::TX_LEN,
     util::{word::WordLoHi, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self, Chunk},
 };
 use gadgets::{
     is_zero::IsZeroChip,
@@ -1460,25 +1460,25 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         let public_data = public_data_convert(block);
         PiCircuit::new(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_withdrawals,
-            block.circuits_params.max_calldata,
+            chunk.fixed_param.max_txs,
+            chunk.fixed_param.max_withdrawals,
+            chunk.fixed_param.max_calldata,
             public_data,
         )
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
             Self::Config::circuit_len_all(block.txs.len(), block.withdrawals().len(), calldata_len),
             Self::Config::circuit_len_all(
-                block.circuits_params.max_txs,
-                block.circuits_params.max_withdrawals,
-                block.circuits_params.max_calldata,
+                chunk.fixed_param.max_txs,
+                chunk.fixed_param.max_withdrawals,
+                chunk.fixed_param.max_calldata,
             ),
         )
     }
