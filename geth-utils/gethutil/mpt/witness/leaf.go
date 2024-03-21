@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"fmt"
 	"math"
 
 	"main/gethutil/mpt/trie"
@@ -345,6 +346,75 @@ func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, pr
 	}
 }
 
+func prepareTxLeafNode(idx uint, leafS, leafC, key, neighborNode []byte, isSPlaceholder, isSModExtension, isCModExtension bool) Node {
+	var rows [][]byte
+
+	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareStorageLeafInfo(leafS, false, isSPlaceholder)
+
+	rows = append(rows, keyS)
+	rows = append(rows, valueS)
+
+	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareStorageLeafInfo(leafC, false, false)
+
+	rows = append(rows, keyC)
+	rows = append(rows, valueC)
+
+	var listRlpBytes [2][]byte
+	listRlpBytes[0] = listRlpBytes1
+	listRlpBytes[1] = listRlpBytes2
+
+	var valueRlpBytes [2][]byte
+	valueRlpBytes[0] = valueRlpBytes1
+	valueRlpBytes[1] = valueRlpBytes2
+
+	driftedRlpBytes := []byte{0}
+	keyDrifted := make([]byte, valueLen)
+	if neighborNode != nil {
+		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighborNode, false, false)
+	}
+	rows = append(rows, keyDrifted)
+
+	// var nonExistingStorageRow []byte
+	// var wrongRlpBytes []byte
+	// nonExistingStorageRow = prepareEmptyNonExistingStorageRow()
+	// rows = append(rows, nonExistingStorageRow)
+
+	// These rows are only used in the case of a modified extension node.
+	// These rows are actually set in equipLeafWithModExtensionNode function.
+	for i := 0; i < modifiedExtensionNodeRowLen; i++ {
+		row := make([]byte, valueLen)
+		rows = append(rows, row)
+	}
+
+	leaf := TxNode{
+		Index:           idx,
+		Key:             key,
+		ListRlpBytes:    listRlpBytes,
+		ValueRlpBytes:   valueRlpBytes,
+		IsModExtension:  [2]bool{isSModExtension, isCModExtension},
+		DriftedRlpBytes: driftedRlpBytes,
+		// ModListRlpBytes:
+	}
+
+	keccakData := [][]byte{leafS, leafC, key}
+	if neighborNode != nil {
+		keccakData = append(keccakData, neighborNode)
+	}
+
+	node := Node{
+		Values:      rows,
+		Transaction: &leaf,
+		KeccakData:  keccakData,
+	}
+
+	return node
+}
+
+func prepareTxLeafAndPlaceholderNode(idx uint, leaf []byte, key []byte, isSModExtension bool) Node {
+	return prepareTxLeafNode(idx, leaf, leaf, key, nil, false, isSModExtension, false)
+
+}
+
 // getLeafKeyLen returns the leaf key length given the key index (how many key nibbles have
 // been used in the branches / extension nodes above the leaf).
 func getLeafKeyLen(keyIndex int) int {
@@ -511,6 +581,10 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	rows = append(rows, valueS)
 
 	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareStorageLeafInfo(leafC, false, isCPlaceholder)
+
+	fmt.Println("-", key)
+	fmt.Println("-", keyS, leafS)
+	fmt.Println("-", storage_key)
 
 	rows = append(rows, keyC)
 	rows = append(rows, valueC)

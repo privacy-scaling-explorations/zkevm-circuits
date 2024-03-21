@@ -98,18 +98,31 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 	rlp_last_tx, _ := txs[n-1].MarshalBinary()
 	last_proofC := proofs[len(proofs)-1].GetProofC()
 
+	tx_len := len(txs)
+	proof_len := len(proofs)
+
 	// Proof of the first tx is appended at the end of the proofs if len(tx) < 0x80
 	// That's why we minus 2 here.
-	if len(txs) > 1 && len(txs) < 256 {
-		last_proofC = proofs[len(proofs)-2].GetProofC()
+	if tx_len > 1 && tx_len < 256 {
+		last_proofC = proofs[proof_len-2].GetProofC()
 	}
 	last_leaf_proof := last_proofC[len(last_proofC)-1]
+
+	if tx_len != proof_len {
+		fmt.Println("Expected to have", tx_len, ", but only got", proof_len)
+		t.Fail()
+	}
 
 	if !bytes.Equal(last_leaf_proof, rlp_last_tx) {
 		fmt.Println("- last_tx ", rlp_last_tx)
 		fmt.Println("- last_proof ", last_leaf_proof)
 		t.Fail()
 	}
+}
+
+func TestTransactionInsertion(t *testing.T) {
+	txs := makeTransactions(4)
+	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
 }
 
 func TestStackTrieInsertion_1Tx(t *testing.T) {
@@ -150,6 +163,12 @@ func TestStackTrieInsertion_33Txs(t *testing.T) {
 	transactionsStackTrieInsertionTemplate(t, 33)
 }
 
+func TestStackTrieInsertion_129Txs(t *testing.T) {
+	// The first tx (index 0) is inserted into position 8 of the top branch
+	// Th 129th tx is the neighbor of the first tx
+	transactionsStackTrieInsertionTemplate(t, 129)
+}
+
 func TestStackTrieInsertion_ManyTxs(t *testing.T) {
 	// Just randomly picking a large number.
 	// The cap of block gas limit is 30M, the minimum gas cost of a tx is 21k
@@ -174,7 +193,7 @@ func batchedTransactionsStackTrieProofTemplate(n int) {
 	var indexBuf []byte
 	indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(1))
 
-	proofS, err := stackTrie.GetProof(db, indexBuf)
+	proofS, _, err := stackTrie.GetProof(db, indexBuf)
 	if err != nil {
 		fmt.Println(err)
 		return
