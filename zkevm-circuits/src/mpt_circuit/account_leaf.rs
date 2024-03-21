@@ -142,7 +142,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_mod_extension[is_s.idx()] = cb.query_bool();
             }
 
-            // Constraint 1
+            // Constraint 1: Check with a lookup that the memorized values for `MainData` are correct
             config.main_data = MainData::load(cb, &mut ctx.memory[main_memory()], 0.expr());
 
             // Constraint 2: Don't allow an account node to follow another account node
@@ -159,15 +159,15 @@ impl<F: Field> AccountLeafConfig<F> {
 
             let parent_data = &mut config.parent_data;
 
-            // Constraint 3:
+            // Constraint 3: Check with a lookup that the memorized values for `S ParentData` are correct
             parent_data[0] = ParentData::load(cb, &mut ctx.memory[parent_memory(true)], 0.expr());
-            // Constraint 4:
+            // Constraint 4: Check with a lookup that the memorized values for `C ParentData` are correct
             parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
             let key_data = &mut config.key_data;
-            // Constraint 5:
+            // Constraint 5: Check with a lookup that the memorized values for `S KeyData` are correct
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
-            // Constraint 6:
+            // Constraint 6: Check with a lookup that the memorized values for `C KeyData` are correct
             key_data[1] = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 0.expr());
 
             // Constraint 7: IsEqualGadget using IsZeroGadget to determine the proof type
@@ -205,12 +205,14 @@ impl<F: Field> AccountLeafConfig<F> {
 
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
-                    // Placeholder leaf checks
+                    // Constraint 8: check whether the leaf is a placeholder (the trie is empty or branch
+                    // has a nil value at the position at the account addres
                     config.is_placeholder_leaf[is_s.idx()] =
                         IsPlaceholderLeafGadget::construct(cb, parent_data[is_s.idx()].hash.expr());
 
                     // Calculate the key RLC
                     let rlp_key = &mut config.rlp_key[is_s.idx()];
+                    // Constraint 9: Check the leaf RLP and enable access to the functions like rlc2
                     *rlp_key = ListKeyGadget::construct(cb, &key_items[is_s.idx()]);
 
                     let nonce_rlp_rlc;
