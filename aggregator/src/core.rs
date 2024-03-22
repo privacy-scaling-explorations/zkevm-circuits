@@ -10,7 +10,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use rand::Rng;
 use snark_verifier::{
-    loader::{halo2::halo2_ecc::halo2_base, native::NativeLoader},
+    loader::native::NativeLoader,
     pcs::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
@@ -41,8 +41,8 @@ use crate::{
         assert_conditional_equal, assert_equal, assert_exist, get_indices, get_max_keccak_updates,
         parse_hash_digest_cells, parse_hash_preimage_cells, parse_pi_hash_rlc_cells,
     },
-    AggregationConfig, RlcConfig, BITS, CHUNK_DATA_HASH_INDEX, LIMBS, POST_STATE_ROOT_INDEX,
-    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+    AggregationConfig, RlcConfig, BITS, CHUNK_DATA_HASH_INDEX, CHUNK_TX_DATA_HASH_INDEX, LIMBS,
+    POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Subroutine for the witness generations.
@@ -168,7 +168,6 @@ pub(crate) struct ExpectedBlobCells {
 pub(crate) struct AssignedBatchHash {
     pub(crate) hash_output: Vec<AssignedCell<Fr, Fr>>,
     pub(crate) blob: ExpectedBlobCells,
-    pub(crate) rlc_config_offset: usize,
 }
 
 /// Input the hash input bytes,
@@ -225,7 +224,7 @@ pub(crate) fn assign_batch_hashes(
     // - batch's data_hash length is 32 * number_of_valid_snarks
     // 8. batch data hash is correct w.r.t. its RLCs
     // 9. is_final_cells are set correctly
-    let rlc_config_offset = conditional_constraints(
+    conditional_constraints(
         &config.rlc_config,
         layouter,
         challenges,
@@ -239,16 +238,15 @@ pub(crate) fn assign_batch_hashes(
         y: batch_pi_input[BATCH_Y_OFFSET..BATCH_Y_OFFSET + 32].to_vec(),
         chunk_tx_data_hashes: (0..MAX_AGG_SNARKS)
             .map(|i| {
-                extracted_hash_cells.hash_input_cells
-                    [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))]
-                    .to_vec()
+                let chunk_pi_input = &extracted_hash_cells.hash_input_cells
+                    [INPUT_LEN_PER_ROUND * (2 + 2 * i)..INPUT_LEN_PER_ROUND * (2 + 2 * (i + 1))];
+                chunk_pi_input[CHUNK_TX_DATA_HASH_INDEX..CHUNK_TX_DATA_HASH_INDEX + 32].to_vec()
             })
             .collect(),
     };
     Ok(AssignedBatchHash {
         hash_output: extracted_hash_cells.hash_output_cells,
         blob: expected_blob_cells,
-        rlc_config_offset,
     })
 }
 
@@ -544,8 +542,8 @@ pub(crate) fn conditional_constraints(
     challenges: Challenges<Value<Fr>>,
     chunks_are_valid: &[bool],
     extracted_hash_cells: &ExtractedHashCells,
-) -> Result<usize, Error> {
-    let mut first_pass = halo2_base::SKIP_FIRST_PASS;
+) -> Result<(), Error> {
+    // let mut first_pass = halo2_base::SKIP_FIRST_PASS;
     let ExtractedHashCells {
         hash_input_cells,
         hash_output_cells,
@@ -557,12 +555,7 @@ pub(crate) fn conditional_constraints(
     layouter
         .assign_region(
             || "rlc conditional constraints",
-            |mut region| -> Result<usize, halo2_proofs::plonk::Error> {
-                if first_pass {
-                    first_pass = false;
-                    return Ok(0);
-                }
-
+            |mut region| -> Result<(), halo2_proofs::plonk::Error> {
                 rlc_config.init(&mut region)?;
                 let mut offset = 0;
                 // ====================================================
@@ -968,7 +961,7 @@ pub(crate) fn conditional_constraints(
                 // 8. batch data hash is correct w.r.t. its RLCs
                 // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
                 let challenge_cell =
-                    rlc_config.read_challenge(&mut region, challenges, &mut offset)?;
+                    rlc_config.read_challenge1(&mut region, challenges, &mut offset)?;
 
                 let flags = chunk_is_valid_cells
                     .iter()
@@ -1098,7 +1091,7 @@ pub(crate) fn conditional_constraints(
                     .constrain_equal(left.cell(), rlc_config.one_cell(left.cell().region_index))?;
 
                 log::trace!("rlc chip uses {} rows", offset);
-                Ok(offset)
+                Ok(())
             },
         )
         .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))

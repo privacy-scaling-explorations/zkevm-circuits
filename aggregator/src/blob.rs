@@ -15,7 +15,6 @@ impl Blob {
         Self(
             chunk_hashes
                 .iter()
-                .filter(|chunk_hash| !chunk_hash.is_padding)
                 .map(|chunk_hash| chunk_hash.tx_bytes.clone())
                 .collect(),
         )
@@ -37,7 +36,7 @@ impl Blob {
             .chain(chunk_tx_bytes_hashes)
             .collect();
 
-        keccak256(input).into()
+        U256::from_big_endian(&keccak256(input))
     }
 
     fn metadata_bytes(&self) -> impl Iterator<Item = u8> + '_ {
@@ -56,6 +55,7 @@ impl Blob {
 
 #[derive(Clone, Debug)]
 pub struct BlobAssignments {
+    pub z: U256,
     pub challenge_digest: U256,
     pub evaluation: U256,
     pub coefficients: [U256; BLOB_WIDTH],
@@ -66,8 +66,15 @@ impl From<&Blob> for BlobAssignments {
         let coefficients = blob.coefficients();
         let coefficients_scalar = coefficients.map(|coeff| Scalar::from_raw(coeff.0));
         let challenge_digest = blob.challenge_point();
+        let bls_modulus = U256::from_str_radix(
+            "52435875175126190479447740508185965837690552500527637822603658699938581184513",
+            10,
+        )
+        .unwrap();
+        let (_, z) = challenge_digest.div_mod(bls_modulus);
 
         Self {
+            z,
             challenge_digest,
             evaluation: U256::from_little_endian(
                 &interpolate(Scalar::from_raw(challenge_digest.0), coefficients_scalar).to_bytes(),
@@ -80,6 +87,7 @@ impl From<&Blob> for BlobAssignments {
 impl Default for BlobAssignments {
     fn default() -> Self {
         Self {
+            z: U256::default(),
             challenge_digest: U256::default(),
             evaluation: U256::default(),
             coefficients: [U256::default(); BLOB_WIDTH],

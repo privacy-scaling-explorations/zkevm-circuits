@@ -5,6 +5,7 @@ use eth_types::{Field, ToBigEndian, H256, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
+use zkevm_circuits::util::Challenges;
 
 use crate::{
     blob::{Blob, BlobAssignments},
@@ -139,8 +140,8 @@ impl BatchHash {
                 .withdraw_root
                 .as_bytes(),
             batch_data_hash.as_slice(),
-            // TODO: add z
-            // TODO: add y
+            blob.z.to_be_bytes().as_ref(),
+            blob.evaluation.to_be_bytes().as_ref(),
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
@@ -332,6 +333,8 @@ impl BlobDataRow<Fr> {
     fn padding_row() -> Self {
         Self {
             is_padding: true,
+            preimage_rlc: Value::known(Fr::zero()),
+            digest_rlc: Value::known(Fr::zero()),
             ..Default::default()
         }
     }
@@ -349,7 +352,7 @@ impl BlobData {
             .collect()
     }
 
-    fn to_metadata_rows(&self, challenge: Value<Fr>) -> Vec<BlobDataRow<Fr>> {
+    fn to_metadata_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
         // metadata bytes.
         let bytes = self.to_metadata_bytes();
 
@@ -374,7 +377,7 @@ impl BlobData {
         let digest_rlc_iter = {
             let digest = keccak256(&bytes);
             let digest_rlc = digest.iter().fold(Value::known(Fr::zero()), |acc, &x| {
-                acc * challenge + Value::known(Fr::from(x as u64))
+                acc * challenge.evm_word() + Value::known(Fr::from(x as u64))
             });
             std::iter::repeat(Value::known(Fr::zero()))
                 .take(61) // 2 (n_chunks) + 15 * 4 (chunk_size) - 1
@@ -383,7 +386,7 @@ impl BlobData {
 
         // iterator for preimage rlc
         let preimage_rlc_iter = bytes.iter().scan(Value::known(Fr::zero()), |acc, &x| {
-            *acc = *acc * challenge + Value::known(Fr::from(x as u64));
+            *acc = *acc * challenge.keccak_input() + Value::known(Fr::from(x as u64));
             Some(*acc)
         });
 
@@ -399,14 +402,14 @@ impl BlobData {
                     accumulator,
                     preimage_rlc,
                     digest_rlc,
-                    is_boundary: i == 61,
+                    is_boundary: i == bytes.len() - 1,
                     ..Default::default()
                 },
             )
             .collect()
     }
 
-    fn to_data_rows(&self, challenge: Value<Fr>) -> Vec<BlobDataRow<Fr>> {
+    fn to_data_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
         self.chunk_bytes
             .iter()
             .enumerate()
@@ -417,13 +420,14 @@ impl BlobData {
                 let digest_rlc = chunk_digest
                     .iter()
                     .fold(Value::known(Fr::zero()), |acc, &byte| {
-                        acc * challenge + Value::known(Fr::from(byte as u64))
+                        acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
                     });
                 bytes.iter().enumerate().scan(
                     (0u64, Value::known(Fr::zero())),
                     move |acc, (j, &byte)| {
                         acc.0 += 1;
-                        acc.1 = acc.1 * challenge + Value::known(Fr::from(byte as u64));
+                        acc.1 =
+                            acc.1 * challenge.keccak_input() + Value::known(Fr::from(byte as u64));
                         Some(BlobDataRow {
                             byte,
                             accumulator: acc.0,
@@ -445,14 +449,14 @@ impl BlobData {
             .collect()
     }
 
-    fn to_hash_rows(&self, challenge: Value<Fr>) -> Vec<BlobDataRow<Fr>> {
+    fn to_hash_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
         let zero = Value::known(Fr::zero());
 
         // metadata
         let metadata_bytes = self.to_metadata_bytes();
-        let metadata_digest = keccak256(&metadata_bytes);
+        let metadata_digest = keccak256(metadata_bytes);
         let metadata_digest_rlc = metadata_digest.iter().fold(zero, |acc, &byte| {
-            acc * challenge + Value::known(Fr::from(byte as u64))
+            acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
         });
 
         // chunk data
@@ -462,7 +466,7 @@ impl BlobData {
             .map(|chunk| {
                 let digest = keccak256(chunk);
                 let digest_rlc = digest.iter().fold(zero, |acc, &byte| {
-                    acc * challenge + Value::known(Fr::from(byte as u64))
+                    acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
                 });
                 (digest, digest_rlc)
             })
@@ -470,52 +474,72 @@ impl BlobData {
 
         // blob
         let blob_preimage = std::iter::empty()
-            .chain(metadata_bytes.iter())
+            .chain(metadata_digest.iter())
             .chain(chunk_digests.iter().flatten())
             .cloned()
             .collect::<Vec<u8>>();
         let blob_preimage_rlc = blob_preimage.iter().fold(zero, |acc, &byte| {
-            acc * challenge + Value::known(Fr::from(byte as u64))
+            acc * challenge.keccak_input() + Value::known(Fr::from(byte as u64))
         });
         let blob_digest = keccak256(&blob_preimage);
         let blob_digest_rlc = blob_digest.iter().fold(zero, |acc, &byte| {
-            acc * challenge + Value::known(Fr::from(byte as u64))
+            acc * challenge.evm_word() + Value::known(Fr::from(byte as u64))
         });
 
         std::iter::empty()
             .chain(std::iter::once(BlobDataRow {
                 digest_rlc: metadata_digest_rlc,
+                preimage_rlc: Value::known(Fr::zero()),
+                // this is_padding assignment does not matter as we have already crossed the "chunk
+                // data" section. This assignment to 1 is simply to allow the custom gate to check:
+                // - padding transitions from 0 -> 1 only once.
+                is_padding: true,
                 ..Default::default()
             }))
-            .chain(chunk_digest_rlcs.iter().map(|&digest_rlc| BlobDataRow {
-                digest_rlc,
-                ..Default::default()
-            }))
+            .chain(
+                chunk_digest_rlcs
+                    .iter()
+                    .zip_eq(self.chunk_bytes.iter())
+                    .enumerate()
+                    .map(|(i, (&digest_rlc, chunk_bytes))| BlobDataRow {
+                        digest_rlc,
+                        chunk_idx: (i + 1) as u64,
+                        accumulator: chunk_bytes.len() as u64,
+                        preimage_rlc: Value::known(Fr::zero()),
+                        ..Default::default()
+                    }),
+            )
             .chain(std::iter::once(BlobDataRow {
                 preimage_rlc: blob_preimage_rlc,
                 digest_rlc: blob_digest_rlc,
-                accumulator: 32 + (MAX_AGG_SNARKS + 1) as u64,
+                accumulator: 32 * (MAX_AGG_SNARKS + 1) as u64,
                 is_boundary: true,
                 ..Default::default()
             }))
             .chain(metadata_digest.iter().map(|&byte| BlobDataRow {
                 byte,
+                preimage_rlc: Value::known(Fr::zero()),
+                digest_rlc: Value::known(Fr::zero()),
                 ..Default::default()
             }))
             .chain(chunk_digests.iter().flat_map(|digest| {
                 digest.iter().map(|&byte| BlobDataRow {
                     byte,
+                    preimage_rlc: Value::known(Fr::zero()),
+                    digest_rlc: Value::known(Fr::zero()),
                     ..Default::default()
                 })
             }))
             .chain(blob_digest.iter().map(|&byte| BlobDataRow {
                 byte,
+                preimage_rlc: Value::known(Fr::zero()),
+                digest_rlc: Value::known(Fr::zero()),
                 ..Default::default()
             }))
             .collect()
     }
 
-    pub(crate) fn to_rows(&self, challenge: Value<Fr>) -> Vec<BlobDataRow<Fr>> {
+    pub(crate) fn to_rows(&self, challenge: Challenges<Value<Fr>>) -> Vec<BlobDataRow<Fr>> {
         let metadata_rows = self.to_metadata_rows(challenge);
         assert_eq!(metadata_rows.len(), N_ROWS_METADATA);
 

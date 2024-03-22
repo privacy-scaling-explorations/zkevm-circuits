@@ -22,8 +22,10 @@ use crate::{
     constants::{BITS, LIMBS},
 };
 
+/*
 mod scalar_field_element;
 use scalar_field_element::ScalarFieldElement;
+*/
 
 pub static ROOTS_OF_UNITY: LazyLock<[Scalar; BLOB_WIDTH]> = LazyLock::new(|| {
     // https://github.com/ethereum/consensus-specs/blob/dev/specs/deneb/polynomial-commitments.md#constants
@@ -142,7 +144,7 @@ impl BarycentricEvaluationConfig {
             .load_private(ctx, Value::known(fe_to_biguint(&evaluation_scalar).into()));
         let powers_of_256 =
             std::iter::successors(Some(Fr::one()), |coeff| Some(Fr::from(256) * coeff))
-                .take(32)
+                .take(11)
                 .map(QuantumCell::Constant)
                 .collect::<Vec<_>>();
         let challenge_limb1 = self.scalar.range().gate.inner_product(
@@ -157,14 +159,14 @@ impl BarycentricEvaluationConfig {
             challenge_le[11..22]
                 .iter()
                 .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[11..22].to_vec(),
+            powers_of_256[0..11].to_vec(),
         );
         let challenge_limb3 = self.scalar.range().gate.inner_product(
             ctx,
             challenge_le[22..32]
                 .iter()
                 .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[22..32].to_vec(),
+            powers_of_256[0..11].to_vec(),
         );
         self.scalar.range().gate.assert_equal(
             ctx,
@@ -193,14 +195,14 @@ impl BarycentricEvaluationConfig {
             evaluation_le[11..22]
                 .iter()
                 .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[11..22].to_vec(),
+            powers_of_256[0..11].to_vec(),
         );
         let evaluation_limb3 = self.scalar.range().gate.inner_product(
             ctx,
             evaluation_le[22..32]
                 .iter()
                 .map(|&x| QuantumCell::Existing(x)),
-            powers_of_256[22..32].to_vec(),
+            powers_of_256[0..11].to_vec(),
         );
         self.scalar.range().gate.assert_equal(
             ctx,
@@ -224,29 +226,31 @@ impl BarycentricEvaluationConfig {
         blob.iter()
             .zip_eq(ROOTS_OF_UNITY.map(|x| self.scalar.load_constant(ctx, fe_to_biguint(&x))))
             .for_each(|(blob_i, root_i_crt)| {
-                let blob_i_le = blob_i
-                    .to_le_bytes()
-                    .iter()
-                    .map(|&x| QuantumCell::Witness(Value::known(Fr::from(x as u64))))
-                    .collect::<Vec<_>>();
+                let blob_i_le = self.scalar.range().gate.assign_witnesses(
+                    ctx,
+                    blob_i
+                        .to_le_bytes()
+                        .iter()
+                        .map(|&x| Value::known(Fr::from(x as u64))),
+                );
                 let blob_i_scalar = Scalar::from_raw(blob_i.0);
                 let blob_i_crt = self
                     .scalar
                     .load_private(ctx, Value::known(fe_to_biguint(&blob_i_scalar).into()));
                 let limb1 = self.scalar.range().gate.inner_product(
                     ctx,
-                    blob_i_le[0..11].to_vec(),
+                    blob_i_le[0..11].iter().map(|&x| QuantumCell::Existing(x)),
                     powers_of_256[0..11].to_vec(),
                 );
                 let limb2 = self.scalar.range().gate.inner_product(
                     ctx,
-                    blob_i_le[11..22].to_vec(),
-                    powers_of_256[11..22].to_vec(),
+                    blob_i_le[11..22].iter().map(|&x| QuantumCell::Existing(x)),
+                    powers_of_256[0..11].to_vec(),
                 );
                 let limb3 = self.scalar.range().gate.inner_product(
                     ctx,
-                    blob_i_le[22..32].to_vec(),
-                    powers_of_256[22..32].to_vec(),
+                    blob_i_le[22..32].iter().map(|&x| QuantumCell::Existing(x)),
+                    powers_of_256[0..11].to_vec(),
                 );
                 self.scalar.range().gate.assert_equal(
                     ctx,
@@ -265,7 +269,7 @@ impl BarycentricEvaluationConfig {
                 );
                 self.scalar.range().gate.assert_equal(
                     ctx,
-                    blob_i_le[31].clone(),
+                    QuantumCell::Existing(blob_i_le[31]),
                     QuantumCell::Constant(Fr::zero()),
                 );
 
@@ -312,6 +316,7 @@ impl BarycentricEvaluationConfig {
         }
     }
 
+    /*
     pub fn assign(
         &self,
         ctx: &mut Context<Fr>,
@@ -351,6 +356,7 @@ impl BarycentricEvaluationConfig {
             blob,
         }
     }
+    */
 }
 
 pub fn interpolate(z: Scalar, coefficients: [Scalar; BLOB_WIDTH]) -> Scalar {
