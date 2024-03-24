@@ -17,7 +17,7 @@ use thiserror::Error;
 use zkevm_circuits::{
     super_circuit::SuperCircuit,
     test_util::{CircuitTestBuilder, CircuitTestError},
-    witness::Block,
+    witness::{Block, Chunk},
 };
 
 #[derive(PartialEq, Eq, Error, Debug)]
@@ -324,10 +324,11 @@ pub fn run_test(
         eth_block: eth_block.clone(),
     };
 
-    let mut builder;
+    let builder;
 
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
+            total_chunks: 1,
             max_txs: 1,
             max_withdrawals: 1,
             max_rws: 55000,
@@ -341,15 +342,16 @@ pub fn run_test(
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
-        builder = block_data.new_circuit_input_builder();
-        builder
+        builder = block_data
+            .new_circuit_input_builder()
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
-
-        CircuitTestBuilder::<1, 1>::new_from_block(block)
+        let chunks: Vec<Chunk<Fr>> =
+            zkevm_circuits::evm_circuit::witness::chunk_convert(&block, &builder).unwrap();
+        CircuitTestBuilder::<1, 1>::new_from_block(block, chunks)
             .run_with_result()
             .map_err(|err| match err {
                 CircuitTestError::VerificationFailed { reasons, .. } => {
@@ -367,6 +369,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
+            total_chunks: 1,
             max_txs: 1,
             max_withdrawals: 1,
             max_calldata: 32,
@@ -378,9 +381,12 @@ pub fn run_test(
             max_keccak_rows: 0,
             max_vertical_circuit_rows: 0,
         };
-        let (k, circuit, instance, _builder) =
+        let (k, mut circuits, mut instances, _builder) =
             SuperCircuit::<Fr>::build(geth_data, circuits_params, Fr::from(0x100)).unwrap();
         builder = _builder;
+
+        let circuit = circuits.remove(0);
+        let instance = instances.remove(0);
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover

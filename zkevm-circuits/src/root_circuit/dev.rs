@@ -1,13 +1,15 @@
-use super::{aggregate, AggregationConfig, Halo2Loader, KzgSvk, Snark, SnarkWitness, LIMBS};
+use super::{
+    aggregate, AggregationConfig, Halo2Loader, KzgSvk, Snark, SnarkWitness, UserChallenge, LIMBS,
+};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::{ff::Field as Halo2Field, serde::SerdeObject, CurveAffine, CurveExt},
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Circuit, ConstraintSystem, Error, Error::InvalidInstances},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
-use maingate::MainGateInstructions;
+use maingate::{MainGateInstructions, RegionCtx};
 use snark_verifier::{
     loader::native::NativeLoader,
     pcs::{
@@ -20,12 +22,14 @@ use std::{iter, marker::PhantomData, rc::Rc};
 
 /// Aggregation circuit for testing purpose.
 #[derive(Clone)]
+#[allow(clippy::type_complexity)]
 pub struct TestAggregationCircuit<'a, M: MultiMillerLoop, As>
 where
     M::G1Affine: CurveAffine,
 {
     svk: KzgSvk<M>,
     snarks: Vec<SnarkWitness<'a, M::G1Affine>>,
+    user_challenge: Option<(UserChallenge, Vec<M::G1Affine>, Vec<M::Fr>)>,
     instances: Vec<M::Fr>,
     _marker: PhantomData<As>,
 }
@@ -50,9 +54,11 @@ where
 {
     /// Create an Aggregation circuit with aggregated accumulator computed.
     /// Returns `None` if any given snark is invalid.
+    #[allow(clippy::type_complexity)]
     pub fn new(
         params: &ParamsKZG<M>,
         snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
+        user_challenge: Option<(UserChallenge, Vec<M::G1Affine>, Vec<M::Fr>)>,
     ) -> Result<Self, snark_verifier::Error> {
         let snarks = snarks.into_iter().collect_vec();
 
@@ -71,6 +77,7 @@ where
 
         Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
+            user_challenge,
             snarks: snarks.into_iter().map_into().collect(),
             instances,
             _marker: PhantomData,
@@ -120,6 +127,7 @@ where
     fn without_witnesses(&self) -> Self {
         Self {
             svk: self.svk,
+            user_challenge: self.user_challenge.clone(),
             snarks: self
                 .snarks
                 .iter()
@@ -140,18 +148,84 @@ where
         mut layouter: impl Layouter<M::Fr>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
-        let (instances, accumulator_limbs) =
-            config.aggregate::<M, As>(&mut layouter, &self.svk, self.snarks.clone())?;
+
+        let (instances, accumulator_limbs) = layouter.assign_region(
+            || "Aggregate snarks",
+            |mut region| {
+                config.named_column_in_region(&mut region);
+                let ctx = RegionCtx::new(region, 0);
+                let (instances, accumulator_limbs, loader, proofs) =
+                    config.aggregate::<M, As>(ctx, &self.svk, &self.snarks)?;
+
+                // aggregate user challenge for rwtable permutation challenge
+                let user_challenge = self
+                    .user_challenge
+                    .as_ref()
+                    .map(|(challenge, _, _)| challenge);
+                let (challenges, commitments) = config.aggregate_user_challenges::<M, As>(
+                    loader.clone(),
+                    user_challenge,
+                    proofs,
+                )?;
+                if !challenges.is_empty() {
+                    let Some((_, expected_commitments, expected_challenges)) =
+                        self.user_challenge.as_ref()
+                    else {
+                        return Err(InvalidInstances);
+                    };
+                    // check commitment equality
+                    let expected_commitments_loaded = expected_commitments
+                        .iter()
+                        .map(|expected_commitment| {
+                            loader.ecc_chip().assign_point(
+                                &mut loader.ctx_mut(),
+                                Value::known(*expected_commitment),
+                            )
+                        })
+                        .collect::<Result<Vec<_>, Error>>()?;
+                    expected_commitments_loaded
+                        .iter()
+                        .zip(commitments.iter())
+                        .try_for_each(|(expected_commitment, commitment)| {
+                            loader.ecc_chip().assert_equal(
+                                &mut loader.ctx_mut(),
+                                expected_commitment,
+                                &commitment.assigned(),
+                            )
+                        })?;
+
+                    // check challenge equality
+                    let expected_challenges_loaded = expected_challenges
+                        .iter()
+                        .map(|value| loader.assign_scalar(Value::known(*value)))
+                        .collect::<Vec<_>>();
+                    expected_challenges_loaded
+                        .iter()
+                        .zip(challenges.iter())
+                        .try_for_each(|(expected_challenge, challenge)| {
+                            loader.scalar_chip().assert_equal(
+                                &mut loader.ctx_mut(),
+                                &expected_challenge.assigned(),
+                                &challenge.assigned(),
+                            )
+                        })?;
+                }
+
+                let instances = instances
+                    .iter()
+                    .flat_map(|instances| {
+                        instances
+                            .iter()
+                            .map(|instance| instance.assigned().to_owned())
+                    })
+                    .collect_vec();
+                Ok((instances, accumulator_limbs))
+            },
+        )?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
-        for (row, limb) in instances
-            .into_iter()
-            .flatten()
-            .flatten()
-            .chain(accumulator_limbs)
-            .enumerate()
-        {
+        for (row, limb) in instances.into_iter().chain(accumulator_limbs).enumerate() {
             main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
 

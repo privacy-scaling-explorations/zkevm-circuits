@@ -18,7 +18,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::word::{Word32Cell, WordExpr, WordLimbs, WordLoHi, WordLoHiCell},
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 
 #[derive(Clone, Debug)]
@@ -206,6 +206,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

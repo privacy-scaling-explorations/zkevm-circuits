@@ -199,8 +199,8 @@ pub struct SigCircuit<F: Field> {
 impl<F: Field + halo2_base::utils::ScalarField> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
-    fn new_from_block(block: &crate::witness::Block<F>) -> Self {
-        assert!(block.circuits_params.max_txs <= MAX_NUM_SIG);
+    fn new_from_block(block: &crate::witness::Block<F>, chunk: &crate::witness::Chunk<F>) -> Self {
+        assert!(chunk.fixed_param.max_txs <= MAX_NUM_SIG);
 
         SigCircuit {
             max_verif: MAX_NUM_SIG,
@@ -235,11 +235,14 @@ impl<F: Field + halo2_base::utils::ScalarField> SubCircuit<F> for SigCircuit<F> 
 
     // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
-    fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
-        let row_num = if block.circuits_params.max_vertical_circuit_rows == 0 {
+    fn min_num_rows_block(
+        block: &crate::witness::Block<F>,
+        chunk: &crate::witness::Chunk<F>,
+    ) -> (usize, usize) {
+        let row_num = if chunk.fixed_param.max_vertical_circuit_rows == 0 {
             Self::min_num_rows()
         } else {
-            block.circuits_params.max_vertical_circuit_rows
+            chunk.fixed_param.max_vertical_circuit_rows
         };
 
         let ecdsa_verif_count =

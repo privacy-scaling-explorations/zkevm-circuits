@@ -13,7 +13,7 @@ use crate::{
             tx::EndTxHelperGadget,
             CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{
@@ -145,6 +145,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -416,7 +417,7 @@ mod test {
     fn end_tx_consistent_tx_id_write() {
         // check there is no consecutive txid write with same txid in rw_table
 
-        let block = CircuitTestBuilder::new_from_test_ctx(
+        let (block, _) = CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 3>::new(
                 None,
                 account_0_code_account_1_no_code(bytecode! { STOP }),
@@ -442,7 +443,7 @@ mod test {
             max_txs: 5,
             ..Default::default()
         })
-        .build_block()
+        .build_block(None)
         .unwrap();
 
         block.rws.0[&Target::CallContext]

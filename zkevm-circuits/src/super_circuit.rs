@@ -62,22 +62,24 @@ use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, SigTable,
-        TxTable, UXTable, WdTable,
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, MptTable,
+        RwTable, SigTable, TxTable, UXTable, WdTable,
     },
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
-    util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block, MptUpdates},
+    util::{chunk_ctx::ChunkContextConfig, log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, chunk_convert, Block, Chunk, MptUpdates},
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FeatureConfig, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types::GethData, Field};
+use gadgets::util::Expr;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    plonk::{Any, Circuit, Column, ConstraintSystem, Error, Expression},
 };
+use itertools::Itertools;
 
 use std::array;
 
@@ -97,8 +99,31 @@ pub struct SuperCircuitConfig<F: Field> {
     keccak_circuit: KeccakCircuitConfig<F>,
     pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
+    chunk_ctx_config: ChunkContextConfig<F>,
     #[cfg(not(feature = "mock-challenge"))]
     challenges: Challenges<halo2_proofs::plonk::Challenge>,
+}
+
+/// Circuit configuration arguments
+pub struct SuperCircuitConfigArgs<F: Field> {
+    /// Max txs
+    pub max_txs: usize,
+    /// Max calldata
+    pub max_calldata: usize,
+    /// Mock randomness
+    pub mock_randomness: F,
+}
+
+impl<F: Field> SuperCircuitConfig<F> {
+    /// get chronological_rwtable and byaddr_rwtable advice columns
+    pub fn get_rwtable_columns(&self) -> Vec<Column<Any>> {
+        // concat rw_table columns: [chronological_rwtable] ++ [byaddr_rwtable]
+        let mut columns = <RwTable as LookupTable<F>>::columns(&self.evm_circuit.rw_table);
+        columns.append(&mut <RwTable as LookupTable<F>>::columns(
+            &self.state_circuit.rw_table,
+        ));
+        columns
+    }
 }
 
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
@@ -117,7 +142,10 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
     ) -> Self {
         let tx_table = TxTable::construct(meta);
         let wd_table = WdTable::construct(meta);
-        let rw_table = RwTable::construct(meta);
+
+        let chronological_rw_table = RwTable::construct(meta);
+        let by_address_rw_table = RwTable::construct(meta);
+
         let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
@@ -149,6 +177,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let challenges_exprs = challenges.exprs(meta);
 
         let sig_table = SigTable::construct(meta);
+
+        let chunk_ctx_config = ChunkContextConfig::new(meta, &challenges_exprs);
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
@@ -191,7 +221,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             CopyCircuitConfigArgs {
                 tx_table: tx_table.clone(),
-                rw_table,
+                rw_table: chronological_rw_table,
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
@@ -201,7 +231,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
-                rw_table,
+                rw_table: by_address_rw_table,
                 mpt_table,
                 u8_table,
                 u10_table,
@@ -215,7 +245,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             EvmCircuitConfigArgs {
                 challenges: challenges_exprs,
                 tx_table,
-                rw_table,
+                rw_table: chronological_rw_table,
                 bytecode_table,
                 block_table: block_table.clone(),
                 copy_table,
@@ -224,7 +254,65 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 u8_table,
                 u16_table,
                 sig_table,
+                chunk_ctx_config: chunk_ctx_config.clone(),
                 feature_config,
+            },
+        );
+
+        // chronological/by address rwtable fingerprint must be the same in last chunk
+        // last row.
+        meta.create_gate(
+            "chronological rwtable fingerprint == by address rwtable fingerprint",
+            |meta| {
+                let is_last_chunk = chunk_ctx_config.is_last_chunk.expr();
+                let chronological_rwtable_acc_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .acc_fingerprints_cur_expr();
+                let by_address_rwtable_acc_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .acc_fingerprints_cur_expr();
+
+                let q_row_last = meta.query_selector(evm_circuit.rw_permutation_config.q_row_last);
+
+                vec![
+                    is_last_chunk
+                        * q_row_last
+                        * (chronological_rwtable_acc_fingerprint
+                            - by_address_rwtable_acc_fingerprint),
+                ]
+            },
+        );
+
+        // chronological/by address rwtable `row fingerprint` must be the same in first
+        // chunk first row.
+        // `row fingerprint` is not a constant so root circuit can NOT constraint it.
+        // so we constraints here by gate
+        // Furthermore, first row in rw_table should be `Rw::Start`, which will be lookup by
+        // `BeginChunk` at first chunk
+        meta.create_gate(
+            "chronological rwtable row fingerprint == by address rwtable row fingerprint",
+            |meta| {
+                let is_first_chunk = chunk_ctx_config.is_first_chunk.expr();
+                let chronological_rwtable_row_fingerprint = evm_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+                let by_address_rwtable_row_fingerprint = state_circuit
+                    .rw_permutation_config
+                    .row_fingerprints_cur_expr();
+
+                let q_row_first = 1.expr()
+                    - meta.query_selector(evm_circuit.rw_permutation_config.q_row_non_first);
+
+                let q_row_enable =
+                    meta.query_selector(evm_circuit.rw_permutation_config.q_row_enable);
+
+                vec![
+                    is_first_chunk
+                        * q_row_first
+                        * q_row_enable
+                        * (chronological_rwtable_row_fingerprint
+                            - by_address_rwtable_row_fingerprint),
+                ]
             },
         );
 
@@ -242,6 +330,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             keccak_circuit,
             pi_circuit,
             exp_circuit,
+            chunk_ctx_config,
             #[cfg(not(feature = "mock-challenge"))]
             challenges,
         }
@@ -251,6 +340,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
 /// The Super Circuit contains all the zkEVM circuits
 #[derive(Clone, Default, Debug)]
 pub struct SuperCircuit<F: Field> {
+    /// Chunk
+    pub chunk: Option<Chunk<F>>,
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
     /// State Circuit
@@ -277,10 +368,10 @@ pub struct SuperCircuit<F: Field> {
 
 impl<F: Field> SuperCircuit<F> {
     /// Return the number of rows required to verify a given block
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
+    pub fn get_num_rows_required(block: &Block<F>, chunk: &Chunk<F>) -> usize {
+        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block, chunk);
         let num_rows_tx_circuit =
-            TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+            TxCircuitConfig::<F>::get_num_rows_required(chunk.fixed_param.max_txs);
         num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
 }
@@ -305,17 +396,18 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         .unwrap()
     }
 
-    fn new_from_block(block: &Block<F>) -> Self {
-        let evm_circuit = EvmCircuit::new_from_block(block);
-        let state_circuit = StateCircuit::new_from_block(block);
-        let tx_circuit = TxCircuit::new_from_block(block);
-        let pi_circuit = PiCircuit::new_from_block(block);
-        let bytecode_circuit = BytecodeCircuit::new_from_block(block);
-        let copy_circuit = CopyCircuit::new_from_block_no_external(block);
-        let exp_circuit = ExpCircuit::new_from_block(block);
-        let keccak_circuit = KeccakCircuit::new_from_block(block);
+    fn new_from_block(block: &Block<F>, chunk: &Chunk<F>) -> Self {
+        let evm_circuit = EvmCircuit::new_from_block(block, chunk);
+        let state_circuit = StateCircuit::new_from_block(block, chunk);
+        let tx_circuit = TxCircuit::new_from_block(block, chunk);
+        let pi_circuit = PiCircuit::new_from_block(block, chunk);
+        let bytecode_circuit = BytecodeCircuit::new_from_block(block, chunk);
+        let copy_circuit = CopyCircuit::new_from_block_no_external(block, chunk);
+        let exp_circuit = ExpCircuit::new_from_block(block, chunk);
+        let keccak_circuit = KeccakCircuit::new_from_block(block, chunk);
 
         SuperCircuit::<_> {
+            chunk: Some(chunk.clone()),
             evm_circuit,
             state_circuit,
             tx_circuit,
@@ -324,7 +416,7 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
             copy_circuit,
             exp_circuit,
             keccak_circuit,
-            circuits_params: block.circuits_params,
+            circuits_params: chunk.fixed_param,
             feature_config: block.feature_config,
             mock_randomness: block.randomness,
         }
@@ -333,6 +425,17 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
     /// Returns suitable inputs for the SuperCircuit.
     fn instance(&self) -> Vec<Vec<F>> {
         let mut instance = Vec::new();
+
+        let chunk = self.chunk.as_ref().unwrap();
+
+        instance.extend_from_slice(&[vec![
+            F::from(chunk.chunk_context.idx as u64),
+            F::from(chunk.chunk_context.idx as u64) + F::ONE,
+            F::from(chunk.chunk_context.total_chunks as u64),
+            F::from(chunk.chunk_context.initial_rwc as u64),
+            F::from(chunk.chunk_context.end_rwc as u64),
+        ]]);
+
         instance.extend_from_slice(&self.keccak_circuit.instance());
         instance.extend_from_slice(&self.pi_circuit.instance());
         instance.extend_from_slice(&self.tx_circuit.instance());
@@ -340,21 +443,23 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         instance.extend_from_slice(&self.copy_circuit.instance());
         instance.extend_from_slice(&self.state_circuit.instance());
         instance.extend_from_slice(&self.exp_circuit.instance());
-        instance.extend_from_slice(&self.evm_circuit.instance());
+        // remove first vector which is chunk_ctx
+        // which supercircuit already supply globally on top
+        instance.extend_from_slice(&self.evm_circuit.instance()[1..]);
 
         instance
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
-        let evm = EvmCircuit::min_num_rows_block(block);
-        let state = StateCircuit::min_num_rows_block(block);
-        let bytecode = BytecodeCircuit::min_num_rows_block(block);
-        let copy = CopyCircuit::min_num_rows_block(block);
-        let keccak = KeccakCircuit::min_num_rows_block(block);
-        let tx = TxCircuit::min_num_rows_block(block);
-        let exp = ExpCircuit::min_num_rows_block(block);
-        let pi = PiCircuit::min_num_rows_block(block);
+    fn min_num_rows_block(block: &Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
+        let evm = EvmCircuit::min_num_rows_block(block, chunk);
+        let state = StateCircuit::min_num_rows_block(block, chunk);
+        let bytecode = BytecodeCircuit::min_num_rows_block(block, chunk);
+        let copy = CopyCircuit::min_num_rows_block(block, chunk);
+        let keccak = KeccakCircuit::min_num_rows_block(block, chunk);
+        let tx = TxCircuit::min_num_rows_block(block, chunk);
+        let exp = ExpCircuit::min_num_rows_block(block, chunk);
+        let pi = PiCircuit::min_num_rows_block(block, chunk);
 
         let rows: Vec<(usize, usize)> = vec![evm, state, bytecode, copy, keccak, tx, exp, pi];
         let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
@@ -372,6 +477,12 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
+        // synthesize chunk context
+        config.chunk_ctx_config.assign_chunk_context(
+            layouter,
+            &self.chunk.as_ref().unwrap().chunk_context,
+            self.chunk.as_ref().unwrap().fixed_param.max_rws - 1,
+        )?;
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
         self.bytecode_circuit
@@ -470,12 +581,19 @@ impl<F: Field> SuperCircuit<F> {
         geth_data: GethData,
         circuits_params: FixedCParams,
         mock_randomness: F,
-    ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder<FixedCParams>), bus_mapping::Error>
-    {
+    ) -> Result<
+        (
+            u32,
+            Vec<Self>,
+            Vec<Vec<Vec<F>>>,
+            CircuitInputBuilder<FixedCParams>,
+        ),
+        bus_mapping::Error,
+    > {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
+        let builder = block_data
+            .new_circuit_input_builder()
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
 
@@ -488,20 +606,43 @@ impl<F: Field> SuperCircuit<F> {
     ///
     /// Also, return with it the minimum required SRS degree for the circuit and
     /// the Public Inputs needed.
+    #[allow(clippy::type_complexity)]
     pub fn build_from_circuit_input_builder(
         builder: &CircuitInputBuilder<FixedCParams>,
         mock_randomness: F,
-    ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
+    ) -> Result<(u32, Vec<Self>, Vec<Vec<Vec<F>>>), bus_mapping::Error> {
         let mut block = block_convert(builder).unwrap();
+        let chunks = chunk_convert(&block, builder).unwrap();
         block.randomness = mock_randomness;
 
-        let (_, rows_needed) = Self::min_num_rows_block(&block);
-        let k = log2_ceil(Self::unusable_rows() + rows_needed);
+        let (rows_needed, circuit_instance_pairs): (Vec<usize>, Vec<(_, _)>) = chunks
+            .iter()
+            .map(|chunk| {
+                let (_, rows_needed) = Self::min_num_rows_block(&block, chunk);
+
+                let circuit = SuperCircuit::new_from_block(&block, chunk);
+                let instance = circuit.instance();
+                (rows_needed, (circuit, instance))
+            })
+            .unzip();
+
+        // assert all rows needed are equal
+        rows_needed
+            .iter()
+            .tuple_windows()
+            .for_each(|rows_needed: (&usize, &usize)| {
+                assert!(
+                    rows_needed.0 == rows_needed.1,
+                    "mismatched super_circuit rows_needed {:?} != {:?}",
+                    rows_needed.0,
+                    rows_needed.1
+                )
+            });
+
+        let k = log2_ceil(Self::unusable_rows() + rows_needed[0]);
         log::debug!("super circuit uses k = {}", k);
 
-        let circuit = SuperCircuit::new_from_block(&block);
-
-        let instance = circuit.instance();
-        Ok((k, circuit, instance))
+        let (circuits, instances) = circuit_instance_pairs.into_iter().unzip();
+        Ok((k, circuits, instances))
     }
 }

@@ -13,7 +13,7 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::Expr,
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, U256};
@@ -119,6 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

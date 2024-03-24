@@ -2,8 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent, Transaction,
-    TransactionContext,
+    CallKind, ChunkContext, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent,
+    Transaction, TransactionContext,
 };
 use crate::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
@@ -37,6 +37,8 @@ pub struct CircuitInputStateRef<'a> {
     pub block: &'a mut Block,
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
+    /// Chunk Context
+    pub chunk_ctx: &'a mut ChunkContext,
     /// Transaction
     pub tx: &'a mut Transaction,
     /// Transaction Context
@@ -49,11 +51,11 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
-
         Ok(ExecStep::new(
             geth_step,
             call_ctx,
             self.block_ctx.rwc,
+            self.chunk_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
         ))
@@ -65,6 +67,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::InvalidTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -75,6 +78,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::BeginTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -110,6 +114,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 0
             },
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
                 call_ctx.reversible_write_counter
@@ -131,10 +136,12 @@ impl<'a> CircuitInputStateRef<'a> {
         if let OpEnum::Account(op) = op.clone().into_enum() {
             self.check_update_sdb_account(rw, &op)
         }
-        let op_ref =
-            self.block
-                .container
-                .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
+        let op_ref = self.block.container.insert(Operation::new(
+            self.block_ctx.rwc.inc_pre(),
+            self.chunk_ctx.rwc.inc_pre(),
+            rw,
+            op,
+        ));
         step.bus_mapping_instance.push(op_ref);
         self.check_rw_num_limit()
     }
@@ -142,9 +149,13 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Check whether rws will overflow circuit limit.
     pub fn check_rw_num_limit(&self) -> Result<(), Error> {
         if let Some(max_rws) = self.max_rws {
-            let rwc = self.block_ctx.rwc.0;
+            let rwc = self.chunk_ctx.rwc.0;
             if rwc > max_rws {
-                log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
+                log::error!(
+                    "chunk inner rwc > max_rws, rwc={}, max_rws={}",
+                    rwc,
+                    max_rws
+                );
                 return Err(Error::RwsNotEnough(max_rws, rwc));
             };
         }
@@ -210,6 +221,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.check_apply_op(&op.clone().into_enum());
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
+            self.chunk_ctx.rwc.inc_pre(),
             RW::WRITE,
             op,
         ));
@@ -1009,6 +1021,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.check_apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
                     self.block_ctx.rwc.inc_pre(),
+                    self.chunk_ctx.rwc.inc_pre(),
                     RW::WRITE,
                     false,
                     op,

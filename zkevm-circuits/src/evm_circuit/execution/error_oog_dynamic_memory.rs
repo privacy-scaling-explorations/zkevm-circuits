@@ -13,7 +13,7 @@ use crate::{
             CachedRegion, Cell,
         },
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use eth_types::{evm_types::OpcodeId, Field};
 use gadgets::util::{or, Expr};
@@ -77,6 +77,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,

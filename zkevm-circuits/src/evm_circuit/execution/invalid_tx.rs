@@ -13,6 +13,7 @@ use crate::{
     },
     table::AccountFieldTag,
     util::word::{Word32Cell, WordExpr, WordLoHi},
+    witness::Chunk,
 };
 use eth_types::{Field, ToScalar};
 use gadgets::util::{not, or, Expr, Scalar};
@@ -95,6 +96,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

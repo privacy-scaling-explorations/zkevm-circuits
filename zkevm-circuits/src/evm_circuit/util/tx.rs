@@ -143,7 +143,8 @@ impl<F: Field> EndTxHelperGadget<F> {
             });
         });
         cb.condition(
-            cb.next.execution_state_selector([ExecutionState::EndBlock]),
+            cb.next
+                .execution_state_selector([ExecutionState::EndBlock, ExecutionState::Padding]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_offset.expr()),

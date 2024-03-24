@@ -10,7 +10,7 @@ use crate::{
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
             not, or, sum, CachedRegion, Cell, StepRws, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
@@ -121,6 +121,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,
