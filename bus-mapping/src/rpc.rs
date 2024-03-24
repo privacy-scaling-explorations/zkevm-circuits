@@ -58,10 +58,11 @@ pub(crate) struct GethLoggerConfig {
 impl Default for GethLoggerConfig {
     fn default() -> Self {
         Self {
-            enable_memory: cfg!(feature = "enable-memory") && GETH_TRACE_CHECK_LEVEL.should_check(),
-            disable_stack: !cfg!(feature = "enable-stack") && GETH_TRACE_CHECK_LEVEL.should_check(),
-            disable_storage: !cfg!(feature = "enable-storage")
-                && GETH_TRACE_CHECK_LEVEL.should_check(),
+            enable_memory: cfg!(feature = "enable-memory") || GETH_TRACE_CHECK_LEVEL.should_check(),
+            disable_stack: !(cfg!(feature = "enable-stack")
+                || GETH_TRACE_CHECK_LEVEL.should_check()),
+            disable_storage: !(cfg!(feature = "enable-storage")
+                || GETH_TRACE_CHECK_LEVEL.should_check()),
             enable_return_data: true,
             timeout: None,
         }
@@ -138,7 +139,10 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// transaction of the block.
     pub async fn trace_block_by_hash(&self, hash: Hash) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
-        let cfg = serialize(&GethLoggerConfig::default());
+        let cfg = serialize(&GethLoggerConfig {
+            timeout: Some("300s".to_string()),
+            ..Default::default()
+        });
         let resp: ResultGethExecTraces = self
             .0
             .request("debug_traceBlockByHash", [hash, cfg])

@@ -47,7 +47,7 @@ rayon.workspace = true
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
-criterion = "0.3"
+criterion = "0.5"
 ctor.workspace = true
 mock = { path = "../mock" }
 pretty_assertions.workspace = true
@@ -67,7 +67,7 @@ warn-unimplemented = ["eth-types/warn-unimplemented"]
 onephase = [] # debug only
 zktrie = []
 poseidon-codehash = []
-parallel_syn = ["hash-circuit/parallel_syn", "halo2_proofs/parallel_syn"]
+parallel_syn = ["hash-circuit/parallel_syn", "halo2_proofs/parallel_syn", "mpt-zktrie/parallel_syn"]
 
 debug-annotations = []
 enable-stack = ["bus-mapping/enable-stack"]
