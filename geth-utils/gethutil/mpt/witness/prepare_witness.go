@@ -176,7 +176,6 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 				kh = tMod.Key.Bytes()
 			}
 			keyHashed := trie.KeybytesToHex(kh)
-
 			addr := tMod.Address
 			addrh := crypto.Keccak256(addr.Bytes())
 			if oracle.AccountPreventHashingInSecureTrie {
@@ -335,7 +334,6 @@ func updateStateAndPrepareWitness(testName string, keys, values []common.Hash, a
 // and inserted into the Keccak lookup table.
 func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []byte, proof1, proof2, extNibblesS, extNibblesC [][]byte, storage_key common.Hash, key []byte, neighbourNode []byte,
 	isAccountProof, nonExistingAccountProof, nonExistingStorageProof, isShorterProofLastLeaf bool) []Node {
-	toBeHashed := make([][]byte, 0)
 
 	minLen := len(proof1)
 	if len(proof2) < minLen {
@@ -434,7 +432,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				extNibblesS[len1-1], extNibblesC[len2-1],
 				leafRow0, key, neighbourNode,
 				keyIndex, additionalBranch,
-				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
+				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf)
 
 			nodes = append(nodes, bNode)
 
@@ -473,9 +471,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			// of the existing extension node), additional rows are added (extension node before and after
 			// modification).
 			if isModifiedExtNode {
-				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
-					keyIndex, numberOfNibbles, additionalBranch,
-					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
+				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key,
+					keyIndex, numberOfNibbles, isAccountProof)
 			}
 			nodes = append(nodes, leafNode)
 		} else {
@@ -564,7 +561,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 						newAddr := common.BytesToAddress(newAddrBytes)
 						var extNibbles [][]byte;
 						proof, _, extNibbles, _, _, err = statedb.GetProof(newAddr)
-						check(err)
+						// We just continue if there is an error
+						if err != nil {
+							continue
+						}
 						if len(extNibbles[len(extNibbles)-1]) == 0 && !isBranch(proof[len(proof)-1]) {
 							break
 						}
@@ -573,7 +573,10 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 						ky := common.BytesToHash(k)
 						var extNibbles [][]byte;
 						proof, _, extNibbles, _, _, err = statedb.GetStorageProof(addr, ky)
-						check(err)
+						// We just continue if there is an error
+						if err != nil {
+							continue
+						}
 						if len(extNibbles[len(extNibbles)-1]) == 0 && !isBranch(proof[len(proof)-1]) {
 							break
 						}
@@ -582,14 +585,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 				branchRlp := proof[len(proof)-2] // the last element has to be a leaf
 				isExtension := true
-
 				extNode := proof2[len(proof2)-1] // Let's name it E1
 				bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
 					key[keyIndex], key[keyIndex], false, false, isExtension)
 				nodes = append(nodes, bNode)
 
 				// Let's construct the leaf L1 that will have the correct key (the queried one)
-
 				if isAccountProof {
 					compact := trie.HexToCompact(addr_nibbles[start:])
 

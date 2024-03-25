@@ -209,7 +209,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte,
 	leafRow0, key, neighbourNode []byte,
 	keyIndex int,
 	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool, toBeHashed *[][]byte) (bool, bool, int, Node) {
+	isShorterProofLastLeaf bool) (bool, bool, int, Node) {
 	len1 := len(proof1)
 	len2 := len(proof2)
 

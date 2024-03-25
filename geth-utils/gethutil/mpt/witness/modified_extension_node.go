@@ -13,10 +13,7 @@ import (
 // The rows added are somewhat exceptional as otherwise they do not appear.
 func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address, proof1, proof2,
 	extNibblesS, extNibblesC [][]byte,
-	key, neighbourNode []byte,
-	keyIndex, numberOfNibbles int,
-	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool, toBeHashed *[][]byte) Node {
+	key []byte, keyIndex, numberOfNibbles int, isAccountProof bool) Node {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
