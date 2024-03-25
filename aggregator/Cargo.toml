@@ -16,6 +16,7 @@ ethers-core.workspace = true
 hex.workspace = true
 log.workspace = true
 itertools.workspace = true
+once_cell.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
@@ -29,8 +30,7 @@ revm-precompile.workspace = true
 c-kzg.workspace = true
 num-bigint.workspace = true
 
-[dev-dependencies]
-reth-primitives = { git = "https://github.com/paradigmxyz/reth" }
+revm-primitives = "3.1.0"
 
 [features]
 default = [ ]

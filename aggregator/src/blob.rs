@@ -557,11 +557,21 @@ impl BlobDataRow<Fr> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::barycentric::ROOTS_OF_UNITY;
-    use reth_primitives::{
-        constants::eip4844::MAINNET_KZG_TRUSTED_SETUP,
-        kzg::{Blob as RethBlob, KzgProof},
-    };
+    use crate::aggregation::ROOTS_OF_UNITY;
+    use c_kzg::{Blob as RethBlob, KzgProof, KzgSettings};
+    use once_cell::sync::Lazy;
+    use std::{io::Write, sync::Arc};
+
+    /// KZG trusted setup
+    pub static MAINNET_KZG_TRUSTED_SETUP: Lazy<Arc<KzgSettings>> = Lazy::new(|| {
+        Arc::new(
+            c_kzg::KzgSettings::load_trusted_setup(
+                &revm_primitives::kzg::G1_POINTS.0,
+                &revm_primitives::kzg::G2_POINTS.0,
+            )
+            .expect("failed to load trusted setup"),
+        )
+    });
 
     #[test]
     fn empty_chunks_random_point() {
