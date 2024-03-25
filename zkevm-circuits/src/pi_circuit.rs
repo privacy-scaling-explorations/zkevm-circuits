@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData};
+use std::{cell::RefCell, collections::BTreeMap, iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -61,7 +61,12 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
 fn get_coinbase_constant() -> Address {
-    read_env_var("COINBASE", Address::zero())
+    let default_coinbase = if cfg!(feature = "scroll") {
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap()
+    } else {
+        Address::zero()
+    };
+    read_env_var("COINBASE", default_coinbase)
 }
 
 fn get_difficulty_constant() -> Word {
