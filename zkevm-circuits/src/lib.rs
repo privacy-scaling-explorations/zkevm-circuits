@@ -34,6 +34,7 @@ pub mod mpt_circuit;
 pub mod pi_circuit;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod root_circuit;
+pub mod sig_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;

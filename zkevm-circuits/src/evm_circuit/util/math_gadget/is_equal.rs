@@ -16,7 +16,7 @@ impl<F: Field> IsEqualGadget<F> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let is_zero = IsZeroGadget::construct(cb, lhs - rhs);
+        let is_zero = cb.is_zero(lhs - rhs);
 
         Self { is_zero }
     }
@@ -83,7 +83,7 @@ mod tests {
     fn test_isequal_0() {
         try_test!(
             IsEqualGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(0)],
+            [Word::from(0), Word::from(0)],
             true,
         );
     }
@@ -92,7 +92,7 @@ mod tests {
     fn test_isequal_1() {
         try_test!(
             IsEqualGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(1)],
+            [Word::from(1), Word::from(1)],
             true,
         );
     }
@@ -101,7 +101,7 @@ mod tests {
     fn test_isequal_1000() {
         try_test!(
             IsEqualGadgetTestContainer<Fr>,
-            vec![Word::from(1000), Word::from(1000)],
+            [Word::from(1000), Word::from(1000)],
             true,
         );
     }
@@ -110,7 +110,7 @@ mod tests {
     fn test_isequal_1_0() {
         try_test!(
             IsEqualGadgetTestContainer<Fr>,
-            vec![Word::from(1), Word::from(0)],
+            [Word::from(1), Word::from(0)],
             false,
         );
     }
@@ -119,7 +119,7 @@ mod tests {
     fn test_isequal_0_1() {
         try_test!(
             IsEqualGadgetTestContainer<Fr>,
-            vec![Word::from(0), Word::from(1)],
+            [Word::from(0), Word::from(1)],
             false,
         );
     }

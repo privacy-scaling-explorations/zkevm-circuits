@@ -47,7 +47,7 @@ pub enum FixedTableTag {
     Pow2,
     /// Lookup constant gas cost for opcodes
     ConstantGasCost,
-    /// Preocmpile information
+    /// Precompile information
     PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
@@ -141,7 +141,7 @@ impl FixedTableTag {
             ),
             Self::PrecompileInfo => Box::new(
                 vec![
-                    PrecompileCalls::ECRecover,
+                    PrecompileCalls::Ecrecover,
                     PrecompileCalls::Sha256,
                     PrecompileCalls::Ripemd160,
                     PrecompileCalls::Identity,
@@ -191,6 +191,10 @@ pub enum Table {
     Keccak,
     /// Lookup for exp table
     Exp,
+    /// Lookup for sig table
+    Sig,
+    /// Lookup for chunk context
+    ChunkCtx,
 }
 
 #[derive(Clone, Debug)]
@@ -251,7 +255,7 @@ impl<F: Field> RwValues<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
-    /// Lookup to fixed table, which contains serveral pre-built tables such as
+    /// Lookup to fixed table, which contains several pre-built tables such as
     /// range tables or bitwise tables.
     Fixed {
         /// Tag to specify which table to lookup.
@@ -359,6 +363,22 @@ pub(crate) enum Lookup<F> {
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
     },
+    SigTable {
+        msg_hash: WordLoHi<Expression<F>>,
+        sig_v: Expression<F>,
+        sig_r: WordLoHi<Expression<F>>,
+        sig_s: WordLoHi<Expression<F>>,
+        recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
+    },
+    /// Lookup to block table, which contains constants of this block.
+    ChunkCtx {
+        /// Tag to specify which field to read.
+        field_tag: Expression<F>,
+        /// value
+        value: Expression<F>,
+    },
+
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -371,6 +391,7 @@ impl<F: Field> Lookup<F> {
     pub(crate) fn table(&self) -> Table {
         match self {
             Self::Fixed { .. } => Table::Fixed,
+            Self::ChunkCtx { .. } => Table::ChunkCtx,
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
@@ -378,6 +399,7 @@ impl<F: Field> Lookup<F> {
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
+            Self::SigTable { .. } => Table::Sig,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -496,6 +518,26 @@ impl<F: Field> Lookup<F> {
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
             ],
+            Self::SigTable {
+                msg_hash,
+                sig_v,
+                sig_r,
+                sig_s,
+                recovered_addr,
+                is_valid,
+            } => vec![
+                1.expr(), // q_enable
+                msg_hash.lo(),
+                msg_hash.hi(),
+                sig_v.clone(),
+                sig_r.lo(),
+                sig_r.hi(),
+                sig_s.lo(),
+                sig_s.hi(),
+                recovered_addr.clone(),
+                is_valid.clone(),
+            ],
+            Self::ChunkCtx { field_tag, value } => vec![field_tag.clone(), value.clone()],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
                 .into_iter()

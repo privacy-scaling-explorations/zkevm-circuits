@@ -12,7 +12,7 @@ use crate::{
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.
@@ -182,7 +182,7 @@ pub struct Transaction {
     /// The transaction id
     pub id: u64,
     /// The raw transaction fields
-    tx: geth_types::Transaction,
+    pub tx: geth_types::Transaction,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -190,6 +190,16 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Create a dummy Transaction with zero values
+    pub fn dummy() -> Self {
+        Self {
+            id: 0,
+            calls: Vec::new(),
+            steps: Vec::new(),
+            tx: geth_types::Transaction::dummy(),
+        }
+    }
+
     /// Create a new Self.
     pub fn new(
         id: u64,

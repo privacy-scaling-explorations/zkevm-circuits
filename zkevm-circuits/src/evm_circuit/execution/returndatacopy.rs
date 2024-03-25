@@ -16,7 +16,7 @@ use crate::{
             },
             CachedRegion, Cell, MemoryAddress,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             WordLoHi::from_lo_unchecked(return_data_size.expr()),
         );
 
-        // 3. contraints for copy: copy overflow check
+        // 3. constraints for copy: copy overflow check
         // i.e., offset + size <= return_data_size
         let in_bound_check = RangeCheckGadget::construct(
             cb,
@@ -170,6 +170,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

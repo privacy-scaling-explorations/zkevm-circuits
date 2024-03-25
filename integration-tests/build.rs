@@ -45,7 +45,7 @@ enum BuildError {
     /// Vec<CompilerInput> is empty
     #[error("ArtifactError")]
     ArtifactError,
-    /// Functon compile_output failed to encode CompilerInput to Vec<u8>
+    /// Function compile_output failed to encode CompilerInput to Vec<u8>
     #[error("CompileOutputFailure({0:})")]
     CompileOutputFailure(String),
     /// Could not convert Vec<u8> to CompilerOutput

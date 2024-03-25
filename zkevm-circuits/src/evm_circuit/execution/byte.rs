@@ -8,7 +8,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             sum, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr, WordLoHi},
@@ -53,7 +53,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         let is_byte_selected = array_init(|idx| {
             // Check if this byte is selected looking only at the LSB of the
             // index word
-            IsEqualGadget::construct(cb, index.limbs[0].expr(), (31 - idx).expr())
+            cb.is_eq(index.limbs[0].expr(), (31 - idx).expr())
         });
 
         // Sum all possible selected bytes
@@ -97,6 +97,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

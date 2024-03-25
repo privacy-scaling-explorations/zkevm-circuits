@@ -1,6 +1,10 @@
-use super::*;
+use crate::witness::Chunk;
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 9];
+use super::*;
+use gadgets::binary_number::AsBits;
+
+// The row also includes the 3 column bits from the tag
+type CopyTableRow<F> = [(Value<F>, &'static str); 12];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 5];
 
 /// Copy Table, used to verify copies of byte chunks between Memory, Bytecode,
@@ -34,10 +38,12 @@ pub struct CopyTable {
     pub rwc_inc_left: Column<Advice>,
     /// Selector for the tag BinaryNumberChip
     pub q_enable: Column<Fixed>,
+    // We use the `BinaryNumberBits` instead of `BinaryNumberChip` in order to construct the table
+    // without attaching any constraints.
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
     /// TxLog.
-    pub tag: BinaryNumberConfig<CopyDataType, 3>,
+    pub tag: BinaryNumberBits<3>,
 }
 
 impl CopyTable {
@@ -47,7 +53,7 @@ impl CopyTable {
             is_first: meta.advice_column(),
             id: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             q_enable,
-            tag: BinaryNumberChip::configure(meta, q_enable, None),
+            tag: BinaryNumberBits::construct(meta),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
@@ -115,7 +121,7 @@ impl CopyTable {
                 number_or_hash_to_word(&copy_event.dst_id)
             };
 
-            // tag binary bumber chip
+            // tag binary number chip
             let tag = if is_read_step {
                 copy_event.src_type
             } else {
@@ -160,36 +166,43 @@ impl CopyTable {
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::ZERO, |v| F::from(v as u64)));
 
+            let tag_bits: [_; 3] = tag
+                .as_bits()
+                .map(|b| (Value::known(F::from(b as u64)), "tag_bit"));
+            let copy_table_row = [
+                (is_first, "is_first"),
+                (id.lo(), "id_lo"),
+                (id.hi(), "id_hi"),
+                (addr, "addr"),
+                (
+                    Value::known(F::from(copy_event.src_addr_end)),
+                    "src_addr_end",
+                ),
+                (Value::known(F::from(bytes_left)), "bytes_left"),
+                (
+                    match (copy_event.src_type, copy_event.dst_type) {
+                        (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+                        (_, CopyDataType::RlcAcc) => rlc_acc,
+                        (CopyDataType::RlcAcc, _) => rlc_acc,
+                        _ => Value::known(F::ZERO),
+                    },
+                    "rlc_acc",
+                ),
+                (
+                    Value::known(F::from(copy_event.rw_counter(step_idx))),
+                    "rw_counter",
+                ),
+                (
+                    Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
+                    "rwc_inc_left",
+                ),
+                tag_bits[0],
+                tag_bits[1],
+                tag_bits[2],
+            ];
             assignments.push((
                 tag,
-                [
-                    (is_first, "is_first"),
-                    (id.lo(), "id_lo"),
-                    (id.hi(), "id_hi"),
-                    (addr, "addr"),
-                    (
-                        Value::known(F::from(copy_event.src_addr_end)),
-                        "src_addr_end",
-                    ),
-                    (Value::known(F::from(bytes_left)), "bytes_left"),
-                    (
-                        match (copy_event.src_type, copy_event.dst_type) {
-                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
-                            (_, CopyDataType::RlcAcc) => rlc_acc,
-                            (CopyDataType::RlcAcc, _) => rlc_acc,
-                            _ => Value::known(F::ZERO),
-                        },
-                        "rlc_acc",
-                    ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter(step_idx))),
-                        "rw_counter",
-                    ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
-                        "rwc_inc_left",
-                    ),
-                ],
+                copy_table_row,
                 [
                     (is_last, "is_last"),
                     (value, "value"),
@@ -207,6 +220,7 @@ impl CopyTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -223,10 +237,9 @@ impl CopyTable {
                 }
                 offset += 1;
 
-                let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row, _) in Self::assignments(copy_event, *challenges) {
+                    for (_, row, _) in Self::assignments(copy_event, *challenges) {
                         for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("{} at row: {}", label, offset),
@@ -235,13 +248,12 @@ impl CopyTable {
                                 || value,
                             )?;
                         }
-                        tag_chip.assign(&mut region, offset, &tag)?;
                         offset += 1;
                     }
                 }
 
                 // Enable selector at all rows
-                let max_copy_rows = block.circuits_params.max_copy_rows;
+                let max_copy_rows = chunk.fixed_param.max_copy_rows;
                 for offset in 0..max_copy_rows {
                     region.assign_fixed(
                         || "q_enable",
@@ -259,7 +271,7 @@ impl CopyTable {
 
 impl<F: Field> LookupTable<F> for CopyTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
+        let mut columns = vec![
             self.is_first.into(),
             self.id.lo().into(),
             self.id.hi().into(),
@@ -269,11 +281,13 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.rlc_acc.into(),
             self.rw_counter.into(),
             self.rwc_inc_left.into(),
-        ]
+        ];
+        columns.extend(self.tag.iter().map(|c| Into::<Column<Any>>::into(*c)));
+        columns
     }
 
     fn annotations(&self) -> Vec<String> {
-        vec![
+        let mut names = vec![
             String::from("is_first"),
             String::from("id_lo"),
             String::from("id_hi"),
@@ -283,7 +297,9 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("rlc_acc"),
             String::from("rw_counter"),
             String::from("rwc_inc_left"),
-        ]
+        ];
+        names.extend((0..self.tag.len()).map(|i| format!("tag_bit{i}")));
+        names
     }
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {

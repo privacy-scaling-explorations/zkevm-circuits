@@ -12,7 +12,7 @@ use crate::{
             math_gadget::IsZeroWordGadget,
             select, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{WordExpr, WordLoHi, WordLoHiCell},
@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         cb.stack_pop(condition.to_word());
 
         // Determine if the jump condition is met
-        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
+        let is_condition_zero = cb.is_zero_word(&condition);
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump
@@ -90,6 +90,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

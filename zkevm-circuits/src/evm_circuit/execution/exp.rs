@@ -17,7 +17,7 @@ use crate::{
             math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::word::{Word32Cell, Word4, WordExpr},
 };
@@ -78,11 +78,11 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // We simplify constraints depending on whether or not the exponent is 0 or 1.
         // In order to do this, we build some utility expressions.
-        let exponent_lo_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
-        let exponent_hi_is_zero = IsZeroGadget::construct(cb, exponent_hi.clone());
+        let exponent_lo_is_zero = cb.is_zero(exponent_lo.clone());
+        let exponent_hi_is_zero = cb.is_zero(exponent_hi.clone());
         let exponent_is_zero_expr =
             and::expr([exponent_lo_is_zero.expr(), exponent_hi_is_zero.expr()]);
-        let exponent_lo_is_one = IsEqualGadget::construct(cb, exponent_lo.clone(), 1.expr());
+        let exponent_lo_is_one = cb.is_eq(exponent_lo.clone(), 1.expr());
         let exponent_is_one_expr =
             and::expr([exponent_lo_is_one.expr(), exponent_hi_is_zero.expr()]);
 
@@ -191,6 +191,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

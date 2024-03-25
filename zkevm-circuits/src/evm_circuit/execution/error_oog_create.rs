@@ -15,7 +15,7 @@ use crate::{
         },
     },
     util::{word::Word32Cell, Expr},
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use eth_types::{
     evm_types::{
@@ -68,8 +68,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         cb.stack_pop(memory_address.length_word());
         cb.condition(is_create2.expr().0, |cb| cb.stack_pop(salt.to_word()));
 
-        let init_code_size_overflow =
-            LtGadget::construct(cb, MAX_INIT_CODE_SIZE.expr(), memory_address.length());
+        let init_code_size_overflow = cb.is_lt(MAX_INIT_CODE_SIZE.expr(), memory_address.length());
 
         let minimum_word_size = MemoryWordSizeGadget::construct(cb, memory_address.length());
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
@@ -81,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
                 CREATE_GAS_PER_CODE_WORD.expr(),
             );
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + code_store_gas_cost;
-        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
             "Memory address is overflow, init code size is overflow, or gas left is less than cost",
@@ -118,6 +117,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreateGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

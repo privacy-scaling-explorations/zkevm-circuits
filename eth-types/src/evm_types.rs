@@ -34,8 +34,7 @@ mod gas_create {
     // [gasCreate2Eip3860](https://github.com/ethereum/go-ethereum/blob/eb83e7c54021573eaceb14236af3a7a8c64f6027/core/vm/gas_table.go#L321)
     // (similar for CREATE).
     // 1. size <= 49152 (MaxInitCodeSize)
-    // 2. gasCost = memoryGasCost + (2 + 6) * ((size + 31) / 32) should not
-    //    overflow for Uint64.
+    // 2. gasCost = memoryGasCost + (2 + 6) * ((size + 31) / 32) should not overflow for Uint64.
     // No need to constrain the second condition, since the maximum gas cost
     // cannot overflow for Uint64 (36028809887100925 calculated by
     // `memorySize = 0x1FFFFFFFE0` and `size = 49152`) if the first condition is

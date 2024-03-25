@@ -9,7 +9,7 @@ use crate::{
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{word::WordExpr, Expr},
 };
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
         let is_first_byte_invalid =
-            IsEqualGadget::construct(cb, first_byte.expr(), INVALID_INIT_CODE_FIRST_BYTE.expr());
+            cb.is_eq(first_byte.expr(), INVALID_INIT_CODE_FIRST_BYTE.expr());
         cb.require_true(
             "is_first_byte_invalid is true",
             is_first_byte_invalid.expr(),
@@ -69,6 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

@@ -11,7 +11,7 @@ use crate::{
             math_gadget::{IsZeroWordGadget, LtWordGadget, MulAddWordsGadget},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr, WordLoHi},
@@ -63,8 +63,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let d = cb.query_word32();
 
         let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
-        let divisor_is_zero = IsZeroWordGadget::construct(cb, &b);
-        let lt_word = LtWordGadget::construct(cb, &c.to_word(), &b.to_word());
+        let divisor_is_zero = cb.is_zero_word(&b);
+        let lt_word = cb.is_lt_word(&c.to_word(), &b.to_word());
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
@@ -125,6 +125,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

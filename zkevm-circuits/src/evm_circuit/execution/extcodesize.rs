@@ -12,7 +12,7 @@ use crate::{
             math_gadget::IsZeroWordGadget,
             not, select, AccountAddress, CachedRegion, Cell, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let not_exists = cb.is_zero_word(&code_hash);
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_u64();
@@ -117,6 +117,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

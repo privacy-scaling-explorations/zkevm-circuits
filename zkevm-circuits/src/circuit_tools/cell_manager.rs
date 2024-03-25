@@ -239,7 +239,7 @@ impl<F: Field, C: CellType> Eq for CellColumn<F, C> {}
 
 impl<F: Field, C: CellType> PartialOrd for CellColumn<F, C> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.height.partial_cmp(&other.height)
+        Some(self.cmp(other))
     }
 }
 

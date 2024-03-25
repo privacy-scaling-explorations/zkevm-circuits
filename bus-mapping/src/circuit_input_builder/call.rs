@@ -63,7 +63,7 @@ pub struct Call {
     pub kind: CallKind,
     /// This call is being executed without write access (STATIC)
     pub is_static: bool,
-    /// This call generated implicity by a Transaction.
+    /// This call generated implicitly by a Transaction.
     pub is_root: bool,
     /// This call is persistent or call stack reverts at some point
     pub is_persistent: bool,
@@ -123,7 +123,7 @@ impl Call {
 }
 
 /// Context of a [`Call`].
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CallContext {
     /// Index of call
     pub index: usize,
@@ -151,7 +151,7 @@ impl CallContext {
 /// [`Operation::reversible`](crate::operation::Operation::reversible) that
 /// happened in them, that will be reverted at once when the call that initiated
 /// this reversion group eventually ends with failure (and thus reverts).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ReversionGroup {
     /// List of `index` and `reversible_write_counter_offset` of calls belong to
     /// this group. `reversible_write_counter_offset` is the number of

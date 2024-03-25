@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             AccountAddress, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{word::WordExpr, Expr},
@@ -67,13 +67,14 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let origin = block.get_rws(step, 1).stack_value();
 
-        // Assing TxId.
+        // Assign TxId.
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
 

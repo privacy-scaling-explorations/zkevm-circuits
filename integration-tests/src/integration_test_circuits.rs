@@ -8,10 +8,13 @@ use halo2_proofs::{
     self,
     circuit::Value,
     dev::{CellValue, MockProver},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    halo2curves::{
+        bn256::{Bn256, Fr, G1Affine},
+        pairing::Engine,
+    },
     plonk::{
         create_proof, keygen_pk, keygen_vk, permutation::Assembly, verify_proof, Circuit,
-        ProvingKey,
+        ConstraintSystem, ProvingKey,
     },
     poly::{
         commitment::ParamsProver,
@@ -22,6 +25,7 @@ use halo2_proofs::{
         },
     },
 };
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use mock::TestContext;
 use rand_chacha::rand_core::SeedableRng;
@@ -37,17 +41,19 @@ use zkevm_circuits::{
     pi_circuit::TestPiCircuit,
     root_circuit::{
         compile, Config, EvmTranscript, NativeLoader, PoseidonTranscript, RootCircuit, Shplonk,
+        SnarkWitness, UserChallenge,
     },
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
-    witness::{block_convert, Block},
+    witness::{block_convert, chunk_convert, Block, Chunk},
 };
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-
+///
+const TOTAL_CHUNKS: usize = 1;
 /// MAX_TXS
 const MAX_TXS: usize = 4;
 /// MAX_WITHDRAWALS
@@ -66,8 +72,11 @@ const MAX_EVM_ROWS: usize = 10000;
 const MAX_EXP_STEPS: usize = 1000;
 
 const MAX_KECCAK_ROWS: usize = 38000;
+/// MAX_VERTICAL_CIRCUIT_ROWS
+const MAX_VERTICAL_CIRCUIT_ROWS: usize = 0;
 
 const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
+    total_chunks: TOTAL_CHUNKS,
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_withdrawals: MAX_WITHDRAWALS,
@@ -77,6 +86,7 @@ const CIRCUITS_PARAMS: FixedCParams = FixedCParams {
     max_evm_rows: MAX_EVM_ROWS,
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
+    max_vertical_circuit_rows: MAX_VERTICAL_CIRCUIT_ROWS,
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;
@@ -161,7 +171,7 @@ fn test_actual_circuit<C: Circuit<Fr>>(
 
     let mut transcript = PoseidonTranscript::new(Vec::new());
 
-    // change instace to slice
+    // change instance to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen circuit proof");
@@ -211,7 +221,7 @@ fn test_actual_root_circuit<C: Circuit<Fr>>(
 
     let mut transcript = EvmTranscript::<_, NativeLoader, _, _>::new(vec![]);
 
-    // change instace to slice
+    // change instance to slice
     let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
     log::info!("gen root circuit proof");
@@ -283,8 +293,8 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         match self.key.clone() {
             Some(key) => key,
             None => {
-                let block = new_empty_block();
-                let circuit = C::new_from_block(&block);
+                let (block, chunk) = new_empty_block_chunk();
+                let circuit = C::new_from_block(&block, &chunk);
                 let general_params = get_general_params(self.degree);
 
                 let verifying_key =
@@ -304,8 +314,8 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let params = get_general_params(self.degree);
                 let pk = self.get_key();
 
-                let block = new_empty_block();
-                let circuit = C::new_from_block(&block);
+                let (block, chunk) = new_empty_block_chunk();
+                let circuit = C::new_from_block(&block, &chunk);
                 let instance = circuit.instance();
 
                 let protocol = compile(
@@ -318,8 +328,12 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 let circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                     &params,
                     &protocol,
-                    Value::unknown(),
-                    Value::unknown(),
+                    vec![SnarkWitness::new(
+                        &protocol,
+                        Value::unknown(),
+                        Value::unknown(),
+                    )],
+                    None,
                 )
                 .unwrap();
 
@@ -348,10 +362,26 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         let fixed = mock_prover.fixed();
 
         if let Some(prev_fixed) = self.fixed.clone() {
-            assert!(
-                fixed.eq(&prev_fixed),
-                "circuit fixed columns are not constant for different witnesses"
-            );
+            fixed
+                .iter()
+                .enumerate()
+                .zip_eq(prev_fixed.iter())
+                .for_each(|((index, col1), col2)| {
+                    if !col1.eq(col2) {
+                        println!("on column index {} not equal", index);
+                        col1.iter().enumerate().zip_eq(col2.iter()).for_each(
+                            |((index, cellv1), cellv2)| {
+                                assert!(
+                                    cellv1.eq(cellv2),
+                                    "cellv1 {:?} != cellv2 {:?} on index {}",
+                                    cellv1,
+                                    cellv2,
+                                    index
+                                );
+                            },
+                        );
+                    }
+                });
         } else {
             self.fixed = Some(fixed.clone());
         }
@@ -373,6 +403,24 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
 
         match self.root_fixed.clone() {
             Some(prev_fixed) => {
+                fixed.iter().enumerate().zip_eq(prev_fixed.iter()).for_each(
+                    |((index, col1), col2)| {
+                        if !col1.eq(col2) {
+                            println!("on column index {} not equal", index);
+                            col1.iter().enumerate().zip_eq(col2.iter()).for_each(
+                                |((index, cellv1), cellv2)| {
+                                    assert!(
+                                        cellv1.eq(cellv2),
+                                        "cellv1 {:?} != cellv2 {:?} on index {}",
+                                        cellv1,
+                                        cellv2,
+                                        index
+                                    );
+                                },
+                            );
+                        }
+                    },
+                );
                 assert!(
                     fixed.eq(&prev_fixed),
                     "root circuit fixed columns are not constant for different witnesses"
@@ -414,8 +462,9 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             block_tag,
         );
         let mut block = block_convert(&builder).unwrap();
+        let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
-        let circuit = C::new_from_block(&block);
+        let circuit = C::new_from_block(&block, &chunk);
         let instance = circuit.instance();
 
         #[allow(clippy::collapsible_else_if)]
@@ -428,6 +477,11 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
                 Config::kzg()
                     .with_num_instance(instance.iter().map(|instance| instance.len()).collect()),
             );
+
+            // get chronological_rwtable and byaddr_rwtable columns index
+            let mut cs = ConstraintSystem::<<Bn256 as Engine>::Fr>::default();
+            let config = SuperCircuit::configure(&mut cs);
+            let rwtable_columns = config.get_rwtable_columns();
 
             let proof = {
                 let mut proof_cache = PROOF_CACHE.lock().await;
@@ -444,11 +498,19 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
             };
 
             log::info!("root circuit new");
+            let user_challenge = &UserChallenge {
+                column_indexes: rwtable_columns,
+                num_challenges: 2, // alpha, gamma
+            };
             let root_circuit = RootCircuit::<Bn256, Shplonk<_>>::new(
                 &params,
                 &protocol,
-                Value::known(&instance),
-                Value::known(&proof),
+                vec![SnarkWitness::new(
+                    &protocol,
+                    Value::known(&instance),
+                    Value::known(&proof),
+                )],
+                Some(user_challenge),
             )
             .unwrap();
 
@@ -483,16 +545,17 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
     }
 }
 
-fn new_empty_block() -> Block<Fr> {
+fn new_empty_block_chunk() -> (Block<Fr>, Chunk<Fr>) {
     let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
         .unwrap()
         .into();
-    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
-        .new_circuit_input_builder();
-    builder
+    let builder = BlockData::new_from_geth_data_with_params(block.clone(), CIRCUITS_PARAMS)
+        .new_circuit_input_builder()
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
-    block_convert(&builder).unwrap()
+    let block = block_convert(&builder).unwrap();
+    let chunk = chunk_convert(&block, &builder).unwrap().remove(0);
+    (block, chunk)
 }
 
 fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {

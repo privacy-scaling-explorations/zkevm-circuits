@@ -11,9 +11,9 @@ use crate::{
                 MulWordByU64Gadget,
             },
             tx::EndTxHelperGadget,
-            CachedRegion, Cell,
+            CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag},
     util::{
@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
         let refund = cb.query_cell();
         cb.tx_refund_read(tx_id.expr(), WordLoHi::from_lo_unchecked(refund.expr()));
-        let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
+        let effective_refund = cb.min_max(max_refund.quotient(), refund.expr());
 
         // Add effective_refund * tx_gas_price back to caller's balance
         let mul_gas_price_by_refund = MulWordByU64Gadget::construct(
@@ -75,17 +75,16 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx_gas_price.clone(),
             effective_refund.min() + cb.curr.state.gas_left.expr(),
         );
-        let gas_fee_refund = UpdateBalanceGadget::construct(
-            cb,
+        let gas_fee_refund = cb.increase_balance(
             tx_caller_address.to_word(),
-            vec![mul_gas_price_by_refund.product().clone()],
+            mul_gas_price_by_refund.product().clone(),
             None,
         );
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_word_unchecked();
         let coinbase_code_hash = cb.query_word_unchecked();
-        let coinbase_code_hash_is_zero = IsZeroWordGadget::construct(cb, &coinbase_code_hash);
+        let coinbase_code_hash_is_zero = cb.is_zero_word(&coinbase_code_hash);
         cb.account_read(
             coinbase.to_word(),
             AccountFieldTag::CodeHash,
@@ -111,7 +110,6 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             false.expr(),
             mul_effective_tip_by_gas_used.product().clone(),
             None,
-            true,
         );
 
         let end_tx = EndTxHelperGadget::construct(
@@ -147,14 +145,17 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_used = tx.gas() - step.gas_left;
-        let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
-        let (caller_balance, caller_balance_prev) = block.get_rws(step, 3).account_balance_pair();
-        let (coinbase_code_hash_prev, _) = block.get_rws(step, 4).account_codehash_pair();
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(2);
+        let (refund, _) = rws.next().tx_refund_value_pair();
+        let (caller_balance, caller_balance_prev) = rws.next().account_balance_pair();
+        let (coinbase_code_hash_prev, _) = rws.next().account_codehash_pair();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
@@ -208,24 +209,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
         self.coinbase_code_hash_is_zero
             .assign_u256(region, offset, coinbase_code_hash_prev)?;
-        if !coinbase_reward.is_zero() {
-            let coinbase_balance_pair = block
-                .get_rws(
-                    step,
-                    if coinbase_code_hash_prev.is_zero() {
-                        6
-                    } else {
-                        5
-                    },
-                )
-                .account_balance_pair();
-            self.coinbase_reward.assign(
-                region,
-                offset,
-                coinbase_balance_pair,
-                effective_tip * gas_used,
-            )?;
-        }
+        self.coinbase_reward.assign(
+            region,
+            offset,
+            &mut rws,
+            !coinbase_code_hash_prev.is_zero(),
+            coinbase_reward,
+            false,
+        )?;
         self.is_persistent.assign(
             region,
             offset,
@@ -426,7 +417,7 @@ mod test {
     fn end_tx_consistent_tx_id_write() {
         // check there is no consecutive txid write with same txid in rw_table
 
-        let block = CircuitTestBuilder::new_from_test_ctx(
+        let (block, _) = CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 3>::new(
                 None,
                 account_0_code_account_1_no_code(bytecode! { STOP }),
@@ -452,7 +443,7 @@ mod test {
             max_txs: 5,
             ..Default::default()
         })
-        .build_block()
+        .build_block(None)
         .unwrap();
 
         block.rws.0[&Target::CallContext]
@@ -467,7 +458,7 @@ mod test {
             .sorted_by_key(|a| a.rw_counter())
             .tuple_windows()
             .for_each(|(a, b)| {
-                // chech there is no consecutive write with same txid value
+                // check there is no consecutive write with same txid value
                 assert!(a.rw_counter() != b.rw_counter());
                 assert!(a.value_assignment() != b.value_assignment());
             })

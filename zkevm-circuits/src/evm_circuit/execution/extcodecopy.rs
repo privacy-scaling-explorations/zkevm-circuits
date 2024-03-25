@@ -15,7 +15,7 @@ use crate::{
             },
             not, select, AccountAddress, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::word::{Word32Cell, WordExpr, WordLoHi},
@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash.to_word());
+        let not_exists = cb.is_zero_word(&code_hash.to_word());
         let exists = not::expr(not_exists.expr());
         cb.condition(exists.expr(), |cb| {
             cb.bytecode_length(code_hash.to_word(), code_size.expr());
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {
-            // Set source start to the minimun value of code offset and code size.
+            // Set source start to the minimum value of code offset and code size.
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),
@@ -176,6 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,

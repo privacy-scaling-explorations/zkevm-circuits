@@ -31,7 +31,6 @@ impl Config {
             vec![exp]
                 .into_iter()
                 .zip_eq(self.u16_table.table_exprs(meta))
-                .map(|(exp, table_expr)| (exp, table_expr))
                 .collect()
         });
     }

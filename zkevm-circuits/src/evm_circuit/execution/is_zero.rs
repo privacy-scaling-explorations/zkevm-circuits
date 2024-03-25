@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{WordExpr, WordLoHi, WordLoHiCell},
@@ -34,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         let opcode = cb.query_cell();
 
         let value = cb.query_word_unchecked();
-        let is_zero_word = math_gadget::IsZeroWordGadget::construct(cb, &value);
+        let is_zero_word = cb.is_zero_word(&value);
 
         cb.stack_pop(value.to_word());
         cb.stack_push(WordLoHi::from_lo_unchecked(is_zero_word.expr()));
@@ -61,6 +61,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

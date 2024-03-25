@@ -194,7 +194,7 @@ pub struct Transaction {
     /// Gas Limit / Supplied gas
     /// U64 type is required to serialize into proper hex with 0x prefix
     pub gas_limit: U64,
-    /// Transfered value
+    /// Transferred value
     pub value: Word,
     /// Gas Price
     pub gas_price: Word,
@@ -274,6 +274,24 @@ impl From<&Transaction> for TransactionRequest {
 }
 
 impl Transaction {
+    /// Create a dummy Transaction with zero values
+    pub fn dummy() -> Self {
+        Self {
+            from: Address::zero(),
+            to: Some(Address::zero()),
+            nonce: U64::zero(),
+            gas_limit: U64::zero(),
+            value: Word::zero(),
+            gas_price: Word::zero(),
+            gas_tip_cap: Word::zero(),
+            gas_fee_cap: Word::zero(),
+            call_data: Bytes::new(),
+            access_list: None,
+            v: 0,
+            r: Word::zero(),
+            s: Word::zero(),
+        }
+    }
     /// Return the SignData associated with this Transaction.
     pub fn sign_data(&self, chain_id: u64) -> Result<SignData, Error> {
         let sig_r_le = self.r.to_le_bytes();
@@ -304,8 +322,9 @@ impl Transaction {
             libsecp256k1::Error::InvalidMessage,
         )?;
         Ok(SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v),
             pk,
+            msg,
             msg_hash,
         })
     }
@@ -367,7 +386,7 @@ impl Transaction {
             ..response::Transaction::default()
         }
     }
-    /// Convinient method for gas limit
+    /// Convenient method for gas limit
     pub fn gas(&self) -> u64 {
         self.gas_limit.as_u64()
     }

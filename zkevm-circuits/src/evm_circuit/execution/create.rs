@@ -13,7 +13,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, IsZeroWordGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroWordGadget,
                 LtGadget, LtWordGadget,
             },
             memory_gadget::{
@@ -21,7 +21,7 @@ use crate::{
             },
             not, AccountAddress, CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
@@ -53,7 +53,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     reversion_info: ReversionInfo<F>,
     depth: Cell<F>,
 
-    is_create2: IsZeroGadget<F>,
+    is_create2: IsEqualGadget<F>,
     is_success: Cell<F>,
     was_warm: Cell<F>,
     value: Word32Cell<F>,
@@ -63,7 +63,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     callee_nonce: Cell<F>,
     prev_code_hash: WordLoHiCell<F>,
     prev_code_hash_is_zero: IsZeroWordGadget<F, WordLoHi<Expression<F>>>,
-    transfer: TransferGadget<F>,
+    transfer: TransferGadget<F, false>,
     create: ContractCreateGadget<F, IS_CREATE2>,
 
     init_code: MemoryAddressGadget<F>,
@@ -95,7 +95,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             opcode.expr(),
             vec![OpcodeId::CREATE2.expr(), OpcodeId::CREATE.expr()],
         );
-        let is_create2 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CREATE2.expr());
+        let is_create2 = cb.is_eq(opcode.expr(), OpcodeId::CREATE2.expr());
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -143,10 +143,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
 
         // Pre-check: call depth, user's nonce and user's balance
-        let is_depth_in_range = LtGadget::construct(cb, depth.expr(), 1025.expr());
-        let is_insufficient_balance =
-            LtWordGadget::construct(cb, &caller_balance.to_word(), &value.to_word());
-        let is_nonce_in_range = LtGadget::construct(cb, caller_nonce.expr(), u64::MAX.expr());
+        let is_depth_in_range = cb.is_lt(depth.expr(), 1025.expr());
+        let is_insufficient_balance = cb.is_lt_word(&caller_balance.to_word(), &value.to_word());
+        let is_nonce_in_range = cb.is_lt(caller_nonce.expr(), u64::MAX.expr());
         let is_precheck_ok = and::expr([
             is_depth_in_range.expr(),
             not::expr(is_insufficient_balance.expr()),
@@ -169,7 +168,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost.clone();
-        let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
+        let gas_left = cb.div_by_const(gas_remaining.clone(), 64);
         let callee_gas_left = gas_remaining - gas_left.quotient();
 
         let was_warm = cb.query_bool();
@@ -209,7 +208,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 // empty_code_hash_word))` to represent `(callee_nonce == 0 && (prev_code_hash_word
                 // == 0 or prev_code_hash_word == empty_code_hash_word))`
                 let prev_code_hash_word = prev_code_hash.to_word();
-                let prev_code_hash_is_zero = IsZeroWordGadget::construct(cb, &prev_code_hash_word);
+                let prev_code_hash_is_zero = cb.is_zero_word(&prev_code_hash_word);
                 cb.condition(not::expr(prev_code_hash_is_zero.expr()), |cb| {
                     cb.account_read(
                         contract_addr.to_word(),
@@ -334,10 +333,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     cb,
                     create.caller_address(),
                     contract_addr.to_word(),
-                    0.expr(),
-                    1.expr(),
+                    false.expr(),
+                    true.expr(),
                     value.clone(),
                     &mut callee_reversion_info,
+                    None,
                 );
 
                 // EIP 161, the nonce of a newly created contract is 1
@@ -514,6 +514,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -525,7 +526,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.is_create2.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::CREATE2.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::CREATE2.as_u64()),
         )?;
 
         self.tx_id
@@ -638,21 +640,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let code_hash = if is_precheck_ok {
             if !is_address_collision {
-                // transfer
-                if callee_prev_code_hash.is_zero() {
-                    rws.next(); // codehash update
-                }
-                let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                    [(); 2].map(|_| rws.next().account_balance_pair())
-                } else {
-                    [(0.into(), 0.into()), (0.into(), 0.into())]
-                };
                 self.transfer.assign(
                     region,
                     offset,
-                    caller_balance_pair,
-                    callee_balance_pair,
+                    &mut rws,
+                    !callee_prev_code_hash.is_zero(),
                     value,
+                    true,
+                    None,
                 )?;
             }
 

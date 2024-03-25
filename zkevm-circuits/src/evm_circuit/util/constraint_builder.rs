@@ -1,3 +1,11 @@
+use super::{
+    common_gadget::UpdateBalanceGadget,
+    math_gadget::{
+        ConstantDivisionGadget, IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget,
+        LtGadget, LtWordGadget, MinMaxGadget,
+    },
+    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
+};
 use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
@@ -6,8 +14,8 @@ use crate::{
         util::{Cell, RandomLinearCombination},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
-        TxReceiptFieldTag,
+        chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, BytecodeFieldTag, CallContextFieldTag,
+        StepStateFieldTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::{
         build_tx_log_expression, query_expression,
@@ -27,10 +35,6 @@ use halo2_proofs::{
         Expression::{self, Constant},
         VirtualCells,
     },
-};
-
-use super::{
-    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -91,6 +95,22 @@ impl<F: Field> StepStateTransition<F> {
             memory_word_size: Transition::Any,
             reversible_write_counter: Transition::Any,
             log_id: Transition::Any,
+        }
+    }
+
+    pub(crate) fn same() -> Self {
+        Self {
+            rw_counter: Transition::Same,
+            call_id: Transition::Same,
+            is_root: Transition::Same,
+            is_create: Transition::Same,
+            code_hash: Transition::Same,
+            program_counter: Transition::Same,
+            stack_pointer: Transition::Same,
+            gas_left: Transition::Same,
+            memory_word_size: Transition::Same,
+            reversible_write_counter: Transition::Same,
+            log_id: Transition::Same,
         }
     }
 }
@@ -204,7 +224,8 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
     }
-
+    /// Under active development
+    #[allow(dead_code)]
     fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
         for (name, constraint) in constraints {
             self.add_constraint(name, constraint);
@@ -568,6 +589,27 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             };
         }
 
+        // Note: special case handling: inner_rw_counter shared the same Transition with
+        // rw_conuter
+        match &step_state_transition.rw_counter {
+            Transition::Same => self.require_equal(
+                "State transition (same) constraint of inner_rw_counter",
+                self.next.state.inner_rw_counter.expr(),
+                self.curr.state.inner_rw_counter.expr(),
+            ),
+            Transition::Delta(delta) => self.require_equal(
+                concat!("State transition (delta) constraint of inner_rw_counter"),
+                self.next.state.inner_rw_counter.expr(),
+                self.curr.state.inner_rw_counter.expr() + delta.clone(),
+            ),
+            Transition::To(to) => self.require_equal(
+                "State transition (to) constraint of inner_rw_counter",
+                self.next.state.inner_rw_counter.expr(),
+                to.clone(),
+            ),
+            _ => {}
+        }
+
         constrain!(rw_counter);
         constrain!(call_id);
         constrain!(is_root);
@@ -579,6 +621,80 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(memory_word_size);
         constrain!(reversible_write_counter);
         constrain!(log_id);
+    }
+
+    // Math gadgets
+
+    pub(crate) fn is_zero(&mut self, value: Expression<F>) -> IsZeroGadget<F> {
+        IsZeroGadget::construct(self, value)
+    }
+
+    pub(crate) fn is_zero_word<T: WordExpr<F>>(&mut self, value: &T) -> IsZeroWordGadget<F, T> {
+        IsZeroWordGadget::construct(self, value)
+    }
+
+    pub(crate) fn is_eq(&mut self, lhs: Expression<F>, rhs: Expression<F>) -> IsEqualGadget<F> {
+        IsEqualGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_eq_word<T1: WordExpr<F>, T2: WordExpr<F>>(
+        &mut self,
+        lhs: &T1,
+        rhs: &T2,
+    ) -> IsEqualWordGadget<F, T1, T2> {
+        IsEqualWordGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_lt<const N_BYTES: usize>(
+        &mut self,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> LtGadget<F, N_BYTES> {
+        LtGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn is_lt_word<T: Expr<F> + Clone>(
+        &mut self,
+        lhs: &WordLoHi<T>,
+        rhs: &WordLoHi<T>,
+    ) -> LtWordGadget<F> {
+        LtWordGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn min_max<const N_BYTES: usize>(
+        &mut self,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> MinMaxGadget<F, N_BYTES> {
+        MinMaxGadget::construct(self, lhs, rhs)
+    }
+
+    pub(crate) fn div_by_const<const N_BYTES: usize>(
+        &mut self,
+        numerator: Expression<F>,
+        denominator: u64,
+    ) -> ConstantDivisionGadget<F, N_BYTES> {
+        ConstantDivisionGadget::construct(self, numerator, denominator)
+    }
+
+    // Common Gadget
+
+    pub(crate) fn increase_balance(
+        &mut self,
+        address: WordLoHi<Expression<F>>,
+        value: Word32Cell<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) -> UpdateBalanceGadget<F, 2, true> {
+        UpdateBalanceGadget::construct(self, address, &[value], reversion_info)
+    }
+
+    pub(crate) fn decrease_balance(
+        &mut self,
+        address: WordLoHi<Expression<F>>,
+        value: Word32Cell<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) -> UpdateBalanceGadget<F, 2, false> {
+        UpdateBalanceGadget::construct(self, address, &[value], reversion_info)
     }
 
     // Fixed
@@ -1353,14 +1469,130 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    // RwTable Padding (Start tag)
+    pub(crate) fn chunk_context_lookup(
+        &mut self,
+        field_tag: ChunkCtxFieldTag,
+        value: Expression<F>,
+    ) {
+        self.add_lookup(
+            "chunk_ctx lookup",
+            Lookup::ChunkCtx {
+                field_tag: field_tag.expr(),
+                value,
+            },
+        );
+    }
 
+    pub(crate) fn step_state_lookup(&mut self, is_write: Expression<F>) {
+        self.rw_lookup(
+            "StepState lookup codehash",
+            is_write.clone(),
+            Target::StepState,
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                StepStateFieldTag::CodeHash.expr(),
+                WordLoHi::zero(),
+                self.curr.state.code_hash.to_word(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+            ),
+        );
+
+        [
+            (
+                "StepState lookup CallID",
+                self.curr.state.call_id.clone(),
+                StepStateFieldTag::CallID,
+            ),
+            (
+                "StepState lookup IsRoot",
+                self.curr.state.is_root.clone(),
+                StepStateFieldTag::IsRoot,
+            ),
+            (
+                "StepState lookup IsCreate",
+                self.curr.state.is_create.clone(),
+                StepStateFieldTag::IsCreate,
+            ),
+            (
+                "StepState lookup ProgramCounter",
+                self.curr.state.program_counter.clone(),
+                StepStateFieldTag::ProgramCounter,
+            ),
+            (
+                "StepState lookup StackPointer",
+                self.curr.state.stack_pointer.clone(),
+                StepStateFieldTag::StackPointer,
+            ),
+            (
+                "StepState lookup GasLeft",
+                self.curr.state.gas_left.clone(),
+                StepStateFieldTag::GasLeft,
+            ),
+            (
+                "StepState lookup MemoryWordSize",
+                self.curr.state.memory_word_size.clone(),
+                StepStateFieldTag::MemoryWordSize,
+            ),
+            (
+                "StepState lookup ReversibleWriteCounter",
+                self.curr.state.reversible_write_counter.clone(),
+                StepStateFieldTag::ReversibleWriteCounter,
+            ),
+            (
+                "StepState lookup LogID",
+                self.curr.state.log_id.clone(),
+                StepStateFieldTag::LogID,
+            ),
+        ]
+        .iter()
+        .for_each(|(name, cell, field_tag)| {
+            self.rw_lookup(
+                name,
+                is_write.clone(),
+                Target::StepState,
+                RwValues::new(
+                    0.expr(),
+                    0.expr(),
+                    field_tag.expr(),
+                    WordLoHi::zero(),
+                    WordLoHi::from_lo_unchecked(cell.expr()),
+                    WordLoHi::zero(),
+                    WordLoHi::zero(),
+                ),
+            );
+        });
+    }
+
+    // RwTable Start (Start tag)
+    #[allow(dead_code)]
     pub(crate) fn rw_table_start_lookup(&mut self, counter: Expression<F>) {
         self.rw_lookup_with_counter(
             "Start lookup",
             counter,
             0.expr(),
             Target::Start,
+            RwValues::new(
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+                WordLoHi::zero(),
+            ),
+        );
+    }
+
+    // RwTable Padding (Padding tag)
+    #[allow(dead_code)]
+    pub(crate) fn rw_table_padding_lookup(&mut self, counter: Expression<F>) {
+        self.rw_lookup_with_counter(
+            "Padding lookup",
+            counter,
+            0.expr(),
+            Target::Padding,
             RwValues::new(
                 0.expr(),
                 0.expr(),
@@ -1432,7 +1664,30 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
-    // Keccak Table
+    /// Sig Table
+    pub(crate) fn sig_table_lookup(
+        &mut self,
+        msg_hash: WordLoHi<Expression<F>>,
+        sig_v: Expression<F>,
+        sig_r: WordLoHi<Expression<F>>,
+        sig_s: WordLoHi<Expression<F>>,
+        recovered_addr: Expression<F>,
+        is_valid: Expression<F>,
+    ) {
+        self.add_lookup(
+            "sig table",
+            Lookup::SigTable {
+                msg_hash,
+                sig_v,
+                sig_r,
+                sig_s,
+                recovered_addr,
+                is_valid,
+            },
+        );
+    }
+
+    /// Keccak Table
     pub(crate) fn keccak_table_lookup(
         &mut self,
         input_rlc: Expression<F>,
@@ -1450,7 +1705,6 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Validation
-
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
         // We need to subtract IMPLICIT_DEGREE from MAX_DEGREE because all expressions
         // will be multiplied by state selector and q_step/q_step_first
@@ -1481,7 +1735,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// and constrain it using the provided respective constraint. This mechanism is specifically
     /// used for constraining the internal states for precompile calls. Each precompile call
     /// expects a different cell layout, but since the next state can be at the most one precompile
-    /// state, we can re-use cells assgined across all thos conditions.
+    /// state, we can re-use cells assigned across all those conditions.
     pub(crate) fn constrain_mutually_exclusive_next_step(
         &mut self,
         conditions: Vec<Expression<F>>,
@@ -1583,11 +1837,13 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
+
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
+
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
     }
 

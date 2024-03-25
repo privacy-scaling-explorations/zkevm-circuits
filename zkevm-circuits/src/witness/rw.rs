@@ -1,22 +1,31 @@
 //! The Read-Write table related structs
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    iter,
+};
 
 use bus_mapping::{
     exec_trace::OperationRef,
-    operation::{self, AccountField, CallContextField, Target, TxLogField, TxReceiptField},
+    operation::{
+        self, AccountField, CallContextField, StepStateField, Target, TxLogField, TxReceiptField,
+    },
 };
 use eth_types::{Address, Field, ToAddress, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::{build_tx_log_address, word::WordLoHi},
+    table::{
+        AccountFieldTag, CallContextFieldTag, StepStateFieldTag, TxLogFieldTag, TxReceiptFieldTag,
+    },
+    util::{build_tx_log_address, unwrap_value, word::WordLoHi},
 };
 
 use super::MptUpdates;
 
-/// Rw constainer for a witness block
+const U64_BYTES: usize = u64::BITS as usize / 8usize;
+
+/// Rw container for a witness block
 #[derive(Debug, Default, Clone)]
 pub struct RwMap(pub HashMap<Target, Vec<Rw>>);
 
@@ -37,25 +46,25 @@ impl std::ops::Index<OperationRef> for RwMap {
 }
 
 impl RwMap {
-    /// Check rw_counter is continuous and starting from 1
+    /// Check rw_counter is continuous
     pub fn check_rw_counter_sanity(&self) {
-        for (idx, rw_counter) in self
+        for (rw_counter_prev, rw_counter_cur) in self
             .0
             .iter()
-            .filter(|(tag, _rs)| !matches!(tag, Target::Start))
+            .filter(|(tag, _rs)| !matches!(tag, Target::Padding) && !matches!(tag, Target::Start))
             .flat_map(|(_tag, rs)| rs)
             .map(|r| r.rw_counter())
             .sorted()
-            .enumerate()
+            .tuple_windows()
         {
-            debug_assert_eq!(idx, rw_counter - 1);
+            debug_assert_eq!(rw_counter_cur - rw_counter_prev, 1);
         }
     }
     /// Check value in the same way like StateCircuit
     pub fn check_value(&self) {
         let err_msg_first = "first access reads don't change value";
         let err_msg_non_first = "non-first access reads don't change value";
-        let rows = self.table_assignments();
+        let rows = self.table_assignments(false);
         let updates = MptUpdates::mock_from(&rows);
         let mut errs = Vec::new();
         for idx in 1..rows.len() {
@@ -77,12 +86,13 @@ impl RwMap {
                 let value = row.value_assignment();
                 if is_first {
                     // value == init_value
-                    let init_value = updates
-                        .get(row)
-                        .map(|u| u.value_assignments().1)
-                        .unwrap_or_default();
-                    if value != init_value {
-                        errs.push((idx, err_msg_first, *row, *prev_row));
+                    if let Some(init_value) = updates.get(row).map(|u| u.value_assignments().1) {
+                        if value != init_value {
+                            errs.push((idx, err_msg_first, *row, *prev_row));
+                        }
+                    }
+                    if row.tag() == Target::CallContext {
+                        println!("call context value: {:?}", row);
                     }
                 } else {
                     // value == prev_value
@@ -107,11 +117,11 @@ impl RwMap {
             }
         }
     }
-    /// Calculates the number of Rw::Start rows needed.
+    /// Calculates the number of Rw::Padding rows needed.
     /// `target_len` is allowed to be 0 as an "auto" mode,
-    /// then only 1 Rw::Start row will be prepadded.
+    /// return padding size also allow to be 0, means no padding
     pub(crate) fn padding_len(rows_len: usize, target_len: usize) -> usize {
-        if target_len > rows_len {
+        if target_len >= rows_len {
             target_len - rows_len
         } else {
             if target_len != 0 {
@@ -120,38 +130,95 @@ impl RwMap {
                     target_len, rows_len
                 );
             }
-            1
+            0
         }
     }
-    /// Prepad Rw::Start rows to target length
-    pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
-        // Remove Start rows as we will add them from scratch.
-        let rows: Vec<Rw> = rows
+    /// padding Rw::Start/Rw::Padding accordingly
+    pub fn table_assignments_padding(
+        rows: &[Rw],
+        target_len: usize,
+        padding_start_rw: Option<Rw>,
+    ) -> (Vec<Rw>, usize) {
+        let mut padding_exist = HashSet::new();
+        // Remove Start/Padding rows as we will add them from scratch.
+        let rows_trimmed: Vec<Rw> = rows
             .iter()
-            .skip_while(|rw| matches!(rw, Rw::Start { .. }))
+            .filter(|rw| {
+                if let Rw::Padding { rw_counter } = rw {
+                    padding_exist.insert(*rw_counter);
+                }
+
+                !matches!(rw, Rw::Start { .. })
+            })
             .cloned()
             .collect();
-        let padding_length = Self::padding_len(rows.len(), target_len);
-        let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (padding.chain(rows.into_iter()).collect(), padding_length)
+        let padding_length = {
+            let length = Self::padding_len(rows_trimmed.len(), target_len);
+            length.saturating_sub(1)
+        };
+
+        // padding rw_counter starting from
+        // +1 for to including padding_start row
+        let start_padding_rw_counter = rows_trimmed.len() + 1;
+
+        let padding = (start_padding_rw_counter..).flat_map(|rw_counter| {
+            if padding_exist.contains(&rw_counter) {
+                None
+            } else {
+                Some(Rw::Padding { rw_counter })
+            }
+        });
+        (
+            iter::empty()
+                .chain([padding_start_rw.unwrap_or(Rw::Start { rw_counter: 1 })])
+                .chain(rows_trimmed)
+                .chain(padding)
+                .take(target_len)
+                .collect(),
+            padding_length,
+        )
     }
     /// Build Rws for assignment
-    pub fn table_assignments(&self) -> Vec<Rw> {
+    pub fn table_assignments(&self, keep_chronological_order: bool) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
-        rows.sort_by_key(|row| {
-            (
-                row.tag() as u64,
-                row.id().unwrap_or_default(),
-                row.address().unwrap_or_default(),
-                row.field_tag().unwrap_or_default(),
-                row.storage_key().unwrap_or_default(),
-                row.rw_counter(),
-            )
-        });
+        if keep_chronological_order {
+            rows.sort_by_key(|row| (row.rw_counter(), row.tag() as u64));
+        } else {
+            rows.sort_by_key(|row| {
+                (
+                    row.tag() as u64,
+                    row.id().unwrap_or_default(),
+                    row.address().unwrap_or_default(),
+                    row.field_tag().unwrap_or_default(),
+                    row.storage_key().unwrap_or_default(),
+                    row.rw_counter(),
+                )
+            });
+        }
+
         rows
     }
-}
 
+    /// take only rw_counter within range
+    pub fn take_rw_counter_range(mut self, start_rwc: usize, end_rwc: usize) -> Self {
+        for rw in self.0.values_mut() {
+            rw.retain(|r| r.rw_counter() >= start_rwc && r.rw_counter() < end_rwc)
+        }
+        self
+    }
+    /// Get one Rw for a chunk specified by index
+    pub fn get_rw(container: &operation::OperationContainer, counter: usize) -> Option<Rw> {
+        let rws: Self = container.into();
+        for rwv in rws.0.values() {
+            for rw in rwv {
+                if rw.rw_counter() == counter {
+                    return Some(*rw);
+                }
+            }
+        }
+        None
+    }
+}
 #[allow(
     missing_docs,
     reason = "Some of the docs are tedious and can be found at https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/tables.md"
@@ -256,6 +323,40 @@ pub enum Rw {
         field_tag: TxReceiptFieldTag,
         value: u64,
     },
+
+    /// StepState
+    StepState {
+        rw_counter: usize,
+        is_write: bool,
+        field_tag: StepStateFieldTag,
+        value: Word,
+    },
+
+    /// ...
+
+    /// Padding, must be the largest enum
+    Padding { rw_counter: usize },
+}
+
+/// general to vector
+pub trait ToVec<T> {
+    /// to 2d vec
+    fn to2dvec(&self) -> Vec<Vec<T>>;
+}
+
+impl<F: Field> ToVec<Value<F>> for Vec<Rw> {
+    fn to2dvec(&self) -> Vec<Vec<Value<F>>> {
+        self.iter()
+            .map(|row| {
+                row.table_assignment::<F>()
+                    .unwrap()
+                    .values()
+                    .iter()
+                    .map(|f| Value::known(*f))
+                    .collect::<Vec<Value<F>>>()
+            })
+            .collect::<Vec<Vec<Value<F>>>>()
+    }
 }
 
 /// Rw table row assignment
@@ -309,7 +410,7 @@ impl<F: Field> RwRow<Value<F>> {
             _ = f.map(|v| {
                 inner = Some(v);
             });
-            inner.unwrap()
+            inner.unwrap_or_default()
         };
         let unwrap_w = |f: WordLoHi<Value<F>>| {
             let (lo, hi) = f.into_lo_hi();
@@ -328,6 +429,92 @@ impl<F: Field> RwRow<Value<F>> {
             value_prev: unwrap_w(self.value_prev),
             init_val: unwrap_w(self.init_val),
         }
+    }
+
+    /// padding Rw::Start/Rw::Padding accordingly
+    pub fn padding(
+        rows: &[RwRow<Value<F>>],
+        target_len: usize,
+        padding_start_rwrow: Option<RwRow<Value<F>>>,
+    ) -> (Vec<RwRow<Value<F>>>, usize) {
+        let mut padding_exist = HashSet::new();
+        // Remove Start/Padding rows as we will add them from scratch.
+        let rows_trimmed = rows
+            .iter()
+            .filter(|rw| {
+                let tag = unwrap_value(rw.tag);
+
+                if tag == F::from(Target::Padding as u64) {
+                    let rw_counter = u64::from_le_bytes(
+                        unwrap_value(rw.rw_counter).to_repr()[..U64_BYTES]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    padding_exist.insert(rw_counter);
+                }
+                tag != F::from(Target::Start as u64) && tag != F::ZERO // 0 is invalid tag
+            })
+            .cloned()
+            .collect::<Vec<RwRow<Value<F>>>>();
+        let padding_length = {
+            let length = RwMap::padding_len(rows_trimmed.len(), target_len);
+            length.saturating_sub(1) // first row always got padding
+        };
+        let start_padding_rw_counter = {
+            let start_padding_rw_counter = F::from(rows_trimmed.len() as u64) + F::ONE;
+            // Assume root of unity < 2**64
+            assert!(
+                start_padding_rw_counter.to_repr()[U64_BYTES..]
+                    .iter()
+                    .cloned()
+                    .sum::<u8>()
+                    == 0,
+                "rw counter > 2 ^ 64"
+            );
+            u64::from_le_bytes(
+                start_padding_rw_counter.to_repr()[..U64_BYTES]
+                    .try_into()
+                    .unwrap(),
+            )
+        } as usize;
+
+        let padding = (start_padding_rw_counter..).flat_map(|rw_counter| {
+            if padding_exist.contains(&rw_counter.try_into().unwrap()) {
+                None
+            } else {
+                Some(RwRow {
+                    rw_counter: Value::known(F::from(rw_counter as u64)),
+                    tag: Value::known(F::from(Target::Padding as u64)),
+                    ..Default::default()
+                })
+            }
+        });
+        (
+            iter::once(padding_start_rwrow.unwrap_or(RwRow {
+                rw_counter: Value::known(F::ONE),
+                tag: Value::known(F::from(Target::Start as u64)),
+                ..Default::default()
+            }))
+            .chain(rows_trimmed)
+            .chain(padding)
+            .take(target_len)
+            .collect(),
+            padding_length,
+        )
+    }
+}
+
+impl<F: Field> ToVec<Value<F>> for Vec<RwRow<Value<F>>> {
+    fn to2dvec(&self) -> Vec<Vec<Value<F>>> {
+        self.iter()
+            .map(|row| {
+                row.unwrap()
+                    .values()
+                    .iter()
+                    .map(|f| Value::known(*f))
+                    .collect::<Vec<Value<F>>>()
+            })
+            .collect::<Vec<Vec<Value<F>>>>()
     }
 }
 
@@ -474,6 +661,7 @@ impl Rw {
     pub(crate) fn rw_counter(&self) -> usize {
         match self {
             Self::Start { rw_counter }
+            | Self::Padding { rw_counter }
             | Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
@@ -482,6 +670,7 @@ impl Rw {
             | Self::TxRefund { rw_counter, .. }
             | Self::Account { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
+            | Self::StepState { rw_counter, .. }
             | Self::TxLog { rw_counter, .. }
             | Self::TxReceipt { rw_counter, .. } => *rw_counter,
         }
@@ -489,7 +678,7 @@ impl Rw {
 
     pub(crate) fn is_write(&self) -> bool {
         match self {
-            Self::Start { .. } => false,
+            Self::Padding { .. } | Self::Start { .. } => false,
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
@@ -498,6 +687,7 @@ impl Rw {
             | Self::TxRefund { is_write, .. }
             | Self::Account { is_write, .. }
             | Self::CallContext { is_write, .. }
+            | Self::StepState { is_write, .. }
             | Self::TxLog { is_write, .. }
             | Self::TxReceipt { is_write, .. } => *is_write,
         }
@@ -505,6 +695,7 @@ impl Rw {
 
     pub(crate) fn tag(&self) -> Target {
         match self {
+            Self::Padding { .. } => Target::Padding,
             Self::Start { .. } => Target::Start,
             Self::Memory { .. } => Target::Memory,
             Self::Stack { .. } => Target::Stack,
@@ -516,6 +707,7 @@ impl Rw {
             Self::CallContext { .. } => Target::CallContext,
             Self::TxLog { .. } => Target::TxLog,
             Self::TxReceipt { .. } => Target::TxReceipt,
+            Self::StepState { .. } => Target::StepState,
         }
     }
 
@@ -530,7 +722,10 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. } | Self::Account { .. } => None,
+            Self::Padding { .. }
+            | Self::Start { .. }
+            | Self::Account { .. }
+            | Self::StepState { .. } => None,
         }
     }
 
@@ -561,8 +756,10 @@ impl Rw {
                 // make field_tag fit into one limb (16 bits)
                 Some(build_tx_log_address(*index as u64, *field_tag, *log_id))
             }
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::CallContext { .. }
+            | Self::StepState { .. }
             | Self::TxRefund { .. }
             | Self::TxReceipt { .. } => None,
         }
@@ -572,8 +769,10 @@ impl Rw {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
+            Self::StepState { field_tag, .. } => Some(*field_tag as u64),
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
@@ -588,8 +787,10 @@ impl Rw {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::CallContext { .. }
+            | Self::StepState { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::TxRefund { .. }
@@ -602,8 +803,9 @@ impl Rw {
 
     pub(crate) fn value_assignment(&self) -> Word {
         match self {
-            Self::Start { .. } => U256::zero(),
+            Self::Padding { .. } | Self::Start { .. } => U256::zero(),
             Self::CallContext { value, .. }
+            | Self::StepState { value, .. }
             | Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
             | Self::Stack { value, .. }
@@ -625,10 +827,12 @@ impl Rw {
                 Some(U256::from(*is_warm_prev as u64))
             }
             Self::TxRefund { value_prev, .. } => Some(U256::from(*value_prev)),
-            Self::Start { .. }
+            Self::Padding { .. }
+            | Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
+            | Self::StepState { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
         }
@@ -644,10 +848,123 @@ impl Rw {
     }
 }
 
+impl From<Vec<Rw>> for RwMap {
+    fn from(rws: Vec<Rw>) -> Self {
+        let mut rw_map = HashMap::<Target, Vec<Rw>>::default();
+        for rw in rws {
+            match rw {
+                Rw::Account { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Account) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Account, vec![rw]);
+                    }
+                }
+                Rw::AccountStorage { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Storage) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Storage, vec![rw]);
+                    }
+                }
+                Rw::TxAccessListAccount { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccount) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxAccessListAccount, vec![rw]);
+                    }
+                }
+                Rw::TxAccessListAccountStorage { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxAccessListAccountStorage) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxAccessListAccountStorage, vec![rw]);
+                    }
+                }
+                Rw::Padding { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Padding) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Padding, vec![rw]);
+                    }
+                }
+                Rw::Start { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Start) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Start, vec![rw]);
+                    }
+                }
+                Rw::Stack { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Stack) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Stack, vec![rw]);
+                    }
+                }
+                Rw::Memory { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::Memory) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::Memory, vec![rw]);
+                    }
+                }
+                Rw::CallContext { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::CallContext) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::CallContext, vec![rw]);
+                    }
+                }
+                Rw::TxLog { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxLog) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxLog, vec![rw]);
+                    }
+                }
+                Rw::TxReceipt { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxReceipt) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxReceipt, vec![rw]);
+                    }
+                }
+                Rw::TxRefund { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TxRefund) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TxRefund, vec![rw]);
+                    }
+                }
+                Rw::StepState { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::StepState) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::StepState, vec![rw]);
+                    }
+                }
+            };
+        }
+        Self(rw_map)
+    }
+}
+
 impl From<&operation::OperationContainer> for RwMap {
     fn from(container: &operation::OperationContainer) -> Self {
-        let mut rws = HashMap::default();
+        // Get rws raning all indices from the whole container
+        let mut rws = HashMap::<Target, Vec<Rw>>::default();
 
+        rws.insert(
+            Target::Padding,
+            container
+                .padding
+                .iter()
+                .map(|op| Rw::Padding {
+                    rw_counter: op.rwc().into(),
+                })
+                .collect(),
+        );
         rws.insert(
             Target::Start,
             container
@@ -811,7 +1128,9 @@ impl From<&operation::OperationContainer> for RwMap {
                     is_write: op.rw().is_write(),
                     call_id: op.op().call_id(),
                     memory_address: u64::from_le_bytes(
-                        op.op().address().to_le_bytes()[..8].try_into().unwrap(),
+                        op.op().address().to_le_bytes()[..U64_BYTES]
+                            .try_into()
+                            .unwrap(),
                     ),
                     byte: op.op().value(),
                 })
@@ -855,7 +1174,63 @@ impl From<&operation::OperationContainer> for RwMap {
                 })
                 .collect(),
         );
-
+        rws.insert(
+            Target::StepState,
+            container
+                .step_state
+                .iter()
+                .map(|op| Rw::StepState {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    field_tag: match op.op().field {
+                        StepStateField::CallID => StepStateFieldTag::CallID,
+                        StepStateField::IsRoot => StepStateFieldTag::IsRoot,
+                        StepStateField::IsCreate => StepStateFieldTag::IsCreate,
+                        StepStateField::CodeHash => StepStateFieldTag::CodeHash,
+                        StepStateField::ProgramCounter => StepStateFieldTag::ProgramCounter,
+                        StepStateField::StackPointer => StepStateFieldTag::StackPointer,
+                        StepStateField::GasLeft => StepStateFieldTag::GasLeft,
+                        StepStateField::MemoryWordSize => StepStateFieldTag::MemoryWordSize,
+                        StepStateField::ReversibleWriteCounter => {
+                            StepStateFieldTag::ReversibleWriteCounter
+                        }
+                        StepStateField::LogID => StepStateFieldTag::LogID,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
         Self(rws)
+    }
+}
+
+/// RwFingerprints
+#[derive(Debug, Clone)]
+pub struct RwFingerprints<F> {
+    /// last chunk fingerprint = row0 * row1 * ... rowi
+    pub prev_mul_acc: F,
+    /// cur chunk fingerprint
+    pub mul_acc: F,
+    /// last chunk last row = alpha - (gamma^1 x1 + gamma^2 x2 + ...)
+    pub prev_ending_row: F,
+    /// cur chunk last row
+    pub ending_row: F,
+}
+
+impl<F: Field> RwFingerprints<F> {
+    /// new by value
+    pub fn new(row_prev: F, row: F, acc_prev: F, acc: F) -> Self {
+        Self {
+            prev_mul_acc: acc_prev,
+            mul_acc: acc,
+            prev_ending_row: row_prev,
+            ending_row: row,
+        }
+    }
+}
+
+impl<F: Field> Default for RwFingerprints<F> {
+    fn default() -> Self {
+        Self::new(F::from(0), F::from(0), F::from(1), F::from(1))
     }
 }

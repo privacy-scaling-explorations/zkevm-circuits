@@ -3,7 +3,7 @@ use super::{
     from_bytes,
     math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
     memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
-    AccountAddress, CachedRegion,
+    AccountAddress, CachedRegion, StepRws,
 };
 use crate::{
     evm_circuit::{
@@ -17,21 +17,21 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell,
+            not, Cell,
         },
     },
-    table::{AccountFieldTag, CallContextFieldTag},
+    table::{chunk_ctx_table::ChunkCtxFieldTag, AccountFieldTag, CallContextFieldTag},
     util::{
         word::{Word32, Word32Cell, WordExpr, WordLoHi, WordLoHiCell},
         Expr,
     },
-    witness::{Block, Call, ExecStep},
+    witness::{Block, Call, Chunk, ExecStep},
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{
     evm_types::GasCost, Field, OpsIdentity, ToAddress, ToLittleEndian, ToScalar, ToWord, U256,
 };
-use gadgets::util::{select, sum};
+use gadgets::util::{or, select, sum};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -234,7 +234,7 @@ impl<F: Field> RestoreContextGadget<F> {
             gas_left: To(gas_left),
             memory_word_size: To(caller_memory_word_size.expr()),
             reversible_write_counter: To(reversible_write_counter),
-            log_id: Same,
+            ..Default::default()
         });
 
         Self {
@@ -309,7 +309,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         address: WordLoHi<Expression<F>>,
-        updates: Vec<Word32Cell<F>>,
+        updates: &[Word32Cell<F>],
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
@@ -368,10 +368,10 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferToGadget<F> {
-    receiver: UpdateBalanceGadget<F, 2, true>,
+    receiver_balance: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
-    must_create: Expression<F>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    is_create: Expression<F>,
+    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
 impl<F: Field> TransferToGadget<F> {
@@ -380,51 +380,18 @@ impl<F: Field> TransferToGadget<F> {
         cb: &mut EVMConstraintBuilder<F>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        must_create: Expression<F>,
+        is_create: Expression<F>,
         value: Word32Cell<F>,
         mut reversion_info: Option<&mut ReversionInfo<F>>,
-        account_write: bool,
     ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
-        if account_write {
-            Self::create_account(
-                cb,
-                receiver_address.clone(),
-                receiver_exists.clone(),
-                must_create.clone(),
-                value_is_zero.expr(),
-                reversion_info.as_deref_mut(),
-            );
-        }
-        let receiver = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(
-                cb,
-                receiver_address,
-                vec![value.clone()],
-                reversion_info,
-            )
-        });
+        let value_is_zero = cb.is_zero_word(&value);
 
-        Self {
-            receiver,
-            receiver_exists,
-            must_create,
-            value_is_zero,
-        }
-    }
-
-    pub(crate) fn create_account(
-        cb: &mut EVMConstraintBuilder<F>,
-        receiver_address: WordLoHi<Expression<F>>,
-        receiver_exists: Expression<F>,
-        must_create: Expression<F>,
-        value_is_zero: Expression<F>,
-        reversion_info: Option<&mut ReversionInfo<F>>,
-    ) {
+        // Create account
+        // See https://github.com/ethereum/go-ethereum/pull/28666 for the context of this check.
         cb.condition(
             and::expr([
                 not::expr(receiver_exists.expr()),
-                or::expr([not::expr(value_is_zero.expr()), must_create]),
+                or::expr([not::expr(value_is_zero.expr()), is_create.expr()]),
             ]),
             |cb| {
                 cb.account_write(
@@ -432,23 +399,46 @@ impl<F: Field> TransferToGadget<F> {
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash(),
                     WordLoHi::zero(),
-                    reversion_info,
+                    reversion_info.as_deref_mut(),
                 );
             },
         );
+
+        let receiver_balance = cb.condition(not::expr(value_is_zero.expr()), |cb| {
+            cb.increase_balance(receiver_address, value.clone(), reversion_info)
+        });
+
+        Self {
+            receiver_balance,
+            receiver_exists,
+            is_create,
+            value_is_zero,
+        }
     }
 
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (receiver_balance, prev_receiver_balance): (U256, U256),
+        rws: &mut StepRws,
+        receiver_exists: bool,
         value: U256,
+        is_create: bool,
     ) -> Result<(), Error> {
-        self.receiver.assign(
+        if !receiver_exists && (!value.is_zero() || is_create) {
+            // receiver's code_hash
+            rws.next().account_codehash_pair();
+        }
+
+        let (receiver_balance, receiver_balance_prev) = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
+        self.receiver_balance.assign(
             region,
             offset,
-            prev_receiver_balance,
+            receiver_balance_prev,
             vec![value],
             receiver_balance,
         )?;
@@ -460,70 +450,58 @@ impl<F: Field> TransferToGadget<F> {
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         and::expr([
-                not::expr(self.receiver_exists.expr()),
-                or::expr([not::expr(self.value_is_zero.expr()), self.must_create.clone()]),
-            ]) +
+            not::expr(self.receiver_exists.expr()),
+            or::expr([not::expr(self.value_is_zero.expr()), self.is_create.expr()])
+        ])+
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr())
     }
 }
 
-// TODO: Merge with TransferGadget
-/// The TransferWithGasFeeGadget handles an irreversible gas fee subtraction to
-/// the sender and a transfer of value from sender to receiver.  The value
-/// transfer is only performed if the value is not zero.  If the transfer is
-/// performed and the receiver account doesn't exist, it will be created by
-/// setting it's code_hash = EMPTY_HASH.   The receiver account is also created
-/// unconditionally if must_create is true.  This gadget is used in BeginTx.
+/// The [`TransferGadget`] handles
+/// - (optional) an irreversible gas fee subtraction to the sender, and
+/// - a transfer of value from sender to receiver.
+///
+/// The value transfer is only performed if the value is not zero.
+/// It also create the receiver account when the conditions in [`TransferToGadget`] is met.
+/// This gadget is used in BeginTx, Call ops, and Create.
 #[derive(Clone, Debug)]
-pub(crate) struct TransferWithGasFeeGadget<F> {
-    sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
+pub(crate) struct TransferGadget<F, const WITH_FEE: bool> {
+    sender_sub_fee: Option<UpdateBalanceGadget<F, 2, false>>,
     sender_sub_value: UpdateBalanceGadget<F, 2, false>,
     receiver: TransferToGadget<F>,
     pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
-impl<F: Field> TransferWithGasFeeGadget<F> {
+impl<F: Field, const WITH_FEE: bool> TransferGadget<F, WITH_FEE> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         sender_address: WordLoHi<Expression<F>>,
         receiver_address: WordLoHi<Expression<F>>,
         receiver_exists: Expression<F>,
-        must_create: Expression<F>,
+        is_create: Expression<F>,
         value: Word32Cell<F>,
-        gas_fee: Word32Cell<F>,
         reversion_info: &mut ReversionInfo<F>,
+        gas_fee: Option<Word32Cell<F>>,
     ) -> Self {
-        let sender_sub_fee =
-            UpdateBalanceGadget::construct(cb, sender_address.to_word(), vec![gas_fee], None);
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
-        // If receiver doesn't exist, create it
-        TransferToGadget::create_account(
-            cb,
-            receiver_address.clone(),
-            receiver_exists.clone(),
-            must_create.clone(),
-            value_is_zero.expr(),
-            Some(reversion_info),
-        );
+        let sender_sub_fee = if WITH_FEE {
+            Some(cb.decrease_balance(sender_address.to_word(), gas_fee.expect("fee exists"), None))
+        } else {
+            None
+        };
+        let value_is_zero = cb.is_zero_word(&value);
         // Skip transfer if value == 0
         let sender_sub_value = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(
-                cb,
-                sender_address,
-                vec![value.clone()],
-                Some(reversion_info),
-            )
+            cb.decrease_balance(sender_address, value.clone(), Some(reversion_info))
         });
         let receiver = TransferToGadget::construct(
             cb,
             receiver_address,
             receiver_exists,
-            must_create,
+            is_create,
             value,
             Some(reversion_info),
-            false,
         );
 
         Self {
@@ -536,27 +514,19 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
-        1.expr() +
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
-            not::expr(self.value_is_zero.expr()),
-            self.receiver.must_create.clone()]
-        )]) * 1.expr() +
+        WITH_FEE.expr() +
         // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
+        not::expr(self.value_is_zero.expr()) +
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        self.receiver.rw_delta()
     }
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        and::expr([not::expr(self.receiver.receiver_exists.expr()), or::expr([
-            not::expr(self.value_is_zero.expr()),
-            self.receiver.must_create.clone()]
-        )]) +
         // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
+        not::expr(self.value_is_zero.expr()) +
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        self.receiver.rw_delta()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -564,136 +534,39 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (U256, U256),
-        (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
-        (receiver_balance, prev_receiver_balance): (U256, U256),
+        rws: &mut StepRws,
+        receiver_exists: bool,
         value: U256,
-        gas_fee: U256,
+        is_create: bool,
+        gas_fee: Option<U256>,
     ) -> Result<(), Error> {
-        self.sender_sub_fee.assign(
-            region,
-            offset,
-            prev_sender_balance_sub_fee,
-            vec![gas_fee],
-            sender_balance_sub_fee,
-        )?;
+        if WITH_FEE {
+            let sender_balance_sub_fee = rws.next().account_balance_pair();
+            self.sender_sub_fee.as_ref().expect("Exists").assign(
+                region,
+                offset,
+                sender_balance_sub_fee.1,
+                vec![gas_fee.expect("exists")],
+                sender_balance_sub_fee.0,
+            )?;
+        }
+        let sender_balance_sub_value = if !value.is_zero() {
+            rws.next().account_balance_pair()
+        } else {
+            (0.into(), 0.into())
+        };
         self.sender_sub_value.assign(
             region,
             offset,
-            prev_sender_balance_sub_value,
+            sender_balance_sub_value.1,
             vec![value],
-            sender_balance_sub_value,
+            sender_balance_sub_value.0,
         )?;
-        self.receiver.assign(
-            region,
-            offset,
-            (receiver_balance, prev_receiver_balance),
-            value,
-        )?;
+        self.receiver
+            .assign(region, offset, rws, receiver_exists, value, is_create)?;
         self.value_is_zero
             .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
         Ok(())
-    }
-}
-
-/// The TransferGadget handles a transfer of value from sender to receiver.  The
-/// transfer is only performed if the value is not zero.  If the transfer is
-/// performed and the receiver account doesn't exist, it will be created by
-/// setting it's code_hash = EMPTY_HASH. This gadget is used in callop.
-#[derive(Clone, Debug)]
-pub(crate) struct TransferGadget<F> {
-    sender: UpdateBalanceGadget<F, 2, false>,
-    receiver: TransferToGadget<F>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
-}
-
-impl<F: Field> TransferGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        sender_address: WordLoHi<Expression<F>>,
-        receiver_address: WordLoHi<Expression<F>>,
-        receiver_exists: Expression<F>,
-        must_create: Expression<F>,
-        // _prev_code_hash: WordLoHi<Expression<F>>,
-        value: Word32Cell<F>,
-        reversion_info: &mut ReversionInfo<F>,
-    ) -> Self {
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
-        // If receiver doesn't exist, create it
-        TransferToGadget::create_account(
-            cb,
-            receiver_address.clone(),
-            receiver_exists.clone(),
-            must_create.clone(),
-            value_is_zero.expr(),
-            Some(reversion_info),
-        );
-        // Skip transfer if value == 0
-        let sender = cb.condition(not::expr(value_is_zero.expr()), |cb| {
-            UpdateBalanceGadget::construct(
-                cb,
-                sender_address,
-                vec![value.clone()],
-                Some(reversion_info),
-            )
-        });
-        let receiver = TransferToGadget::construct(
-            cb,
-            receiver_address,
-            receiver_exists,
-            must_create,
-            value,
-            Some(reversion_info),
-            false,
-        );
-
-        Self {
-            sender,
-            receiver,
-            value_is_zero,
-        }
-    }
-
-    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
-        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
-        or::expr([
-                        not::expr(self.value_is_zero.expr()) * not::expr(self.receiver.receiver_exists.clone()),
-                        self.receiver.must_create.clone()]
-                    ) * 1.expr() +
-        // +1 Write Account (sender) Balance
-        // +1 Write Account (receiver) Balance
-        not::expr(self.value_is_zero.expr()) * 2.expr()
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        (sender_balance, sender_balance_prev): (U256, U256),
-        (receiver_balance, receiver_balance_prev): (U256, U256),
-        value: U256,
-    ) -> Result<(), Error> {
-        self.sender.assign(
-            region,
-            offset,
-            sender_balance_prev,
-            vec![value],
-            sender_balance,
-        )?;
-        self.receiver.assign(
-            region,
-            offset,
-            (receiver_balance, receiver_balance_prev),
-            value,
-        )?;
-        self.value_is_zero
-            .assign_value(region, offset, Value::known(WordLoHi::from(value)))?;
-        Ok(())
-    }
-
-    pub(crate) fn rw_delta(&self) -> Expression<F> {
-        // +1 Write Account (sender) Balance
-        not::expr(self.value_is_zero.expr()) + self.receiver.rw_delta()
     }
 }
 
@@ -748,7 +621,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         let cd_address = MemAddrGadget::construct_self(cb);
         let rd_address = MemAddrGadget::construct_self(cb);
         // Lookup values from stack
-        // `callee_address` is poped from stack and used to check if it exists in
+        // `callee_address` is popped from stack and used to check if it exists in
         // access list and get code hash.
         // For CALLCODE, both caller and callee addresses are `current_callee_address`.
         // For DELEGATECALL, caller address is `current_caller_address` and
@@ -773,12 +646,12 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
         });
 
         // Recomposition of random linear combination to integer
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
+        let gas_is_u64 = cb.is_zero(sum::expr(&gas_word.limbs[N_BYTES_GAS..]));
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
         // construct common gadget
-        let value_is_zero = IsZeroWordGadget::construct(cb, &value);
+        let value_is_zero = cb.is_zero_word(&value);
         let has_value = select::expr(
             is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
@@ -791,9 +664,8 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
-        let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, &callee_code_hash, &cb.empty_code_hash());
-        let callee_not_exists = IsZeroWordGadget::construct(cb, &callee_code_hash);
+        let is_empty_code_hash = cb.is_eq_word(&callee_code_hash, &cb.empty_code_hash());
+        let callee_not_exists = cb.is_zero_word(&callee_code_hash);
 
         Self {
             is_success,
@@ -973,9 +845,9 @@ impl<F: Field, T: WordExpr<F> + Clone> SstoreGasGadget<F, T> {
         value_prev: T,
         original_value: T,
     ) -> Self {
-        let value_eq_prev = IsEqualWordGadget::construct(cb, &value, &value_prev);
-        let original_eq_prev = IsEqualWordGadget::construct(cb, &original_value, &value_prev);
-        let original_is_zero = IsZeroWordGadget::construct(cb, &original_value);
+        let value_eq_prev = cb.is_eq_word(&value, &value_prev);
+        let original_eq_prev = cb.is_eq_word(&original_value, &value_prev);
+        let original_is_zero = cb.is_zero_word(&original_value);
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -1193,7 +1065,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
         let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
-        let lt_cap = LtGadget::construct(cb, value, cap);
+        let lt_cap = cb.is_lt(value, cap);
 
         Self { word, lt_cap }
     }
@@ -1255,7 +1127,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word32();
-        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.limbs[VALID_BYTES..]));
+        let not_overflow = cb.is_zero(sum::expr(&original.limbs[VALID_BYTES..]));
 
         Self {
             original,
@@ -1295,5 +1167,108 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
 
     pub(crate) fn not_overflow(&self) -> Expression<F> {
         self.not_overflow.expr()
+    }
+}
+
+/// current SRS size < 2^30 so use 4 bytes (2^32) in LtGadet should be enough
+const MAX_RW_BYTES: usize = u32::BITS as usize / 8;
+
+/// Check consecutive Rw::Padding in rw_table to assure rw_table no malicious insertion
+#[derive(Clone, Debug)]
+pub(crate) struct RwTablePaddingGadget<F> {
+    is_empty_rwc: IsZeroGadget<F>,
+    max_rws: Cell<F>,
+    chunk_index: Cell<F>,
+    is_end_padding_exist: LtGadget<F, MAX_RW_BYTES>,
+    is_first_chunk: IsZeroGadget<F>,
+}
+
+impl<F: Field> RwTablePaddingGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        inner_rws_before_padding: Expression<F>,
+    ) -> Self {
+        let max_rws = cb.query_copy_cell();
+        let chunk_index = cb.query_cell();
+        let is_empty_rwc =
+            IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
+
+        cb.chunk_context_lookup(ChunkCtxFieldTag::CurrentChunkIndex, chunk_index.expr());
+        let is_first_chunk = IsZeroGadget::construct(cb, chunk_index.expr());
+
+        // Verify rw_counter counts to the same number of meaningful rows in
+        // rw_table to ensure there is no malicious insertion.
+        // Verify that there are at most total_rws meaningful entries in the rw_table
+        // - startop only exist in first chunk
+        // - end paddings are consecutively
+        cb.condition(is_first_chunk.expr(), |cb| {
+            cb.rw_table_start_lookup(1.expr());
+        });
+
+        let is_end_padding_exist = LtGadget::<_, MAX_RW_BYTES>::construct(
+            cb,
+            1.expr(),
+            max_rws.expr() - inner_rws_before_padding.expr(),
+        );
+
+        cb.condition(is_end_padding_exist.expr(), |cb| {
+            cb.rw_table_padding_lookup(inner_rws_before_padding.expr() + 1.expr());
+            cb.rw_table_padding_lookup(max_rws.expr() - 1.expr());
+        });
+
+        // Since every lookup done in the EVM circuit must succeed and uses
+        // a unique rw_counter, we know that at least there are
+        // total_rws meaningful entries in the rw_table.
+        // We conclude that the number of meaningful entries in the rw_table
+        // is total_rws.
+
+        Self {
+            is_empty_rwc,
+            max_rws,
+            chunk_index,
+            is_first_chunk,
+            is_end_padding_exist,
+        }
+    }
+
+    pub(crate) fn assign_exec_step(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        _block: &Block<F>,
+        chunk: &Chunk<F>,
+        inner_rws_before_padding: u64,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        let total_rwc = u64::from(step.rwc) - 1;
+        self.is_empty_rwc
+            .assign(region, offset, F::from(total_rwc))?;
+
+        let max_rws = F::from(chunk.fixed_param.max_rws as u64);
+        let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
+
+        self.chunk_index.assign(
+            region,
+            offset,
+            Value::known(F::from(chunk.chunk_context.idx as u64)),
+        )?;
+
+        self.is_first_chunk
+            .assign(region, offset, F::from(chunk.chunk_context.idx as u64))?;
+
+        self.is_end_padding_exist.assign(
+            region,
+            offset,
+            F::ONE,
+            max_rws.sub(F::from(inner_rws_before_padding)),
+        )?;
+
+        // When rw_indices is not empty, means current step is non-padding step, we're at the
+        // last row (at a fixed offset), where we need to access the max_rws
+        // constant.
+        if step.rw_indices_len() != 0 {
+            region.constrain_constant(max_rws_assigned, max_rws)?;
+        }
+        Ok(())
     }
 }

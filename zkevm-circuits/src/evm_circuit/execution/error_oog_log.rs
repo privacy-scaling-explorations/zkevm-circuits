@@ -12,7 +12,7 @@ use crate::{
             },
             or, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
 
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
-        let is_opcode_logn = LtGadget::construct(cb, topic_count.clone(), 5.expr());
+        let is_opcode_logn = cb.is_lt(topic_count.clone(), 5.expr());
         cb.require_equal(
             "topic count in [0..5) which means opcode is Log0...Log4 ",
             is_opcode_logn.expr(),
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         // Check if the amount of gas available is less than the amount of gas
         // required
-        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
             "Memory address is overflow or gas left is less than cost",
             or::expr([memory_address.overflow(), insufficient_gas.expr()]),
@@ -98,6 +98,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

@@ -16,6 +16,8 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 itertools = "0.10"
 lazy_static = "1.4"
 log = "0.4.14"
+num = "0.4"
+rand = { version = "0.8", optional = true }
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
 strum = "0.24"
