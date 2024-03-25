@@ -132,7 +132,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let tx_id = rws.next().call_context_value();
         let is_static = rws.next().call_context_value();
-
         let gas = rws.next().stack_value();
         let callee_address = rws.next().stack_value();
 
@@ -142,12 +141,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             U256::zero()
         };
 
-        if is_call_or_callcode == 1 {
-            rws.offset_sub(1);
-        }
-
-        rws.offset_add(is_call_or_callcode);
-
         let cd_offset = rws.next().stack_value();
         let cd_length = rws.next().stack_value();
         let rd_offset = rws.next().stack_value();
@@ -156,9 +149,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         rws.offset_add(1);
 
         let callee_code_hash = rws.next().account_codehash_pair().0;
-
         let callee_exists = !callee_code_hash.is_zero();
-
         let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
         let memory_expansion_gas_cost = self.call.assign(

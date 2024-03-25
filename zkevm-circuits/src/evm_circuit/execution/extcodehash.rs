@@ -110,7 +110,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let mut rws = StepRws::new(block, step);
 
         let address = rws.next().stack_value();
-
         self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id

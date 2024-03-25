@@ -181,9 +181,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         };
 
         let dst_offset = rws.next().stack_value();
-
         let src_offset = rws.next().stack_value();
-
         let copy_size = rws.next().stack_value();
 
         self.opcode

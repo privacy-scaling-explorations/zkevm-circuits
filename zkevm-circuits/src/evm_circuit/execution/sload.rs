@@ -126,9 +126,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         rws.offset_add(4);
 
         let key = rws.next().stack_value();
-
         let (_, committed_value) = rws.next().aux_pair();
-
         let value = rws.next().stack_value();
 
         self.key.assign_u256(region, offset, key)?;
