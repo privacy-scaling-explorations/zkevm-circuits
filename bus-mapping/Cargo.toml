@@ -26,7 +26,7 @@ hex.workspace = true
 strum_macros.workspace = true
 
 # precompile related crates
-revm-precompile = { git = "https://github.com/scroll-tech/revm", branch = "scroll-fix" }
+revm-precompile.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

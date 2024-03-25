@@ -56,7 +56,7 @@ dependencies = [
  "num-bigint",
  "rand",
  "reth-primitives",
- "revm-precompile 5.1.0 (git+https://github.com/bluealloy/revm)",
+ "revm-precompile 2.0.0",
  "serde",
  "serde_json",
  "snark-verifier",
@@ -4525,7 +4525,7 @@ dependencies = [
  "reth-ethereum-forks",
  "reth-rpc-types",
  "revm 7.2.0",
- "revm-primitives 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "revm-primitives 3.1.0",
  "roaring",
  "secp256k1 0.27.0",
  "serde",
@@ -4585,7 +4585,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "dyn-clone",
  "revm-interpreter",
- "revm-precompile 5.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "revm-precompile 5.1.0",
  "serde",
  "serde_json",
 ]
@@ -4596,7 +4596,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f0a1818f8c876b0d71a0714217c34da7df8a42c0462750768779d55680e4554"
 dependencies = [
- "revm-primitives 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "revm-primitives 3.1.0",
  "serde",
 ]
 
@@ -4626,23 +4626,7 @@ dependencies = [
  "c-kzg",
  "k256 0.13.3",
  "once_cell",
- "revm-primitives 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ripemd",
- "secp256k1 0.28.2",
- "sha2",
- "substrate-bn",
-]
-
-[[package]]
-name = "revm-precompile"
-version = "5.1.0"
-source = "git+https://github.com/bluealloy/revm#1ce5a52dc0f5701800d496605ad3d20cbd0d967f"
-dependencies = [
- "aurora-engine-modexp",
- "c-kzg",
- "k256 0.13.3",
- "once_cell",
- "revm-primitives 3.1.0 (git+https://github.com/bluealloy/revm)",
+ "revm-primitives 3.1.0",
  "ripemd",
  "secp256k1 0.28.2",
  "sha2",
@@ -4672,26 +4656,6 @@ name = "revm-primitives"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "323ad597cf75ac9cb1d161be29fcc3562426f0278a1d04741697fca556e1ceea"
-dependencies = [
- "alloy-primitives",
- "auto_impl",
- "bitflags 2.5.0",
- "bitvec",
- "c-kzg",
- "cfg-if 1.0.0",
- "derive_more",
- "dyn-clone",
- "enumn",
- "hashbrown 0.14.3",
- "hex",
- "once_cell",
- "serde",
-]
-
-[[package]]
-name = "revm-primitives"
-version = "3.1.0"
-source = "git+https://github.com/bluealloy/revm#1ce5a52dc0f5701800d496605ad3d20cbd0d967f"
 dependencies = [
  "alloy-primitives",
  "auto_impl",
