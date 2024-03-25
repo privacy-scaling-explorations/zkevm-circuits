@@ -57,6 +57,8 @@ pub enum StateTestError {
     SkipTestBalanceOverflow,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
+    #[error("CircuitOverflow(circuit:{circuit:?}, needed:{needed:?})")]
+    CircuitOverflow { circuit: String, needed: usize },
 }
 
 impl StateTestError {
@@ -86,6 +88,7 @@ pub struct CircuitsConfig {
 fn check_post(
     builder: &CircuitInputBuilder,
     post: &HashMap<Address, AccountMatch>,
+    st: &StateTest,
 ) -> Result<(), StateTestError> {
     log::trace!("check post");
     // check if the generated account data is the expected one
@@ -93,11 +96,16 @@ fn check_post(
         let (_, actual) = builder.sdb.get_account(address);
 
         if expected.balance.map(|v| v == actual.balance) == Some(false) {
-            log::error!("balance mismatch, expected {expected:?} actual {actual:?}");
-            return Err(StateTestError::BalanceMismatch {
-                expected: expected.balance.unwrap(),
-                found: actual.balance,
-            });
+            log::warn!(
+                "balance mismatch, expected {expected:?} actual {actual:?}, addr {address:?}"
+            );
+            if *address != st.env.current_coinbase {
+                // Scroll EVM will not burn basefee
+                return Err(StateTestError::BalanceMismatch {
+                    expected: expected.balance.unwrap(),
+                    found: actual.balance,
+                });
+            }
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
@@ -188,10 +196,11 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             accounts,
             logger_config: LoggerConfig {
                 enable_memory: cfg!(feature = "enable-memory")
-                    && bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
-                disable_stack: !cfg!(feature = "enable-stack")
-                    && bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
-                disable_storage: !cfg!(feature = "enable-storage"),
+                    || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check(),
+                disable_stack: !(cfg!(feature = "enable-stack")
+                    || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
+                disable_storage: !(cfg!(feature = "enable-storage")
+                    || bus_mapping::util::GETH_TRACE_CHECK_LEVEL.should_check()),
                 ..Default::default()
             },
             #[cfg(feature = "shanghai")]
@@ -375,7 +384,6 @@ fn trace_config_to_witness_block_l1(
             ..eth_types::Transaction::default()
         })
         .collect();
-
     let eth_block = eth_types::Block {
         author: Some(trace_config.block_constants.coinbase),
         timestamp: trace_config.block_constants.timestamp,
@@ -429,6 +437,7 @@ pub const MAX_RLP_ROWS: usize = 800_000;
 pub const MAX_BYTECODE: usize = 600_000;
 pub const MAX_MPT_ROWS: usize = 1_000_000;
 pub const MAX_KECCAK_ROWS: usize = 1_000_000;
+pub const MAX_SHA256_ROWS: usize = 1_000_000;
 pub const MAX_POSEIDON_ROWS: usize = 1_000_000;
 pub const MAX_VERTICAL_ROWS: usize = 1_000_000;
 pub const MAX_RWS: usize = 1_000_000;
@@ -437,13 +446,15 @@ pub const MAX_PRECOMPILE_EC_MUL: usize = 50;
 pub const MAX_PRECOMPILE_EC_PAIRING: usize = 2;
 
 // TODO: refactor & usage
-fn get_sub_circuit_limit_l2() -> Vec<usize> {
-    vec![
+fn get_sub_circuit_limit() -> Vec<usize> {
+    #[allow(unused_mut)]
+    let mut limit = vec![
         MAX_RWS,           // evm
         MAX_RWS,           // state
         MAX_BYTECODE,      // bytecode
         MAX_RWS,           // copy
         MAX_KECCAK_ROWS,   // keccak
+        MAX_SHA256_ROWS,   // sha256
         MAX_RWS,           // tx
         MAX_RLP_ROWS,      // rlp
         8 * MAX_EXP_STEPS, // exp
@@ -452,8 +463,12 @@ fn get_sub_circuit_limit_l2() -> Vec<usize> {
         MAX_POSEIDON_ROWS, // poseidon
         MAX_VERTICAL_ROWS, // sig
         MAX_VERTICAL_ROWS, // ecc
-        MAX_MPT_ROWS,      // mpt
-    ]
+    ];
+    #[cfg(feature = "scroll")]
+    {
+        limit.push(MAX_MPT_ROWS); // mpt
+    }
+    limit
 }
 
 fn get_params_for_super_circuit_test_l2() -> CircuitsParams {
@@ -600,48 +615,47 @@ pub fn run_test(
     log::debug!("witness_block created");
     //builder.sdb.list_accounts();
 
-    let check_ccc = || {
-        let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
-        let mut overflow = false;
-        for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit_l2().iter()) {
-            if num.row_num_real > *limit {
-                log::warn!(
-                    "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
-                    suite.id,
-                    st.id,
-                    num.name,
-                    num.row_num_real,
-                    limit
-                );
-                overflow = true;
-            }
-        }
-        let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
-        if overflow {
+    let row_usage = ScrollSuperCircuit::min_num_rows_block_subcircuits(&witness_block);
+    let mut overflow = false;
+    for (num, limit) in row_usage.iter().zip_eq(get_sub_circuit_limit().iter()) {
+        if num.row_num_real > *limit {
             log::warn!(
-                "ccc overflow: st.id {}, detail {} {}",
+                "ccc detail: suite.id {}, st.id {}, circuit {}, num {}, limit {}",
+                suite.id,
                 st.id,
-                max_row_usage.name,
-                max_row_usage.row_num_real
+                num.name,
+                num.row_num_real,
+                limit
             );
-            panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
-        } else {
-            log::info!(
-                "ccc ok: st.id {}, detail {} {}",
-                st.id,
-                max_row_usage.name,
-                max_row_usage.row_num_real
-            );
+            overflow = true;
         }
-    };
+    }
+    let max_row_usage = row_usage.iter().max_by_key(|r| r.row_num_real).unwrap();
+    if overflow {
+        log::warn!(
+            "ccc overflow: st.id {}, detail {} {}",
+            st.id,
+            max_row_usage.name,
+            max_row_usage.row_num_real
+        );
+        // panic!("{} {}", max_row_usage.name, max_row_usage.row_num_real);
+        return Err(StateTestError::CircuitOverflow {
+            circuit: max_row_usage.name.to_string(),
+            needed: max_row_usage.row_num_real,
+        });
+    }
+    log::info!(
+        "ccc ok: st.id {}, detail {} {}",
+        st.id,
+        max_row_usage.name,
+        max_row_usage.row_num_real
+    );
 
     if !circuits_config.super_circuit {
         if (*CIRCUIT).is_empty() {
             CircuitTestBuilder::<1, 1>::new_from_block(witness_block)
                 .copy_checks(None)
                 .run();
-        } else if (*CIRCUIT) == "ccc" {
-            check_ccc();
         } else {
             match (*CIRCUIT).as_str() {
                 "modexp" => test_with::<ModExpCircuit<Fr>>(&witness_block),
@@ -663,22 +677,18 @@ pub fn run_test(
         }
     } else {
         log::debug!("test super circuit {}", *CIRCUIT);
-        if (*CIRCUIT) == "ccc" {
-            check_ccc();
-        } else {
-            #[cfg(feature = "inner-prove")]
-            {
-                set_env_coinbase(&st.env.current_coinbase);
-                prover::test::inner_prove(&test_id, &witness_block);
-            }
-            #[cfg(feature = "chunk-prove")]
-            {
-                set_env_coinbase(&st.env.current_coinbase);
-                prover::test::chunk_prove(&test_id, &witness_block);
-            }
-            #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
-            mock_prove(&test_id, &witness_block);
+        #[cfg(feature = "inner-prove")]
+        {
+            set_env_coinbase(&st.env.current_coinbase);
+            prover::test::inner_prove(&test_id, &witness_block);
         }
+        #[cfg(feature = "chunk-prove")]
+        {
+            set_env_coinbase(&st.env.current_coinbase);
+            prover::test::chunk_prove(&test_id, &witness_block);
+        }
+        #[cfg(not(any(feature = "inner-prove", feature = "chunk-prove")))]
+        mock_prove(&test_id, &witness_block);
     };
     log::debug!("balance_overflow = {balance_overflow}");
     log::debug!(
@@ -723,7 +733,7 @@ pub fn run_test(
                 }
             }
         }
-        check_post(&builder, &post)?;
+        check_post(&builder, &post, &st)?;
     }
     log::info!("{test_id}: run-test END");
     Ok(())

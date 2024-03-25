@@ -28,7 +28,7 @@ ark-std = "0.3"
 ctor = "0.1"
 env_logger = "0.10"
 ethers = { version = "=2.0.7", features = ["ethers-solc"] }
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7", features = ["scroll"] }
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7-patch-tungstenite", features = ["scroll"] }
 ethers-providers = "=2.0.7"
 ethers-signers = "=2.0.7"
 ff = "0.13"
@@ -65,11 +65,11 @@ revm-precompile = { git = "https://github.com/bluealloy/revm" }
 c-kzg = "1.0.0"
 
 [patch.crates-io]
-ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
-ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7" }
+ethers-core = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7-patch-tungstenite" }
+ethers-providers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7-patch-tungstenite" }
+ethers = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7-patch-tungstenite" }
+ethers-etherscan = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7-patch-tungstenite" }
+ethers-signers  = { git = "https://github.com/scroll-tech/ethers-rs.git", branch = "v2.0.7-patch-tungstenite" }
 gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves", branch = "v0.1.0" }
 
