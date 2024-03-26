@@ -13,8 +13,6 @@ use std::{
 };
 use yaml_rust::Yaml;
 
-type Label = String;
-
 #[derive(Debug, Clone)]
 enum Ref {
     Any,

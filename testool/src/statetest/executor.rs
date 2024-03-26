@@ -5,11 +5,7 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::{geth_types, Address, Bytes, Error, GethExecTrace, U256, U64};
-use ethers_core::{
-    k256::ecdsa::SigningKey,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest, Withdrawal},
-    utils::keccak256,
-};
+use ethers_core::{k256::ecdsa::SigningKey, types::Withdrawal, utils::keccak256};
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};

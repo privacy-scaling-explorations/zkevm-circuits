@@ -5,7 +5,7 @@ use eth_types::{
     Address, Error, GethExecTrace, Word,
 };
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// Configuration structure for `geth_utils::trace`
 #[derive(Debug, Default, Clone, Serialize)]

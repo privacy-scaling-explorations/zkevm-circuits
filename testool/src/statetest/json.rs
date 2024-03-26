@@ -9,8 +9,6 @@ use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 
-use serde_json::value::Value;
-
 fn default_block_base_fee() -> String {
     DEFAULT_BASE_FEE.to_string()
 }
