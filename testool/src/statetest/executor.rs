@@ -138,6 +138,8 @@ fn check_post(
 }
 
 fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
+    let tx_type = st.tx_type();
+
     let chain_id = 1;
     let wallet = LocalWallet::from_str(&hex::encode(st.secret_key.0)).unwrap();
     let mut tx = TransactionRequest::new()
