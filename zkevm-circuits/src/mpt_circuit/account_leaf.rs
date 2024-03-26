@@ -270,6 +270,7 @@ impl<F: Field> AccountLeafConfig<F> {
                             key_data[is_s.idx()].is_odd.expr(),
                             &cb.key_r.expr(),
                         );
+
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                     let num_nibbles =
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
@@ -381,6 +382,31 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.key_data_prev.clone(),
                 &cb.key_r.expr(),
             );
+
+            // TODO: wrong extension node
+            /*
+            let wrong_bytes =
+                ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize, RlpItemType::Key);
+            */
+            let wrong_ext_middle =
+                ctx.rlp_item(meta, cb, AccountRowType::LongExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_after =
+                ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeKey as usize, RlpItemType::Key);
+
+            let (before, before_mult) = wrong_bytes.rlc_chain_data(); 
+            require!(before => config.key_data_prev.rlc.expr());
+
+            /*
+            wrong_ext_before = key_data[is_s.idx()].rlc.expr()
+                + rlp_key.key.expr(
+                    cb,
+                    rlp_key.key_value.clone(),
+                    key_data[is_s.idx()].mult.expr(),
+                    key_data[is_s.idx()].is_odd.expr(),
+                    &cb.key_r.expr(),
+                );
+            */
+
 
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove

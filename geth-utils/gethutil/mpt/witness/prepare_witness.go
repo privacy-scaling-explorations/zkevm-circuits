@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"fmt"
 	"math/big"
 
 	"main/gethutil/mpt/oracle"
@@ -503,24 +504,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				// We are in a non-existing-proof and an extension node is the last element of getProof.
 				// However, this extension node has not been added to the nodes yet (it's always added
 				// together with a branch).
-				// It's non-existing-proof and we have a "wrong" extension node, that means we have
-				// to obtain the underlying branch to be able to finally add (besides this branch)
-				// the placeholder leaf. So we need to query getProof again with one of the leaves that is
-				// actually in this extension node.
-
-				/*
-				Let's say we have an extension node E1 at the following path [3, 5, 8].
-				Let's say E1 has nibbles [1, 2, 3]. Let's say we want to prove there does not exist
-				a leaf at [3, 5, 8, 1, 2, 4] (because there is overlapping path with E1).
-
-				We need to construct a leaf L1 that will have the key equal to the queried key.
-				This means the nibbles are the same as in the path to E1 (without extension nibbles).
-
-				In the circuit, the leaf L1 will have the same key as the queried key once
-				the KeyData will be queried with offset 1 (to get the accumulated key RLC up until E1).
-				The nibbles stored in L1 will be added to the RLC and compared with the queried
-				key (has to be the same).
-				*/
+				
 				nibbles := getNibbles(proof2[len(proof2)-1])
 				newKey := make([]byte, len(key))
 				copy(newKey, key)
@@ -533,58 +517,28 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				
 				start := keyIndex - len(nibbles)
 
-				/*
-				Following the above example, the queried key `key` is [3, 5, 8, 1, 2, 4].
-				The path to E1 and its nibbles is [3, 5, 8, 1, 2, 3].
-				We construct the key `newKey` to get the underlying branch of E1.
-				*/
-				for i := 0; i < len(nibbles); i++ {
-					n := nibbles[i]
-					if key[start + i] != n {
-						newKey[start + i] = n
-					}
+				before := newKey[0:start]
+				if len(before) % 2 == 1 {
+					before = append(before, 0)
 				}
+				keyBefore := trie.HexToKeybytes(before)
+				fmt.Println(keyBefore)
 
-				/*
-				The last nibble should be the one that gets one of the leaves in the branch (not nil) -
-				to get the leaf in branch as well.
-				*/
-				var proof [][]byte
-				var err error
-				for i := 0; i < 16; i++ {
-					newKey[keyIndex] = byte(i)
-					if isAccountProof {
-						var newAddrBytes []byte;
-						for j := 0; j < 40; j = j + 2{
-							newAddrBytes = append(newAddrBytes, newKey[j] * 16 + newKey[j+1])
-						}
-						newAddr := common.BytesToAddress(newAddrBytes)
-						var extNibbles [][]byte;
-						proof, _, extNibbles, _, _, err = statedb.GetProof(newAddr)
-						// We just continue if there is an error
-						if err != nil {
-							continue
-						}
-						if len(extNibbles[len(extNibbles)-1]) == 0 && !isBranch(proof[len(proof)-1]) {
-							break
-						}
-					} else {
-						k := trie.HexToKeybytes(newKey)
-						ky := common.BytesToHash(k)
-						var extNibbles [][]byte;
-						proof, _, extNibbles, _, _, err = statedb.GetStorageProof(addr, ky)
-						// We just continue if there is an error
-						if err != nil {
-							continue
-						}
-						if len(extNibbles[len(extNibbles)-1]) == 0 && !isBranch(proof[len(proof)-1]) {
-							break
-						}
-					}	
-				}
+				middle := newKey[start:keyIndex]
+				keyMiddle := []byte{160}
+				keyMiddle = append(keyMiddle, trie.HexToCompact(middle)...)
+				fmt.Println(keyMiddle)
 
-				branchRlp := proof[len(proof)-2] // the last element has to be a leaf
+				after := newKey[keyIndex:]
+				keyAfter := []byte{160}
+				keyAfter = append(keyAfter, trie.HexToCompact(after)...)
+				fmt.Println(keyAfter)
+
 				isExtension := true
+				// Dummy branch. The constraint of the branch being in the extension node and the constraint of the
+				// leaf being in the branch need to be disabled for this case.
+				branchRlp := []byte{248, 81, 160, 244, 245, 0, 27, 233, 28, 128, 158, 163, 228, 185, 193, 250, 228, 226, 205, 233, 119, 98, 15, 183, 171, 187, 182, 172, 113, 115, 190, 167, 217, 33, 211, 160, 72, 229, 31, 123, 46, 26, 63, 24, 242, 142, 183, 252, 47, 111, 99, 255, 0, 118, 149, 196, 125, 165, 118, 4, 189, 149, 202, 221, 129, 141, 240, 209, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128};
+
 				extNode := proof2[len(proof2)-1] // Let's name it E1
 				bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
 					key[keyIndex], key[keyIndex], false, false, isExtension)
@@ -592,18 +546,11 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 				// Let's construct the leaf L1 that will have the correct key (the queried one)
 				if isAccountProof {
-					compact := trie.HexToCompact(addr_nibbles[start:])
+					dummyLeaf := []byte{248,108,157,52,45,53,199,120,18,165,14,109,22,4,141,198,233,128,219,44,247,218,241,231,2,206,125,246,58,246,15,3,184,76,248,74,4,134,85,156,208,108,8,0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,112}
+					node := prepareAccountLeafNode(addr, addrh, dummyLeaf, dummyLeaf, dummyLeaf, nil, addr_nibbles, false, false, false)
 
-					compactLen := byte(len(compact))
+					node = equipLeafWithWrongExtension(node, keyBefore, keyMiddle, keyAfter)
 
-					constructedLeaf := []byte{248,108,157,52,45,53,199,120,18,165,14,109,22,4,141,198,233,128,219,44,247,218,241,231,2,206,125,246,58,246,15,3,184,76,248,74,4,134,85,156,208,108,8,0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,112}
-					constructedLeaf[2] = 128 + compactLen
-					for i := 0; i < len(compact); i++ {
-						constructedLeaf[3 + i] = compact[i];
-					}
-					constructedLeaf[1] = byte(len(constructedLeaf)) - 2
-
-					node := prepareAccountLeafNode(addr, addrh, proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, addr_nibbles, false, false, false)
 					nodes = append(nodes, node)
 				} else {
 
@@ -614,12 +561,12 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					rlp2 := 128 + compactLen
 					rlp1 := 192 + compactLen + 1
 					// Constructed leaf L1:
-					constructedLeaf := append([]byte{rlp1, rlp2}, compact...)
+					dummyLeaf := append([]byte{rlp1, rlp2}, compact...)
 
 					// Add dummy value:
-					constructedLeaf = append(constructedLeaf, 0)
+					dummyLeaf = append(dummyLeaf, 0)
 
-					node := prepareStorageLeafNode(proof[len(proof)-1], proof[len(proof)-1], constructedLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					node := prepareStorageLeafNode(dummyLeaf, dummyLeaf, dummyLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 					nodes = append(nodes, node)
 				}
 			}

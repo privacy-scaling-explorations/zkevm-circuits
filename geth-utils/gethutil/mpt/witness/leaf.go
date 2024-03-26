@@ -579,3 +579,14 @@ func prepareStorageLeafNode(leafS, leafC, constructedLeaf, neighbourNode []byte,
 
 	return node
 }
+
+func equipLeafWithWrongExtension(leafNode Node, keyBefore, keyMiddle, keyAfter []byte) Node {
+	l := len(leafNode.Values)
+	// The rows which are used for nibbles (it means there are checks for values being < 16)
+	// in the modified extension node cases are omitted.
+	leafNode.Values[l-modifiedExtensionNodeRowLen - 1] = keyBefore
+	leafNode.Values[l-modifiedExtensionNodeRowLen] = keyMiddle
+	leafNode.Values[l-modifiedExtensionNodeRowLen + 3] = keyAfter
+
+	return leafNode
+}

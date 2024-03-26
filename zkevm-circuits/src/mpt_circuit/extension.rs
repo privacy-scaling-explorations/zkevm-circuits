@@ -155,8 +155,7 @@ impl<F: Field> ExtensionGadget<F> {
             // Calculate the extension node key RLC when in an extension node
             // Currently, the extension node S and extension node C both have the same key
             // RLC - however, sometimes extension node can be replaced by a
-            // shorter extension node (in terms of nibbles), this is still to be
-            // implemented.
+            // shorter extension node (in terms of nibbles), this is handled by ModExtensionGadget.
             let key_rlc = key_data.rlc.expr()
                 + ext_key_rlc_expr(
                     cb,
