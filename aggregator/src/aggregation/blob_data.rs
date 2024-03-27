@@ -13,6 +13,7 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    aggregation::rlc::POWS_OF_256,
     blob::{
         BlobData, BLOB_WIDTH, N_BYTES_31, N_BYTES_32, N_ROWS_BLOB_DATA_CONFIG, N_ROWS_DATA,
         N_ROWS_DIGEST_BYTES, N_ROWS_DIGEST_RLC, N_ROWS_METADATA,
@@ -36,6 +37,8 @@ pub struct BlobDataConfig {
     /// A boolean witness that is set only when we encounter the end of a chunk. We enable a lookup
     /// to the Keccak table when the boundary is met.
     is_boundary: Column<Advice>,
+    /// A running accumulator of the boundary counts.
+    boundary_count: Column<Advice>,
     /// A boolean witness to indicate padded rows at the end of the data section.
     is_padding: Column<Advice>,
     /// Represents the running random linear combination of bytes seen so far, that are a part of
@@ -66,6 +69,7 @@ struct AssignedBlobDataConfig {
     pub accumulator: AssignedCell<Fr, Fr>,
     pub chunk_idx: AssignedCell<Fr, Fr>,
     pub is_boundary: AssignedCell<Fr, Fr>,
+    pub boundary_count: AssignedCell<Fr, Fr>,
     pub is_padding: AssignedCell<Fr, Fr>,
     pub preimage_rlc: AssignedCell<Fr, Fr>,
     pub digest_rlc: AssignedCell<Fr, Fr>,
@@ -85,6 +89,7 @@ impl BlobDataConfig {
             byte: meta.advice_column(),
             accumulator: meta.advice_column(),
             is_boundary: meta.advice_column(),
+            boundary_count: meta.advice_column(),
             chunk_idx: meta.advice_column(),
             is_padding: meta.advice_column(),
             preimage_rlc: meta.advice_column_in(SecondPhase),
@@ -97,6 +102,7 @@ impl BlobDataConfig {
         meta.enable_equality(config.byte);
         meta.enable_equality(config.accumulator);
         meta.enable_equality(config.is_boundary);
+        meta.enable_equality(config.boundary_count);
         meta.enable_equality(config.is_padding);
         meta.enable_equality(config.chunk_idx);
         meta.enable_equality(config.preimage_rlc);
@@ -121,18 +127,25 @@ impl BlobDataConfig {
                 let cond = is_not_hash * is_boundary * (1.expr() - is_padding_next);
                 let chunk_idx_curr = meta.query_advice(config.chunk_idx, Rotation::cur());
                 let chunk_idx_next = meta.query_advice(config.chunk_idx, Rotation::next());
-                // chunk_idx increases by at least 1 and at most MAX_AGG_SNARKS when condition is met.
-                vec![(cond * (chunk_idx_next - chunk_idx_curr - 1.expr()), config.chunk_idx_range_table.into())]
+                // chunk_idx increases by at least 1 and at most MAX_AGG_SNARKS when condition is
+                // met.
+                vec![(
+                    cond * (chunk_idx_next - chunk_idx_curr - 1.expr()),
+                    config.chunk_idx_range_table.into(),
+                )]
             },
         );
 
         meta.lookup(
-            "chunk_idx for non-padding, data rows in [1..MAX_AGG_SNARKS]",
+            "BlobDataConfig (chunk_idx for non-padding, data rows in [1..MAX_AGG_SNARKS])",
             |meta| {
                 let is_data = meta.query_selector(config.data_selector);
                 let is_padding = meta.query_advice(config.is_padding, Rotation::cur());
                 let chunk_idx = meta.query_advice(config.chunk_idx, Rotation::cur());
-                vec![(is_data * (1.expr() - is_padding) * (chunk_idx - 1.expr()), config.chunk_idx_range_table.into())]
+                vec![(
+                    is_data * (1.expr() - is_padding) * (chunk_idx - 1.expr()),
+                    config.chunk_idx_range_table.into(),
+                )]
             },
         );
 
@@ -147,6 +160,9 @@ impl BlobDataConfig {
             let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
             let byte_next = meta.query_advice(config.byte, Rotation::next());
 
+            let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
+            let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
+
             vec![
                 // if boundary followed by padding, length and preimage_rlc is 0.
                 cond.expr() * is_padding_next.expr() * len_next.expr(),
@@ -157,6 +173,9 @@ impl BlobDataConfig {
                 cond.expr()
                     * (1.expr() - is_padding_next.expr())
                     * (preimage_rlc_next - byte_next.expr()),
+                // the boundary count increments, i.e.
+                // boundary_count_curr == boundary_count_prev + 1
+                cond.expr() * (boundary_count_curr - boundary_count_prev - 1.expr()),
             ]
         });
 
@@ -175,6 +194,8 @@ impl BlobDataConfig {
             let preimage_rlc_curr = meta.query_advice(config.preimage_rlc, Rotation::cur());
             let preimage_rlc_next = meta.query_advice(config.preimage_rlc, Rotation::next());
             let byte_next = meta.query_advice(config.byte, Rotation::next());
+            let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
+            let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
 
             vec![
                 // chunk idx unchanged.
@@ -183,6 +204,8 @@ impl BlobDataConfig {
                 cond.expr() * (len_next - len_curr - 1.expr()),
                 // preimage rlc is updated.
                 cond.expr() * (preimage_rlc_curr * r + byte_next - preimage_rlc_next),
+                // boundary count continues.
+                cond.expr() * (boundary_count_curr - boundary_count_prev),
             ]
         });
 
@@ -193,6 +216,8 @@ impl BlobDataConfig {
             let is_padding_next = meta.query_advice(config.is_padding, Rotation::next());
             let diff = is_padding_next - is_padding_curr.expr();
             let byte = meta.query_advice(config.byte, Rotation::cur());
+            let boundary_count_curr = meta.query_advice(config.boundary_count, Rotation::cur());
+            let boundary_count_prev = meta.query_advice(config.boundary_count, Rotation::prev());
 
             vec![
                 // byte is 0 when padding in the "chunk data" section.
@@ -203,6 +228,8 @@ impl BlobDataConfig {
                 is_data.expr() * is_padding_curr.expr() * (1.expr() - is_padding_curr.expr()),
                 // is_padding transitions from 0 -> 1 only once.
                 is_data.expr() * diff.expr() * (1.expr() - diff.expr()),
+                // boundary count continues if padding
+                is_data.expr() * is_padding_curr * (boundary_count_curr - boundary_count_prev),
             ]
         });
 
@@ -333,6 +360,7 @@ impl BlobDataConfig {
                 }
 
                 let mut assigned_rows = Vec::with_capacity(N_ROWS_BLOB_DATA_CONFIG);
+                let mut count = 0u64;
                 for (i, row) in rows.iter().enumerate() {
                     let byte = region.assign_advice(
                         || "byte",
@@ -358,6 +386,18 @@ impl BlobDataConfig {
                         i,
                         || Value::known(Fr::from(row.is_boundary as u64)),
                     )?;
+                    let bcount = if (N_ROWS_METADATA..N_ROWS_METADATA + N_ROWS_DATA).contains(&i) {
+                        count += row.is_boundary as u64;
+                        count
+                    } else {
+                        0
+                    };
+                    let boundary_count = region.assign_advice(
+                        || "boundary_count",
+                        self.boundary_count,
+                        i,
+                        || Value::known(Fr::from(bcount)),
+                    )?;
                     let is_padding = region.assign_advice(
                         || "is_padding",
                         self.is_padding,
@@ -381,6 +421,7 @@ impl BlobDataConfig {
                         accumulator,
                         chunk_idx,
                         is_boundary,
+                        boundary_count,
                         is_padding,
                         preimage_rlc,
                         digest_rlc,
@@ -415,17 +456,42 @@ impl BlobDataConfig {
                     region.constrain_equal(one.cell(), one_cell)?;
                     one
                 };
-                let two_fifty_six = {
-                    let two_fifty_six = rlc_config.load_private(
-                        &mut region,
-                        &Fr::from(256),
-                        &mut rlc_config_offset,
-                    )?;
-                    let two_fifty_six_fixed = rlc_config
-                        .two_hundred_and_fifty_size_cell(two_fifty_six.cell().region_index);
-                    region.constrain_equal(two_fifty_six.cell(), two_fifty_six_fixed)?;
-                    two_fifty_six
+                let fixed_chunk_indices = {
+                    let mut fixed_chunk_indices = vec![one.clone()];
+                    for i in 2..=MAX_AGG_SNARKS {
+                        let i_cell = rlc_config.load_private(
+                            &mut region,
+                            &Fr::from(i as u64),
+                            &mut rlc_config_offset,
+                        )?;
+                        let i_fixed_cell = rlc_config
+                            .fixed_up_to_max_agg_snarks_cell(i_cell.cell().region_index, i);
+                        region.constrain_equal(i_cell.cell(), i_fixed_cell)?;
+                        fixed_chunk_indices.push(i_cell);
+                    }
+                    fixed_chunk_indices
                 };
+                let pows_of_256 = {
+                    let mut pows_of_256 = vec![one.clone()];
+                    for (exponent, pow_of_256) in (1..=POWS_OF_256).zip_eq(
+                        std::iter::successors(Some(Fr::from(256)), |n| Some(n * Fr::from(256)))
+                            .take(POWS_OF_256),
+                    ) {
+                        let pow_cell = rlc_config.load_private(
+                            &mut region,
+                            &pow_of_256,
+                            &mut rlc_config_offset,
+                        )?;
+                        let fixed_pow_cell = rlc_config.pow_of_two_hundred_and_fifty_six_cell(
+                            pow_cell.cell().region_index,
+                            exponent,
+                        );
+                        region.constrain_equal(pow_cell.cell(), fixed_pow_cell)?;
+                        pows_of_256.push(pow_cell);
+                    }
+                    pows_of_256
+                };
+                let two_fifty_six = pows_of_256[1].clone();
 
                 // read randomness challenges for RLC computations.
                 let r_keccak = rlc_config.read_challenge1(
@@ -579,6 +645,8 @@ impl BlobDataConfig {
 
                 // on the last row of the "metadata" section we want to ensure the keccak table
                 // lookup would be enabled for the metadata digest
+                //
+                // and boundary_count must be 0
                 region.constrain_equal(
                     assigned_rows
                         .get(N_ROWS_METADATA - 1)
@@ -586,6 +654,14 @@ impl BlobDataConfig {
                         .is_boundary
                         .cell(),
                     one.cell(),
+                )?;
+                region.constrain_equal(
+                    assigned_rows
+                        .get(N_ROWS_METADATA - 1)
+                        .unwrap()
+                        .boundary_count
+                        .cell(),
+                    zero.cell(),
                 )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
@@ -628,21 +704,12 @@ impl BlobDataConfig {
                     &mut rlc_config_offset,
                 )?;
 
-                // we do a lookup to the keccak table (from the "chunk data" section) every time we
-                // encounter a boundary. And such a lookup is done only for non-empty chunks, i.e.
-                // chunks that have at least one L2 transaction. We wish to equate this summation
-                // to the number of non-empty chunks we decoded from the metadata.
-                let mut num_lookups = zero.clone();
-                // TODO: optimize this loop as each add takes 4 rows
-                for row in rows.iter() {
-                    num_lookups = rlc_config.add(
-                        &mut region,
-                        &row.is_boundary,
-                        &num_lookups,
-                        &mut rlc_config_offset,
-                    )?;
-                }
-                region.constrain_equal(num_lookups.cell(), num_nonempty_chunks.cell())?;
+                // get the boundary count at the end of the "chunk data" section, and equate it to
+                // the number of non-empty chunks in the batch.
+                region.constrain_equal(
+                    rows.last().unwrap().boundary_count.cell(),
+                    num_nonempty_chunks.cell(),
+                )?;
 
                 ////////////////////////////////////////////////////////////////////////////////
                 ////////////////////////////////// DIGEST RLC //////////////////////////////////
@@ -656,12 +723,13 @@ impl BlobDataConfig {
 
                 // rows have chunk_idx set from 0 (metadata) -> MAX_AGG_SNARKS.
                 region.constrain_equal(rows[0].chunk_idx.cell(), zero.cell())?;
-                // TODO: this can be replaced by fetching 1 -> MAX_AGG_SNARKS from fixed column
-                // instead. The additions will be avoided.
-                let mut i_val = zero.clone();
-                for row in rows.iter().skip(1).take(MAX_AGG_SNARKS) {
-                    i_val = rlc_config.add(&mut region, &i_val, &one, &mut rlc_config_offset)?;
-                    region.constrain_equal(i_val.cell(), row.chunk_idx.cell())?;
+                for (row, fixed_chunk_idx) in rows
+                    .iter()
+                    .skip(1)
+                    .take(MAX_AGG_SNARKS)
+                    .zip_eq(fixed_chunk_indices.iter())
+                {
+                    region.constrain_equal(row.chunk_idx.cell(), fixed_chunk_idx.cell())?;
                 }
 
                 let challenge_digest_preimage_rlc_specified = &rows.last().unwrap().preimage_rlc;
@@ -834,33 +902,23 @@ impl BlobDataConfig {
                 let challenge_digest_crt = barycentric_assignments
                     .get(BLOB_WIDTH)
                     .expect("challenge digest CRT");
-                let powers_of_256 = std::iter::successors(Some(Ok(one)), |coeff| {
-                    Some(rlc_config.mul(
-                        &mut region,
-                        &two_fifty_six,
-                        coeff.as_ref().expect("coeff expected"),
-                        &mut rlc_config_offset,
-                    ))
-                })
-                .take(11)
-                .collect::<Result<Vec<_>, Error>>()?;
 
                 let challenge_digest_limb1 = rlc_config.inner_product(
                     &mut region,
                     &export.challenge_digest[0..11],
-                    &powers_of_256[0..11],
+                    &pows_of_256,
                     &mut rlc_config_offset,
                 )?;
                 let challenge_digest_limb2 = rlc_config.inner_product(
                     &mut region,
                     &export.challenge_digest[11..22],
-                    &powers_of_256[0..11],
+                    &pows_of_256,
                     &mut rlc_config_offset,
                 )?;
                 let challenge_digest_limb3 = rlc_config.inner_product(
                     &mut region,
                     &export.challenge_digest[22..32],
-                    &powers_of_256[0..10],
+                    &pows_of_256[0..10],
                     &mut rlc_config_offset,
                 )?;
                 region.constrain_equal(
@@ -879,19 +937,19 @@ impl BlobDataConfig {
                     let limb1 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[0..11],
-                        &powers_of_256[0..11],
+                        &pows_of_256,
                         &mut rlc_config_offset,
                     )?;
                     let limb2 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[11..22],
-                        &powers_of_256[0..11],
+                        &pows_of_256,
                         &mut rlc_config_offset,
                     )?;
                     let limb3 = rlc_config.inner_product(
                         &mut region,
                         &blob_field[22..31],
-                        &powers_of_256[0..9],
+                        &pows_of_256[0..9],
                         &mut rlc_config_offset,
                     )?;
                     region.constrain_equal(limb1.cell(), blob_crt.truncation.limbs[0].cell())?;
