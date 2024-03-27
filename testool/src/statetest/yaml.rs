@@ -528,6 +528,7 @@ mod test {
         statetest::{executor::StateTestError, run_test, CircuitsConfig},
     };
     use eth_types::{address, AccessList, AccessListItem};
+    use std::fmt::Display;
 
     const TEMPLATE: &str = r#"
 arith:
@@ -641,9 +642,9 @@ arith:
             }
         }
     }
-    impl ToString for Template {
-        fn to_string(&self) -> String {
-            TEMPLATE
+    impl Display for Template {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let str = TEMPLATE
                 .replace("{{ gas_limit }}", &self.gas_limit)
                 .replace("{{ pre_code }}", &self.pre_code)
                 .replace("{{ res_storage }}", &self.res_storage)
@@ -657,7 +658,8 @@ arith:
                     } else {
                         "Istanbul"
                     },
-                )
+                );
+            write!(f, "{}", str)
         }
     }
 
