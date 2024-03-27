@@ -183,16 +183,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
         self.data_offset.assign_u256(region, offset, data_offset)?;
 
-        let [last_callee_id, return_data_offset, return_data_size] = [
-            (3, CallContextFieldTag::LastCalleeId),
-            (4, CallContextFieldTag::LastCalleeReturnDataOffset),
-            (5, CallContextFieldTag::LastCalleeReturnDataLength),
-        ]
-        .map(|(_, tag)| {
-            let rw = rws.next();
-            assert_eq!(rw.field_tag(), Some(tag as u64));
-            rw.call_context_value()
-        });
+        let last_callee_id = rws.next().call_context_value();
+        let return_data_offset = rws.next().call_context_value();
+        let return_data_size = rws.next().call_context_value();
+
         self.last_callee_id.assign(
             region,
             offset,

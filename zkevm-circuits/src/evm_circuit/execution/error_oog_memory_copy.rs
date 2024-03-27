@@ -176,10 +176,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             (false, U256::zero())
         };
 
-        if !is_extcodecopy {
-            rws.offset_reset();
-        };
-
         let dst_offset = rws.next().stack_value();
         let src_offset = rws.next().stack_value();
         let copy_size = rws.next().stack_value();
