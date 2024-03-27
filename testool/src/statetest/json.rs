@@ -9,8 +9,6 @@ use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 
-use serde_json::value::Value;
-
 fn default_block_base_fee() -> String {
     DEFAULT_BASE_FEE.to_string()
 }
@@ -71,8 +69,11 @@ struct JsonStateTest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Transaction {
+    access_list: Option<parse::RawAccessList>,
     data: Vec<String>,
     gas_limit: Vec<String>,
+    max_priority_fee_per_gas: Option<String>,
+    max_fee_per_gas: Option<String>,
     gas_price: String,
     nonce: String,
     secret_key: String,
@@ -109,8 +110,7 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// generates `StateTest` vectors from a ethereum josn test specification
     pub fn load_json(&mut self, path: &str, source: &str) -> Result<Vec<StateTest>> {
         let mut state_tests = Vec::new();
-        let tests: HashMap<String, JsonStateTest> =
-            serde_json::from_str(&strip_json_comments(source))?;
+        let tests: HashMap<String, JsonStateTest> = serde_json::from_str(source)?;
 
         for (test_name, test) in tests {
             let env = Self::parse_env(&test.env)?;
@@ -120,13 +120,32 @@ impl<'a> JsonStateTestBuilder<'a> {
             let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
             let from = secret_key_to_address(&SigningKey::from_slice(&secret_key)?);
             let nonce = parse::parse_u64(&test.transaction.nonce)?;
-            let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
+
+            let max_priority_fee_per_gas = test
+                .transaction
+                .max_priority_fee_per_gas
+                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))?;
+            let max_fee_per_gas = test
+                .transaction
+                .max_fee_per_gas
+                .map_or(Ok(None), |s| parse::parse_u256(&s).map(Some))?;
+
+            // Set gas price to `min(max_priority_fee_per_gas + base_fee, max_fee_per_gas)` for
+            // EIP-1559 transaction.
+            // <https://github.com/ethereum/go-ethereum/blob/1485814f89d8206bb4a1c8e10a4a2893920f683a/core/state_transition.go#L167>
+            let gas_price = parse::parse_u256(&test.transaction.gas_price).unwrap_or_else(|_| {
+                max_fee_per_gas
+                    .unwrap()
+                    .min(max_priority_fee_per_gas.unwrap() + env.current_base_fee)
+            });
+
+            let access_list = &test.transaction.access_list;
 
             let data_s: Vec<_> = test
                 .transaction
                 .data
                 .iter()
-                .map(|item| parse::parse_calldata(self.compiler, item))
+                .map(|item| parse::parse_calldata(self.compiler, item, access_list))
                 .collect::<Result<_>>()?;
 
             let gas_limit_s: Vec<_> = test
@@ -167,7 +186,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 }
             }
 
-            for (idx_data, data) in data_s.iter().enumerate() {
+            for (idx_data, calldata) in data_s.iter().enumerate() {
                 for (idx_gas, gas_limit) in gas_limit_s.iter().enumerate() {
                     for (idx_value, value) in value_s.iter().enumerate() {
                         for (data_refs, gas_refs, value_refs, result) in &expects {
@@ -193,10 +212,13 @@ impl<'a> JsonStateTestBuilder<'a> {
                                 to,
                                 secret_key: secret_key.clone(),
                                 nonce,
+                                max_priority_fee_per_gas,
+                                max_fee_per_gas,
                                 gas_price,
                                 gas_limit: *gas_limit,
                                 value: *value,
-                                data: data.0.clone(),
+                                data: calldata.data.clone(),
+                                access_list: calldata.access_list.clone(),
                                 exception: false,
                             });
                         }
@@ -313,29 +335,10 @@ impl<'a> JsonStateTestBuilder<'a> {
     }
 }
 
-fn strip_json_comments(json: &str) -> String {
-    fn strip(value: Value) -> Value {
-        use Value::*;
-        match value {
-            Array(vec) => Array(vec.into_iter().map(strip).collect()),
-            Object(map) => Object(
-                map.into_iter()
-                    .filter(|(k, _)| !k.starts_with("//"))
-                    .map(|(k, v)| (k, strip(v)))
-                    .collect(),
-            ),
-            _ => value,
-        }
-    }
-
-    let value: Value = serde_json::from_str(json).unwrap();
-    strip(value).to_string()
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use eth_types::{Bytes, H256};
+    use eth_types::{address, AccessList, AccessListItem, Bytes, H256};
     use std::{collections::HashMap, str::FromStr};
 
     const JSON: &str = r#"
@@ -381,6 +384,15 @@ mod test {
             }
         },
         "transaction" : {
+            "accessList" : [
+                {
+                    "address" : "0x009e7baea6a6c7c4c2dfeb977efac326af552d87",
+                    "storageKeys" : [
+                        "0x0000000000000000000000000000000000000000000000000000000000000000",
+                        "0x0000000000000000000000000000000000000000000000000000000000000001"
+                    ]
+                }
+            ],
             "data" : [
                 "0x6001",
                 "0x6002"
@@ -430,9 +442,24 @@ mod test {
             )?),
             gas_limit: 400000,
             gas_price: U256::from(10u64),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
             nonce: 0,
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
+            access_list: Some(AccessList(vec![AccessListItem {
+                address: address!("0x009e7baea6a6c7c4c2dfeb977efac326af552d87"),
+                storage_keys: vec![
+                    H256::from_str(
+                        "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap(),
+                    H256::from_str(
+                        "0x0000000000000000000000000000000000000000000000000000000000000001",
+                    )
+                    .unwrap(),
+                ],
+            }])),
             pre: BTreeMap::from([(
                 acc095e,
                 Account {
@@ -459,14 +486,5 @@ mod test {
         assert_eq!(expected, test);
 
         Ok(())
-    }
-
-    #[test]
-    fn test_strip() {
-        let original = r#"{"//a":"a1","b":[{"c":"c1","//d":"d1"}]}"#;
-        let expected = r#"{"b":[{"c":"c1"}]}"#;
-
-        let stripped = strip_json_comments(original);
-        assert_eq!(expected, stripped);
     }
 }

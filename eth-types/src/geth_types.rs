@@ -5,10 +5,13 @@ use crate::{
     keccak256,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytecode, Bytes, Error, GethExecTrace, Hash, ToBigEndian,
-    ToLittleEndian, ToWord, Word, U64,
+    ToLittleEndian, ToWord, Word, H256, U64,
 };
 use ethers_core::{
-    types::{transaction::response, NameOrAddress, TransactionRequest},
+    types::{
+        transaction::{eip2718::TypedTransaction, response},
+        Eip1559TransactionRequest, Eip2930TransactionRequest, NameOrAddress, TransactionRequest,
+    },
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
@@ -18,6 +21,117 @@ use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use std::collections::HashMap;
+use strum_macros::EnumIter;
+
+/// Tx type
+#[derive(Default, Debug, Copy, Clone, EnumIter, Serialize, PartialEq, Eq)]
+pub enum TxType {
+    /// EIP 155 tx
+    #[default]
+    Eip155 = 0,
+    /// Pre EIP 155 tx
+    PreEip155,
+    /// EIP 1559 tx
+    Eip1559,
+    /// EIP 2930 tx
+    Eip2930,
+}
+
+impl From<TxType> for usize {
+    fn from(value: TxType) -> Self {
+        value as usize
+    }
+}
+
+impl From<TxType> for u64 {
+    fn from(value: TxType) -> Self {
+        value as u64
+    }
+}
+
+impl TxType {
+    /// If this type is PreEip155
+    pub fn is_pre_eip155(&self) -> bool {
+        matches!(*self, TxType::PreEip155)
+    }
+
+    /// If this type is EIP155 or not
+    pub fn is_eip155(&self) -> bool {
+        matches!(*self, TxType::Eip155)
+    }
+
+    /// If this type is Eip1559 or not
+    pub fn is_eip1559(&self) -> bool {
+        matches!(*self, TxType::Eip1559)
+    }
+
+    /// If this type is Eip2930 or not
+    pub fn is_eip2930(&self) -> bool {
+        matches!(*self, TxType::Eip2930)
+    }
+
+    /// Get the type of transaction
+    pub fn get_tx_type(tx: &crate::Transaction) -> Self {
+        match tx.transaction_type {
+            Some(x) if x == U64::from(1) => Self::Eip2930,
+            Some(x) if x == U64::from(2) => Self::Eip1559,
+            _ => match tx.v.as_u64() {
+                0 | 1 | 27 | 28 => Self::PreEip155,
+                _ => Self::Eip155,
+            },
+        }
+    }
+
+    /// Return the recovery id of signature for recovering the signing pk
+    pub fn get_recovery_id(&self, v: u64) -> u8 {
+        let recovery_id = match *self {
+            TxType::Eip155 => (v + 1) % 2,
+            TxType::PreEip155 => {
+                assert!(v == 0x1b || v == 0x1c, "v: {v}");
+                v - 27
+            }
+            TxType::Eip1559 => {
+                assert!(v <= 1);
+                v
+            }
+            TxType::Eip2930 => {
+                assert!(v <= 1);
+                v
+            }
+        };
+
+        recovery_id as u8
+    }
+}
+
+/// Get the RLP bytes for signing
+pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
+    let sig_v = tx.v;
+    match TxType::get_tx_type(tx) {
+        TxType::Eip155 => {
+            let mut tx: TransactionRequest = tx.into();
+            tx.chain_id = Some(tx.chain_id.unwrap_or_else(|| {
+                let recv_v = TxType::Eip155.get_recovery_id(sig_v.as_u64()) as u64;
+                (sig_v - recv_v - 35) / 2
+            }));
+            tx.rlp().to_vec()
+        }
+        TxType::PreEip155 => {
+            let tx: TransactionRequest = tx.into();
+            tx.rlp_unsigned().to_vec()
+        }
+        TxType::Eip1559 => {
+            let tx: Eip1559TransactionRequest = tx.into();
+            let typed_tx: TypedTransaction = tx.into();
+            typed_tx.rlp().to_vec()
+        }
+        TxType::Eip2930 => {
+            let tx: Eip2930TransactionRequest = tx.into();
+            let typed_tx: TypedTransaction = tx.into();
+            typed_tx.rlp().to_vec()
+        }
+    }
+}
 
 /// Definition of all of the data related to an account.
 #[serde_as]
@@ -156,6 +270,8 @@ pub struct Withdrawal {
 /// Definition of all of the constants related to an Ethereum transaction.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Transaction {
+    /// Tx type
+    pub tx_type: TxType,
     /// Sender address
     pub from: Address,
     /// Recipient address (None for contract creation)
@@ -172,9 +288,9 @@ pub struct Transaction {
     /// Gas Price
     pub gas_price: Word,
     /// Gas fee cap
-    pub gas_fee_cap: Word,
+    pub gas_fee_cap: Option<Word>,
     /// Gas tip cap
-    pub gas_tip_cap: Word,
+    pub gas_tip_cap: Option<Word>,
     /// The compiled code of a contract OR the first 4 bytes of the hash of the
     /// invoked method signature and encoded parameters. For details see
     /// Ethereum Contract ABI
@@ -188,6 +304,14 @@ pub struct Transaction {
     pub r: Word,
     /// "s" value of the transaction signature
     pub s: Word,
+
+    /// RLP bytes
+    pub rlp_bytes: Vec<u8>,
+    /// RLP unsigned bytes
+    pub rlp_unsigned_bytes: Vec<u8>,
+
+    /// Transaction hash
+    pub hash: H256,
 }
 
 impl From<&Transaction> for crate::Transaction {
@@ -199,8 +323,8 @@ impl From<&Transaction> for crate::Transaction {
             gas: tx.gas_limit.to_word(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
-            max_priority_fee_per_gas: Some(tx.gas_tip_cap),
-            max_fee_per_gas: Some(tx.gas_fee_cap),
+            max_priority_fee_per_gas: tx.gas_tip_cap,
+            max_fee_per_gas: tx.gas_fee_cap,
             input: tx.call_data.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.into(),
@@ -214,19 +338,23 @@ impl From<&Transaction> for crate::Transaction {
 impl From<&crate::Transaction> for Transaction {
     fn from(tx: &crate::Transaction) -> Transaction {
         Transaction {
+            tx_type: TxType::get_tx_type(tx),
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce.as_u64().into(),
             gas_limit: tx.gas.as_u64().into(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
-            gas_tip_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
-            gas_fee_cap: tx.max_fee_per_gas.unwrap_or_default(),
+            gas_tip_cap: tx.max_priority_fee_per_gas,
+            gas_fee_cap: tx.max_fee_per_gas,
             call_data: tx.input.clone(),
             access_list: tx.access_list.clone(),
             v: tx.v.as_u64(),
             r: tx.r,
             s: tx.s,
+            rlp_bytes: tx.rlp().to_vec(),
+            rlp_unsigned_bytes: get_rlp_unsigned(tx),
+            hash: tx.hash,
         }
     }
 }
@@ -256,13 +384,14 @@ impl Transaction {
             gas_limit: U64::zero(),
             value: Word::zero(),
             gas_price: Word::zero(),
-            gas_tip_cap: Word::zero(),
-            gas_fee_cap: Word::zero(),
+            gas_tip_cap: Some(Word::zero()),
+            gas_fee_cap: Some(Word::zero()),
             call_data: Bytes::new(),
             access_list: None,
             v: 0,
             r: Word::zero(),
             s: Word::zero(),
+            ..Default::default()
         }
     }
     /// Return the SignData associated with this Transaction.
@@ -355,6 +484,9 @@ impl Transaction {
             s: self.s,
             v: U64::from(self.v),
             block_number: Some(block_number),
+            transaction_type: Some(U64::from(self.tx_type as u64)),
+            max_priority_fee_per_gas: self.gas_tip_cap,
+            max_fee_per_gas: self.gas_fee_cap,
             chain_id: Some(chain_id),
             ..response::Transaction::default()
         }
