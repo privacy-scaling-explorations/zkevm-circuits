@@ -592,6 +592,17 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                     ),
                 );
 
+                cb.condition(
+                    is_rpi_padding,
+                    |cb| {
+                        cb.require_equal(
+                            "rpi_length_cc' = rpi_length_acc for padding rows",
+                            meta.query_advice(rpi_length_acc, Rotation::prev()),
+                            meta.query_advice(rpi_length_acc, Rotation::cur()),
+                        );
+                    }
+                );
+
                 cb.gate(meta.query_fixed(q_chunk_txbytes, Rotation::cur()))
             },
         );
@@ -1214,7 +1225,7 @@ impl<F: Field> PiCircuitConfig<F> {
     /// TxCircuit, which is an RLC summary of rlp_signed (including tx_type byte) of a L2 tx.
     /// This is to ensure the fixed length of an otherwise variable length section.
     ///
-    /// The rip_length_acc field, subsequently, accumulates the length of the rlp_signed data for
+    /// The rpi_length_acc field, subsequently, accumulates the length of the rlp_signed data for
     /// each tx and the RLC multiplier at each row is the power of rand corresponding to the
     /// differential length.
     ///
