@@ -14,7 +14,7 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            CachedRegion, Cell, MemoryAddress,
+            CachedRegion, Cell, MemoryAddress, StepRws,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
@@ -177,21 +177,16 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [dest_offset, data_offset, size] =
-            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let [dest_offset, data_offset, size] = [0, 1, 2].map(|_| rws.next().stack_value());
 
         self.data_offset.assign_u256(region, offset, data_offset)?;
 
-        let [last_callee_id, return_data_offset, return_data_size] = [
-            (3, CallContextFieldTag::LastCalleeId),
-            (4, CallContextFieldTag::LastCalleeReturnDataOffset),
-            (5, CallContextFieldTag::LastCalleeReturnDataLength),
-        ]
-        .map(|(i, tag)| {
-            let rw = block.get_rws(step, i);
-            assert_eq!(rw.field_tag(), Some(tag as u64));
-            rw.call_context_value()
-        });
+        let last_callee_id = rws.next().call_context_value();
+        let return_data_offset = rws.next().call_context_value();
+        let return_data_size = rws.next().call_context_value();
+
         self.last_callee_id.assign(
             region,
             offset,

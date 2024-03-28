@@ -10,7 +10,7 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::{IsEqualWordGadget, IsZeroWordGadget, LtGadget},
-            not, CachedRegion, Cell, U64Cell,
+            not, CachedRegion, Cell, StepRws, U64Cell,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
@@ -187,17 +187,23 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.callee_address
             .assign_h160(region, offset, call.address)?;
 
-        let key = block.get_rws(step, 5).stack_value();
-        let value = block.get_rws(step, 6).stack_value();
+        let mut rws = StepRws::new(block, step);
+
+        rws.offset_add(5);
+
+        let key = rws.next().stack_value();
+        let value = rws.next().stack_value();
         self.key.assign_u256(region, offset, key)?;
         self.value.assign_u256(region, offset, value)?;
 
-        let (_, value_prev, _, original_value) = block.get_rws(step, 7).storage_value_aux();
+        let (_, value_prev, _, original_value) = rws.next().storage_value_aux();
         self.value_prev.assign_u256(region, offset, value_prev)?;
         self.original_value
             .assign_u256(region, offset, original_value)?;
 
-        let (_, is_warm) = block.get_rws(step, 9).tx_access_list_value_pair();
+        rws.next(); // skip the storage write
+
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
