@@ -558,6 +558,7 @@ pub(crate) struct ParentData<F> {
     pub(crate) rlc: Cell<F>,
     pub(crate) is_root: Cell<F>,
     pub(crate) is_placeholder: Cell<F>,
+    pub(crate) is_extension: Cell<F>,
     pub(crate) drifted_parent_hash: WordLoHiCell<F>,
 }
 
@@ -567,6 +568,7 @@ pub(crate) struct ParentDataWitness<F> {
     pub(crate) rlc: F,
     pub(crate) is_root: bool,
     pub(crate) is_placeholder: bool,
+    pub(crate) is_extension: bool,
     pub(crate) drifted_parent_hash: WordLoHi<F>,
 }
 
@@ -581,6 +583,7 @@ impl<F: Field> ParentData<F> {
             rlc: cb.query_cell_with_type(MptCellType::StoragePhase2),
             is_root: cb.query_cell(),
             is_placeholder: cb.query_cell(),
+            is_extension: cb.query_cell(),
             drifted_parent_hash: cb.query_word_unchecked(),
         };
         circuit!([meta, cb.base], {
@@ -593,6 +596,7 @@ impl<F: Field> ParentData<F> {
                     parent_data.rlc.expr(),
                     parent_data.is_root.expr(),
                     parent_data.is_placeholder.expr(),
+                    parent_data.is_extension.expr(),
                     parent_data.drifted_parent_hash.lo().expr(),
                     parent_data.drifted_parent_hash.hi().expr(),
                 ],
@@ -608,6 +612,7 @@ impl<F: Field> ParentData<F> {
         rlc: Expression<F>,
         is_root: Expression<F>,
         is_placeholder: Expression<F>,
+        is_extension: Expression<F>,
         drifted_parent_hash: WordLoHi<Expression<F>>,
     ) {
         memory.store(
@@ -618,6 +623,7 @@ impl<F: Field> ParentData<F> {
                 rlc,
                 is_root,
                 is_placeholder,
+                is_extension,
                 drifted_parent_hash.lo(),
                 drifted_parent_hash.hi(),
             ],
@@ -633,6 +639,7 @@ impl<F: Field> ParentData<F> {
         rlc: F,
         force_hashed: bool,
         is_placeholder: bool,
+        is_extension: bool,
         drifted_parent_hash: WordLoHi<F>,
     ) -> Result<(), Error> {
         memory.witness_store(
@@ -643,6 +650,7 @@ impl<F: Field> ParentData<F> {
                 rlc,
                 force_hashed.scalar(),
                 is_placeholder.scalar(),
+                is_extension.scalar(),
                 drifted_parent_hash.lo(),
                 drifted_parent_hash.hi(),
             ],
@@ -664,19 +672,21 @@ impl<F: Field> ParentData<F> {
         self.rlc.assign(region, offset, values[2])?;
         self.is_root.assign(region, offset, values[3])?;
         self.is_placeholder.assign(region, offset, values[4])?;
+        self.is_extension.assign(region, offset, values[5])?;
         self.drifted_parent_hash
             .lo()
-            .assign(region, offset, values[5])?;
+            .assign(region, offset, values[6])?;
         self.drifted_parent_hash
             .hi()
-            .assign(region, offset, values[6])?;
+            .assign(region, offset, values[7])?;
 
         Ok(ParentDataWitness {
             hash: WordLoHi::new([values[0], values[1]]),
             rlc: values[2],
             is_root: values[3] == 1.scalar(),
             is_placeholder: values[4] == 1.scalar(),
-            drifted_parent_hash: WordLoHi::new([values[5], values[6]]),
+            is_extension: values[5] == 1.scalar(),
+            drifted_parent_hash: WordLoHi::new([values[6], values[7]]),
         })
     }
 }
@@ -1220,34 +1230,56 @@ impl<F: Field> WrongGadget<F> {
         key_rlc: &Expression<F>,
         expected_item: &RLPItemView<F>,
         is_placeholder: Expression<F>,
+        is_parent_extension: Expression<F>,
         key_data: KeyData<F>,
+        key_data_prev: KeyData<F>,
         r: &Expression<F>,
     ) -> Self {
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
             // Get the previous key data
-            ifx! {(is_non_existing, not!(is_placeholder)) => {
-                // Calculate the key
+            ifx! {and::expr(&[is_non_existing, not!(is_placeholder)]) => { 
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
-                let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
-                    cb,
-                    config.wrong_rlp_key.key_value.clone(),
-                    key_data.mult.expr(),
-                    key_data.is_odd.expr(),
-                    r,
-                );
-                // Check that it's the key as expected
-                require!(key_rlc_wrong => expected_key);
 
-                // Now make sure this address is different than the one of the leaf
-                config.is_key_equal = IsEqualGadget::construct(
-                    &mut cb.base,
-                    key_rlc.expr(),
-                    expected_key,
-                );
-                require!(config.is_key_equal.expr() => false);
-                // Make sure the lengths of the keys are the same
-                require!(config.wrong_rlp_key.key_value.len() => key_value.len());
+                ifx! {not!(is_parent_extension) => {
+                    let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
+                        cb,
+                        config.wrong_rlp_key.key_value.clone(),
+                        key_data.mult.expr(),
+                        key_data.is_odd.expr(),
+                        r,
+                    );
+                    // Check that it's the key as expected
+                    require!(key_rlc_wrong => expected_key.clone());
+
+                    // Now make sure this address is different than the one of the leaf
+                    config.is_key_equal = IsEqualGadget::construct(
+                        &mut cb.base,
+                        key_rlc.expr(),
+                        expected_key.clone(),
+                    );
+                    require!(config.is_key_equal.expr() => false);
+                    // Make sure the lengths of the keys are the same
+                    require!(config.wrong_rlp_key.key_value.len() => key_value.len());
+                } elsex {
+                    let key_rlc_wrong = key_data_prev.rlc.expr() + config.wrong_rlp_key.key.expr(
+                        cb,
+                        config.wrong_rlp_key.key_value.clone(),
+                        key_data_prev.mult.expr(),
+                        key_data_prev.is_odd.expr(),
+                        r,
+                    );
+                    // Check that it's the key as expected
+                    require!(key_rlc_wrong => expected_key.clone());
+
+                    // We don't need to check `is_key_equal = false` because we have the extension node
+                    // above, not the leaf - the two nodes are different without checking the key.
+
+                    // We don't need to check that the lengths of the keys are the same because
+                    // they are actually different in this case - one leaf is in the extension node's
+                    // branch (and its path is longer due to extension nibbles), one ("wrong", but with
+                    // the correct address/key) is not in the extension node's branch.
+                }}
             }}
             config
         })
@@ -1263,19 +1295,31 @@ impl<F: Field> WrongGadget<F> {
         list_bytes: &[u8],
         expected_item: &RLPItemWitness,
         for_placeholder_s: bool,
+        is_parent_extension: bool,
         key_data: KeyDataWitness<F>,
+        key_data_prev: KeyDataWitness<F>,
         r: F,
     ) -> Result<(F, F), Error> {
         if is_non_existing {
             let wrong_witness =
                 self.wrong_rlp_key
                     .assign(region, offset, list_bytes, expected_item)?;
-            let (key_rlc_wrong, _) = wrong_witness.key.key(
-                wrong_witness.key_item.clone(),
-                key_data.rlc,
-                key_data.mult,
-                r,
-            );
+            let key_rlc_wrong: F;
+            if !is_parent_extension {
+                (key_rlc_wrong, _) = wrong_witness.key.key(
+                    wrong_witness.key_item.clone(),
+                    key_data.rlc,
+                    key_data.mult,
+                    r,
+                );
+            } else {
+                (key_rlc_wrong, _) = wrong_witness.key.key(
+                    wrong_witness.key_item.clone(),
+                    key_data_prev.rlc,
+                    key_data_prev.mult,
+                    r,
+                );
+            }
 
             let is_key_equal_witness = self.is_key_equal.assign(
                 region,

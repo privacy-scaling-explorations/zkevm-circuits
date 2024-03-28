@@ -4,6 +4,11 @@ This tool aims to verify mainnet blocks for the MPT circuit.
 
 ## Running tests
 
+Set the environment variable `WEB3_PROVIDER_URL` to a mainnet JSON-RPC provider, for example:
+```
+export WEB3_PROVIDER_URL=https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161
+```
+
 Just run `./test_mainnet_blocks.sh`
 
 NOTE: this run the tests with keccak testing disabled, because it takes SO MUCH to test with keccaks enables. If you want to run them with keccak, just run `cargo run --release --no-default-features`.
@@ -13,7 +18,6 @@ NOTE: this run the tests with keccak testing disabled, because it takes SO MUCH 
 In order to add more blocks to prove you have to:
 
 - Add new entry in the `access-lists` folder
-- Set the environment variable `WEB3_SERVICE_PROVIDER` to a mainnet JSON-RPC provider
 - Run the tests again
 - You will have to upload the cache file again (web3_rpc_cache.bin) and update the `test_mainnet_blocks.sh` file
 

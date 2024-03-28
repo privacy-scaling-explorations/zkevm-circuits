@@ -81,7 +81,8 @@ var RemoteUrl = "https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161"
 var LocalUrl = "http://localhost:8545"
 
 // For generating special tests for MPT circuit:
-var PreventHashingInSecureTrie = false
+var PreventHashingInSecureTrie = false // storage
+var AccountPreventHashingInSecureTrie = false
 
 func toFilename(key string) string {
 	return fmt.Sprintf("/tmp/eth/json_%s", key)

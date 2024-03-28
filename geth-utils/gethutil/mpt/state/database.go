@@ -52,7 +52,7 @@ func (db *Database) CopyTrie(t Trie) Trie {
 
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *Database) OpenTrie(root common.Hash) (Trie, error) {
-	tr, err := trie.NewSecure(root, db.db)
+	tr, err := trie.NewSecure(root, db.db, false)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (db *Database) OpenTrie(root common.Hash) (Trie, error) {
 // OpenStorageTrie opens the storage trie of an account.
 func (db *Database) OpenStorageTrie(addrHash, root common.Hash) (Trie, error) {
 	//return SimpleTrie{db.BlockNumber, root, true, addrHash}, nil
-	tr, err := trie.NewSecure(root, db.db)
+	tr, err := trie.NewSecure(root, db.db, true)
 	if err != nil {
 		return nil, err
 	}

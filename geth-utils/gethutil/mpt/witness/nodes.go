@@ -180,7 +180,7 @@ type Node struct {
 
 func GetStartNode(proofType string, sRoot, cRoot common.Hash, specialTest byte) Node {
 	s := StartNode{
-		DisablePreimageCheck: oracle.PreventHashingInSecureTrie || specialTest == 5,
+		DisablePreimageCheck: oracle.PreventHashingInSecureTrie || oracle.AccountPreventHashingInSecureTrie || specialTest == 5,
 		ProofType:            proofType,
 	}
 	var values [][]byte

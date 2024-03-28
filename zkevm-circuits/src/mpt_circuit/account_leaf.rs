@@ -1,5 +1,5 @@
 use eth_types::{Field, OpsIdentity, U256};
-use gadgets::util::{pow, Scalar};
+use gadgets::util::{pow, xor, Scalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression, VirtualCells},
@@ -16,17 +16,15 @@ use crate::{
     circuit_tools::{
         cached_region::CachedRegion,
         cell_manager::Cell,
-        constraint_builder::{RLCChainableRev, RLCable},
+        constraint_builder::{RLCChainable, RLCChainableRev, RLCable},
         gadgets::IsEqualGadget,
     },
     evm_circuit::util::from_bytes,
     mpt_circuit::{
         helpers::{
-            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
-            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
-            KECCAK,
+            ext_key_rlc_expr, key_memory, leaf_key_rlc, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget, KECCAK
         },
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_ODD, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
@@ -38,6 +36,7 @@ use crate::{
 pub(crate) struct AccountLeafConfig<F> {
     main_data: MainData<F>,
     key_data: [KeyData<F>; 2],
+    key_data_prev: KeyData<F>,
     parent_data: [ParentData<F>; 2],
     rlp_key: [ListKeyGadget<F>; 2],
     value_rlp_bytes: [[Cell<F>; 2]; 2],
@@ -164,6 +163,8 @@ impl<F: Field> AccountLeafConfig<F> {
             // Constraint 4:
             parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
+            config.key_data_prev = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 1.expr());
+
             let key_data = &mut config.key_data;
             // Constraint 5:
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
@@ -267,6 +268,7 @@ impl<F: Field> AccountLeafConfig<F> {
                             key_data[is_s.idx()].is_odd.expr(),
                             &cb.key_r.expr(),
                         );
+
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                     let num_nibbles =
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
@@ -335,6 +337,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     0.expr(),
                     true.expr(),
                     false.expr(),
+                    false.expr(),
                     storage_items[is_s.idx()].word(),
                 );
             }
@@ -372,9 +375,78 @@ impl<F: Field> AccountLeafConfig<F> {
                 &key_rlc[true.idx()],
                 &wrong_bytes,
                 config.is_placeholder_leaf[true.idx()].expr(),
+                config.parent_data[true.idx()].is_extension.expr(),
                 config.key_data[true.idx()].clone(),
+                config.key_data_prev.clone(),
                 &cb.key_r.expr(),
             );
+
+            // TODO: wrong extension node gadget
+            let wrong_ext_middle =
+                ctx.rlp_item(meta, cb, AccountRowType::LongExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_middle_nibbles =
+                ctx.rlp_item(meta, cb, AccountRowType::LongExtNodeNibbles as usize, RlpItemType::Nibbles);
+            let wrong_ext_after =
+                ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_after_nibbles =
+                ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeNibbles as usize, RlpItemType::Nibbles);
+
+            // In the wrong extension node, AccountRowType::Wrong stores the bytes of the key nibbles
+            // up until the extension node.
+            let (mut rlc, _) = wrong_bytes.rlc_chain_data(); 
+            // The nibbles stored in the Wrong row (up until the extension node)
+            // need to be the same as the nibbles in the path.
+            require!(rlc => config.key_data_prev.rlc.expr());
+
+            // We have a key split into three parts in
+            // the wrong extension node case, meaning that there the first part parity doesn't
+            // tell us about the parity of the second part (depends on the third part as well).
+
+            let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];
+            rlc = rlc
+                + ext_key_rlc_expr(
+                    cb,
+                    wrong_ext_middle,
+                    config.key_data_prev.mult.expr(),
+                    config.key_data[1].is_odd.expr(),
+                    config.key_data_prev.is_odd.expr(),
+                    data0
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
+
+            // odd odd -> even
+            // odd even -> odd
+            // even odd -> odd
+            // even even -> even
+            let after_two_parts_is_odd =
+                xor::expr(config.key_data_prev.is_odd.expr(), config.key_data[1].is_odd.expr());
+
+            // The total number of nibbles is odd, thus:
+            let third_part_is_odd = after_two_parts_is_odd.clone();
+
+            let data1 = [wrong_ext_after.clone(), wrong_ext_after_nibbles.clone()];
+            rlc = rlc
+                + ext_key_rlc_expr(
+                    cb,
+                    wrong_ext_after,
+                    config.key_data[1].mult.expr(),
+                    third_part_is_odd,
+                    after_two_parts_is_odd,
+                    data1
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
+
+            require!(key_item.hash_rlc() => rlc);
 
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove
@@ -641,6 +713,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 0.scalar(),
                 true,
                 false,
+                false,
                 storage_items[is_s.idx()].word(),
             )?;
         }
@@ -692,7 +765,16 @@ impl<F: Field> AccountLeafConfig<F> {
             region.key_r,
         )?;
 
-        // Wrong leaf handling
+        // Wrong leaf / extension node handling
+        let mut key_data_prev = KeyDataWitness::default();
+        if offset > 2 {
+            key_data_prev = self.key_data_prev.witness_load(
+                region,
+                offset,
+                &mut memory[key_memory(false)],
+                2, // 2 instead of 1 because default values have already been stored above
+            )?;
+        }
         self.wrong.assign(
             region,
             offset,
@@ -701,7 +783,9 @@ impl<F: Field> AccountLeafConfig<F> {
             &account.wrong_rlp_bytes,
             &expected_item,
             true,
+            parent_data[1].is_extension,
             key_data[true.idx()].clone(),
+            key_data_prev,
             region.key_r,
         )?;
 

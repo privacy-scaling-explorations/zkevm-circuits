@@ -65,11 +65,15 @@ func GetWitness(nodeUrl string, blockNum int, trieModifications []TrieModificati
 	return obtainTwoProofsAndConvertToWitness(trieModifications, statedb, 0)
 }
 
-func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLen int, statedb *state.StateDB, specialTest byte) []Node {
+func obtainAccountProofAndConvertToWitness(tMod TrieModification, statedb *state.StateDB, specialTest byte) []Node {
 	statedb.IntermediateRoot(false)
 
 	addr := tMod.Address
 	addrh := crypto.Keccak256(addr.Bytes())
+	if oracle.AccountPreventHashingInSecureTrie {
+		addrh = addr.Bytes()
+		addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+	}
 	accountAddr := trie.KeybytesToHex(addrh)
 
 	// This needs to be called before oracle.PrefetchAccount, otherwise oracle.PrefetchAccount
@@ -78,7 +82,7 @@ func obtainAccountProofAndConvertToWitness(i int, tMod TrieModification, tModsLe
 	// for cases when statedb.loadRemoteAccountsIntoStateObjects = false.
 	statedb.SetStateObjectIfExists(tMod.Address)
 
-	oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
+	oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
 	accountProof, aNeighbourNode1, aExtNibbles1, isLastLeaf1, aIsNeighbourNodeHashed1, err := statedb.GetProof(addr)
 	check(err)
 
@@ -172,12 +176,15 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 				kh = tMod.Key.Bytes()
 			}
 			keyHashed := trie.KeybytesToHex(kh)
-
 			addr := tMod.Address
 			addrh := crypto.Keccak256(addr.Bytes())
+			if oracle.AccountPreventHashingInSecureTrie {
+				addrh = addr.Bytes()
+				addrh = append(addrh, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+			}
 			accountAddr := trie.KeybytesToHex(addrh)
 
-			oracle.PrefetchAccount(statedb.Db.BlockNumber, tMod.Address, nil)
+			oracle.PrefetchAccount(statedb.Db.BlockNumber, addr, nil)
 			oracle.PrefetchStorage(statedb.Db.BlockNumber, addr, tMod.Key, nil)
 
 			if specialTest == 1 {
@@ -274,7 +281,7 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			nodes = append(nodes, nodesStorage...)
 			nodes = append(nodes, GetEndNode())
 		} else {
-			accountNodes := obtainAccountProofAndConvertToWitness(i, tMod, len(trieModifications), statedb, specialTest)
+			accountNodes := obtainAccountProofAndConvertToWitness(tMod, statedb, specialTest)
 			nodes = append(nodes, accountNodes...)
 		}
 	}
@@ -327,7 +334,6 @@ func updateStateAndPrepareWitness(testName string, keys, values []common.Hash, a
 // and inserted into the Keccak lookup table.
 func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []byte, proof1, proof2, extNibblesS, extNibblesC [][]byte, storage_key common.Hash, key []byte, neighbourNode []byte,
 	isAccountProof, nonExistingAccountProof, nonExistingStorageProof, isShorterProofLastLeaf bool) []Node {
-	toBeHashed := make([][]byte, 0)
 
 	minLen := len(proof1)
 	if len(proof2) < minLen {
@@ -360,8 +366,6 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 	}
 
 	var isExtension bool
-	extensionNodeInd := 0
-
 	var extListRlpBytes []byte
 	var extValues [][]byte
 	for i := 0; i < 4; i++ {
@@ -373,7 +377,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 	for i := 0; i < upTo; i++ {
 		if !isBranch(proof1[i]) {
 			isNonExistingProof := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof)
-			areThereNibbles := len(extNibblesS) != 0 || len(extNibblesC) != 0
+			areThereNibbles := len(extNibblesS[i]) != 0 || len(extNibblesC[i]) != 0
 			// If i < upTo-1, it means it's not a leaf, so it's an extension node.
 			// There is no any special relation between isNonExistingProof and isExtension,
 			// except that in the non-existing proof the extension node can appear in `i == upTo-1`.
@@ -384,19 +388,18 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if (i != upTo-1) || (areThereNibbles && isNonExistingProof) { // extension node
 				var numberOfNibbles byte
 				isExtension = true
-				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[i], proof2[i])
+				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS[i], proof1[i], proof2[i])
 
 				keyIndex += int(numberOfNibbles)
-				extensionNodeInd++
 				continue
 			}
 
 			l := len(proof1)
 			var node Node
 			if isAccountProof {
-				node = prepareAccountLeafNode(addr, addrh, proof1[l-1], proof2[l-1], nil, key, false, false, false)
+				node = prepareAccountLeafNode(addr, addrh, proof1[l-1], proof2[l-1], nil, nil, key, false, false, false)
 			} else {
-				node = prepareStorageLeafNode(proof1[l-1], proof2[l-1], nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+				node = prepareStorageLeafNode(proof1[l-1], proof2[l-1], nil, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
 			}
 
 			nodes = append(nodes, node)
@@ -425,10 +428,11 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				leafRow0 = proof2[len2-1]
 			}
 
-			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC,
+			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2,
+				extNibblesS[len1-1], extNibblesC[len2-1],
 				leafRow0, key, neighbourNode,
-				keyIndex, extensionNodeInd, additionalBranch,
-				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
+				keyIndex, additionalBranch,
+				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf)
 
 			nodes = append(nodes, bNode)
 
@@ -436,7 +440,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			if isAccountProof {
 				// Add account leaf after branch placeholder:
 				if !isModifiedExtNode {
-					leafNode = prepareAccountLeafNode(addr, addrh, proof1[len1-1], proof2[len2-1], neighbourNode, key, false, false, false)
+					leafNode = prepareAccountLeafNode(addr, addrh, proof1[len1-1], proof2[len2-1], nil, neighbourNode, key, false, false, false)
 				} else {
 					isSModExtension := false
 					isCModExtension := false
@@ -450,7 +454,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			} else {
 				// Add storage leaf after branch placeholder
 				if !isModifiedExtNode {
-					leafNode = prepareStorageLeafNode(proof1[len1-1], proof2[len2-1], neighbourNode, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					leafNode = prepareStorageLeafNode(proof1[len1-1], proof2[len2-1], nil, neighbourNode, storage_key, key, nonExistingStorageProof, false, false, false, false)
 				} else {
 					isSModExtension := false
 					isCModExtension := false
@@ -467,26 +471,101 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			// of the existing extension node), additional rows are added (extension node before and after
 			// modification).
 			if isModifiedExtNode {
-				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key, neighbourNode,
-					keyIndex, extensionNodeInd, numberOfNibbles, additionalBranch,
-					isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf, &toBeHashed)
+				leafNode = equipLeafWithModExtensionNode(statedb, leafNode, addr, proof1, proof2, extNibblesS, extNibblesC, key,
+					keyIndex, numberOfNibbles, isAccountProof)
 			}
 			nodes = append(nodes, leafNode)
 		} else {
 			node := prepareLeafAndPlaceholderNode(addr, addrh, proof1, proof2, storage_key, key, isAccountProof, false, false)
 			nodes = append(nodes, node)
 		}
-	} else if (len1 == 0 && len2 == 0) || isBranch(proof2[len(proof2)-1]) {
+	} else {
 		// Account proof has drifted leaf as the last row, storage proof has non-existing-storage row
 		// as the last row.
 		// When non existing proof and only the branches are returned, we add a placeholder leaf.
 		// This is to enable the lookup (in account leaf row), most constraints are disabled for these rows.
-		if isAccountProof {
-			node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
-			nodes = append(nodes, node)
+
+		isLastBranch := isBranch(proof2[len(proof2)-1])
+
+		if (len1 == 0 && len2 == 0) || isLastBranch {
+			// We need to add a placeholder leaf
+			if isAccountProof {
+				node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)
+				nodes = append(nodes, node)
+			} else {
+				node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
+				nodes = append(nodes, node)
+			}
 		} else {
-			node := prepareStorageLeafPlaceholderNode(storage_key, key, keyIndex)
-			nodes = append(nodes, node)
+			isLastExtNode := len(extNibblesC[len(proof2)-1]) != 0
+			if isLastExtNode {
+				// We need to add a placeholder branch and a placeholder leaf.
+				// We are in a non-existing-proof and an extension node is the last element of getProof.
+				// However, this extension node has not been added to the nodes yet (it's always added
+				// together with a branch).
+				
+				nibbles := getNibbles(proof2[len(proof2)-1])
+				newKey := make([]byte, len(key))
+				copy(newKey, key)
+
+				addr_nibbles := trie.KeybytesToHex(addrh)
+				if isAccountProof {
+					newKey = make([]byte, len(addr_nibbles))
+					copy(newKey, addr_nibbles)
+				}
+				
+				start := keyIndex - len(nibbles)
+
+				nibblesBefore := newKey[0:start]
+				if len(nibblesBefore) % 2 == 1 {
+					nibblesBefore = append(nibblesBefore, 0)
+				}
+				keyBefore := trie.HexToKeybytes(nibblesBefore)
+
+				nibblesMiddle := newKey[start:keyIndex]
+				keyMiddle := []byte{160}
+				keyMiddle = append(keyMiddle, trie.HexToCompact(nibblesMiddle)...)
+
+				nibblesAfter := newKey[keyIndex:len(newKey)-1] // Remove the last flag (16)
+				keyAfter := []byte{160}
+				keyAfter = append(keyAfter, trie.HexToCompact(nibblesAfter)...)
+
+				isExtension := true
+				// Dummy branch. The constraint of the branch being in the extension node and the constraint of the
+				// leaf being in the branch need to be disabled for this case.
+				branchRlp := []byte{248, 81, 160, 244, 245, 0, 27, 233, 28, 128, 158, 163, 228, 185, 193, 250, 228, 226, 205, 233, 119, 98, 15, 183, 171, 187, 182, 172, 113, 115, 190, 167, 217, 33, 211, 160, 72, 229, 31, 123, 46, 26, 63, 24, 242, 142, 183, 252, 47, 111, 99, 255, 0, 118, 149, 196, 125, 165, 118, 4, 189, 149, 202, 221, 129, 141, 240, 209, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128};
+
+				extNode := proof2[len(proof2)-1] // Let's name it E1
+				bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
+					key[keyIndex], key[keyIndex], false, false, isExtension)
+				nodes = append(nodes, bNode)
+
+				// Let's construct the leaf L1 that will have the correct key (the queried one)
+				if isAccountProof {
+					dummyLeaf := []byte{248,108,157,52,45,53,199,120,18,165,14,109,22,4,141,198,233,128,219,44,247,218,241,231,2,206,125,246,58,246,15,3,184,76,248,74,4,134,85,156,208,108,8,0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,112}
+					node := prepareAccountLeafNode(addr, addrh, dummyLeaf, dummyLeaf, dummyLeaf, nil, addr_nibbles, false, false, false)
+
+					node = equipLeafWithWrongExtension(node, keyBefore, keyMiddle, keyAfter, nibblesMiddle, nibblesAfter)
+
+					nodes = append(nodes, node)
+				} else {
+
+					// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
+					compact := trie.HexToCompact(key[start:])
+					// Add RLP:
+					compactLen := byte(len(compact))
+					rlp2 := 128 + compactLen
+					rlp1 := 192 + compactLen + 1
+					// Constructed leaf L1:
+					dummyLeaf := append([]byte{rlp1, rlp2}, compact...)
+
+					// Add dummy value:
+					dummyLeaf = append(dummyLeaf, 0)
+
+					node := prepareStorageLeafNode(dummyLeaf, dummyLeaf, dummyLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					nodes = append(nodes, node)
+				}
+			}
 		}
 	}
 

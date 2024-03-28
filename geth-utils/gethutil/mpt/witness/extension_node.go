@@ -1,6 +1,6 @@
 package witness
 
-func prepareExtensions(extNibbles [][]byte, extensionNodeInd int, proofEl1, proofEl2 []byte) (byte, []byte, [][]byte) {
+func prepareExtensions(extNibbles []byte, proofEl1, proofEl2 []byte) (byte, []byte, [][]byte) {
 	var values [][]byte
 	v1 := make([]byte, valueLen)
 	v2 := make([]byte, valueLen)
@@ -15,11 +15,11 @@ func prepareExtensions(extNibbles [][]byte, extensionNodeInd int, proofEl1, proo
 	numberOfNibbles := getExtensionNumberOfNibbles(proofEl1)
 
 	// We need nibbles as witness to compute key RLC, so we set them
-	// into extensionRowC s_advices (we can do this because both extension
+	// into extensionRowC (we can do this because both extension
 	// nodes have the same key, so we can have this info only in one).
 	// There can be more up to 64 nibbles, but there is only 32 bytes
-	// in extensionRowC s_advices. So we store every second nibble (having
-	// the whole byte and one nibble is enough to compute the other nibble).
+	// in extensionRowC. So we store every second nibble (having
+	// the byte and one nibble is enough to compute the other nibble).
 
 	startNibblePos := 2 // we don't need any nibbles for case keyLen = 1
 	if keyLen > 1 {
@@ -30,9 +30,8 @@ func prepareExtensions(extNibbles [][]byte, extensionNodeInd int, proofEl1, proo
 		}
 	}
 	ind := 0
-	for j := startNibblePos; j < len(extNibbles[extensionNodeInd]); j += 2 {
-		v3[2+ind] = // TODO: check 2 + ind
-			extNibbles[extensionNodeInd][j]
+	for j := startNibblePos; j < len(extNibbles); j += 2 {
+		v3[2+ind] = extNibbles[j]
 		ind++
 	}
 	values = append(values, v1)
