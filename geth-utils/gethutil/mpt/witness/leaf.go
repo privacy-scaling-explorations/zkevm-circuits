@@ -580,13 +580,41 @@ func prepareStorageLeafNode(leafS, leafC, constructedLeaf, neighbourNode []byte,
 	return node
 }
 
-func equipLeafWithWrongExtension(leafNode Node, keyBefore, keyMiddle, keyAfter []byte) Node {
+func equipLeafWithWrongExtension(leafNode Node, keyBefore, keyMiddle, keyAfter, nibblesMiddle, nibblesAfter []byte) Node {
 	l := len(leafNode.Values)
 	// The rows which are used for nibbles (it means there are checks for values being < 16)
 	// in the modified extension node cases are omitted.
 	leafNode.Values[l-modifiedExtensionNodeRowLen - 1] = keyBefore
+
 	leafNode.Values[l-modifiedExtensionNodeRowLen] = keyMiddle
+	startNibblePos := 2 // we don't need any nibbles for case keyLen = 1
+	if len(keyMiddle) > 1 {
+		if len(nibblesMiddle) % 2 == 0 {
+			startNibblePos = 1
+		} else {
+			startNibblePos = 2
+		}
+	}
+	ind := 0
+	for j := startNibblePos; j < len(nibblesMiddle); j += 2 {
+		leafNode.Values[l-modifiedExtensionNodeRowLen + 1][2+ind] = nibblesMiddle[j]
+		ind++
+	}
+
 	leafNode.Values[l-modifiedExtensionNodeRowLen + 3] = keyAfter
+	startNibblePos = 2 // we don't need any nibbles for case keyLen = 1
+	if len(keyAfter) > 1 {
+		if len(nibblesAfter) % 2 == 0 {
+			startNibblePos = 1
+		} else {
+			startNibblePos = 2
+		}
+	}
+	ind = 0
+	for j := startNibblePos; j < len(nibblesAfter); j += 2 {
+		leafNode.Values[l-modifiedExtensionNodeRowLen + 4][2+ind] = nibblesAfter[j]
+		ind++
+	}
 
 	return leafNode
 }

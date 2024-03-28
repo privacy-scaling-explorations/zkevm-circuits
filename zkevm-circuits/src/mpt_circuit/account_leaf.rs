@@ -1,5 +1,5 @@
 use eth_types::{Field, OpsIdentity, U256};
-use gadgets::util::{pow, Scalar};
+use gadgets::util::{pow, xor, Scalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression, VirtualCells},
@@ -16,17 +16,15 @@ use crate::{
     circuit_tools::{
         cached_region::CachedRegion,
         cell_manager::Cell,
-        constraint_builder::{RLCChainableRev, RLCable},
+        constraint_builder::{RLCChainable, RLCChainableRev, RLCable},
         gadgets::IsEqualGadget,
     },
     evm_circuit::util::from_bytes,
     mpt_circuit::{
         helpers::{
-            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
-            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
-            KECCAK,
+            ext_key_rlc_expr, key_memory, leaf_key_rlc, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget, KECCAK
         },
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_ODD, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
@@ -368,7 +366,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &cb.key_r.expr(),
             );
 
-            // Wrong leaf / extension node handling
+            // Wrong leaf handling
             config.wrong = WrongGadget::construct(
                 cb,
                 key_item.hash_rlc(),
@@ -383,30 +381,72 @@ impl<F: Field> AccountLeafConfig<F> {
                 &cb.key_r.expr(),
             );
 
-            // TODO: wrong extension node
-            /*
-            let wrong_bytes =
-                ctx.rlp_item(meta, cb, AccountRowType::Wrong as usize, RlpItemType::Key);
-            */
+            // TODO: wrong extension node gadget
             let wrong_ext_middle =
                 ctx.rlp_item(meta, cb, AccountRowType::LongExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_middle_nibbles =
+                ctx.rlp_item(meta, cb, AccountRowType::LongExtNodeNibbles as usize, RlpItemType::Nibbles);
             let wrong_ext_after =
                 ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_after_nibbles =
+                ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeNibbles as usize, RlpItemType::Nibbles);
 
-            let (before, before_mult) = wrong_bytes.rlc_chain_data(); 
-            require!(before => config.key_data_prev.rlc.expr());
+            // In the wrong extension node, AccountRowType::Wrong stores the bytes of the key nibbles
+            // up until the extension node.
+            let (mut rlc, _) = wrong_bytes.rlc_chain_data(); 
+            // The nibbles stored in the Wrong row (up until the extension node)
+            // need to be the same as the nibbles in the path.
+            require!(rlc => config.key_data_prev.rlc.expr());
 
-            /*
-            wrong_ext_before = key_data[is_s.idx()].rlc.expr()
-                + rlp_key.key.expr(
+            // We have a key split into three parts in
+            // the wrong extension node case, meaning that there the first part parity doesn't
+            // tell us about the parity of the second part (depends on the third part as well).
+
+            let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];
+            rlc = rlc
+                + ext_key_rlc_expr(
                     cb,
-                    rlp_key.key_value.clone(),
-                    key_data[is_s.idx()].mult.expr(),
-                    key_data[is_s.idx()].is_odd.expr(),
+                    wrong_ext_middle,
+                    config.key_data_prev.mult.expr(),
+                    config.key_data[1].is_odd.expr(),
+                    config.key_data_prev.is_odd.expr(),
+                    data0
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
                     &cb.key_r.expr(),
                 );
-            */
 
+            // odd odd -> even
+            // odd even -> odd
+            // even odd -> odd
+            // even even -> even
+            let after_two_parts_is_odd =
+                xor::expr(config.key_data_prev.is_odd.expr(), config.key_data[1].is_odd.expr());
+
+            // The total number of nibbles is odd, thus:
+            let third_part_is_odd = after_two_parts_is_odd.clone();
+
+            let data1 = [wrong_ext_after.clone(), wrong_ext_after_nibbles.clone()];
+            rlc = rlc
+                + ext_key_rlc_expr(
+                    cb,
+                    wrong_ext_after,
+                    config.key_data[1].mult.expr(),
+                    third_part_is_odd,
+                    after_two_parts_is_odd,
+                    data1
+                        .iter()
+                        .map(|item| item.bytes_be())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                    &cb.key_r.expr(),
+                );
+
+            require!(key_item.hash_rlc() => rlc);
 
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove
