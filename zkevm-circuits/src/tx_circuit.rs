@@ -2595,7 +2595,7 @@ impl<F: Field> TxCircuitConfig<F> {
             access_list_size(&tx.access_list);
 
         // Only bytes from L2 txs are accumulated for chunk bytes hash
-        let is_chunk_bytes = (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero();
+        let is_chunk_bytes = tx.is_chunk_l2_tx();
 
         let hash_len = if is_chunk_bytes {
             tx.rlp_signed.len()
@@ -3594,7 +3594,7 @@ impl<F: Field> TxCircuit<F> {
         let chunk_hash_bytes = self
             .txs
             .iter()
-            .filter(|&tx| (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero())
+            .filter(|&tx| tx.is_chunk_l2_tx())
             .flat_map(|tx| tx.rlp_signed.clone())
             .collect::<Vec<u8>>();
         inputs.extend_from_slice(&[chunk_hash_bytes]);
@@ -3737,7 +3737,7 @@ impl<F: Field> TxCircuit<F> {
                 let mut chunk_bytes: Vec<u8> = vec![];
                 for i in 0..sigs.len() {
                     let tx = get_tx(i);
-                    if (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero() {
+                    if tx.is_chunk_l2_tx() {
                         chunk_bytes.extend_from_slice(&tx.rlp_signed);
                     }
                 }
