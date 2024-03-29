@@ -88,6 +88,8 @@ use itertools::Itertools;
 pub const TX_LEN: usize = 28;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
+/// Offset of CallerAddress in the tx table
+pub const CALLER_ADDRESS_OFFSET: usize = 4;
 /// Offset of TxHashRLC tag in the tx table. TxHashRLC = RLC(tx.rlp_signed)
 pub const TX_HASH_RLC_OFFSET: usize = 20;
 /// Offset of ChainID tag in the tx table
@@ -1834,8 +1836,10 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
+                // A valid chunk txbytes tx is determined by: (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero()
                 not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-                is_hash_length(meta),
+                not::expr(value_is_zero.expr(Rotation(-((HASH_RLC_OFFSET - CALLER_ADDRESS_OFFSET) as i32)))(meta)),
+                is_hash_rlc(meta),
             ]);
 
             vec![
