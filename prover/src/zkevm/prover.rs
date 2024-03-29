@@ -14,7 +14,7 @@ use eth_types::l2_types::BlockTrace;
 pub struct Prover {
     // Make it public for testing with inner functions (unnecessary for FFI).
     pub inner: common::Prover,
-    verifier: super::verifier::Verifier,
+    verifier: Option<super::verifier::Verifier>,
     raw_vk: Option<Vec<u8>>,
 }
 
@@ -23,15 +23,16 @@ impl Prover {
         let inner = common::Prover::from_params_dir(params_dir, &ZKEVM_DEGREES);
 
         let raw_vk = try_to_read(assets_dir, &CHUNK_VK_FILENAME);
-        if raw_vk.is_none() {
+        let verifier = if raw_vk.is_none() {
             log::warn!(
                 "zkevm-prover: {} doesn't exist in {}",
                 *CHUNK_VK_FILENAME,
                 assets_dir
             );
-        }
-
-        let verifier = super::verifier::Verifier::from_dirs(params_dir, assets_dir);
+            None
+        } else {
+            Some(super::verifier::Verifier::from_dirs(params_dir, assets_dir))
+        };
 
         Self {
             inner,
@@ -98,8 +99,10 @@ impl Prover {
             }
         }?;
 
-        if !self.verifier.verify_chunk_proof(chunk_proof.clone()) {
-            anyhow::bail!("chunk prover cannot generate valid proof");
+        if let Some(verifier) = &self.verifier {
+            if !verifier.verify_chunk_proof(chunk_proof.clone()) {
+                anyhow::bail!("chunk prover cannot generate valid proof");
+            }
         }
 
         Ok(chunk_proof)
