@@ -1836,9 +1836,12 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.lookup_any("Correct pow_of_rand for HashLen", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                // A valid chunk txbytes tx is determined by: (tx.tx_type != TxType::L1Msg) && !tx.caller_address.is_zero()
+                // A valid chunk txbytes tx is determined by: (tx.tx_type != TxType::L1Msg) &&
+                // !tx.caller_address.is_zero()
                 not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
-                not::expr(value_is_zero.expr(Rotation(-((HASH_RLC_OFFSET - CALLER_ADDRESS_OFFSET) as i32)))(meta)),
+                not::expr(value_is_zero.expr(Rotation(
+                    -((HASH_RLC_OFFSET - CALLER_ADDRESS_OFFSET) as i32),
+                ))(meta)),
                 is_hash_rlc(meta),
             ]);
 
@@ -2527,11 +2530,11 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                                   // q_enable
-                1.expr(),                                                   // is_final
-                meta.query_advice(chunk_txbytes_rlc, Rotation::prev()),     // input_rlc
-                meta.query_advice(chunk_txbytes_len_acc, Rotation::prev()), // input_len
-                meta.query_advice(tx_table.chunk_txbytes_hash_rlc, Rotation::prev()),    // output_rlc
+                1.expr(),                                                             // q_enable
+                1.expr(),                                                             // is_final
+                meta.query_advice(chunk_txbytes_rlc, Rotation::prev()),               // input_rlc
+                meta.query_advice(chunk_txbytes_len_acc, Rotation::prev()),           // input_len
+                meta.query_advice(tx_table.chunk_txbytes_hash_rlc, Rotation::prev()), // output_rlc
             ]
             .into_iter()
             .zip(keccak_table.table_exprs(meta))

@@ -203,10 +203,7 @@ impl PublicData {
     /// chunk
     fn chunk_txbytes(&self) -> Vec<u8> {
         let mut result: Vec<u8> = vec![];
-        let chunk_txs_iter = self
-            .transactions
-            .iter()
-            .filter(|&tx| tx.is_chunk_l2_tx());
+        let chunk_txs_iter = self.transactions.iter().filter(|&tx| tx.is_chunk_l2_tx());
 
         for tx in chunk_txs_iter {
             result.extend_from_slice(&tx.rlp_signed);
@@ -309,8 +306,7 @@ impl PublicData {
     }
 
     fn pi_bytes_start_offset(&self) -> usize {
-        self.q_chunk_txbytes_end_offset()
-            + 1 // new row.
+        self.q_chunk_txbytes_end_offset() + 1 // new row.
     }
 
     fn pi_bytes_end_offset(&self) -> usize {
@@ -1151,8 +1147,8 @@ impl<F: Field> PiCircuitConfig<F> {
         };
 
         region.constrain_equal(
-            tx_value_cells[public_data.max_txs * TX_LEN].cell(), 
-            chunk_txbytes_hash_rlc_cell.cell()
+            tx_value_cells[public_data.max_txs * TX_LEN].cell(),
+            chunk_txbytes_hash_rlc_cell.cell(),
         )?;
 
         Ok((offset + 1, chunk_txbytes_hash_rlc_cell))
