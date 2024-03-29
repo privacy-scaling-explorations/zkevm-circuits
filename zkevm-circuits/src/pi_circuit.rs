@@ -23,7 +23,6 @@ use crate::{
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
-use std::ops::Mul;
 
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
