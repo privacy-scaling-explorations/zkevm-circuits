@@ -29,7 +29,7 @@ use crate::{
 };
 
 use super::{
-    helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
+    helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongLeafGadget},
     mod_extension::ModExtensionGadget,
     rlp_gadgets::{RLPItemWitness, RLPValueGadget},
     witness_row::{Node, StorageRowType},
@@ -48,7 +48,7 @@ pub(crate) struct StorageLeafConfig<F> {
     is_not_hashed: [LtGadget<F, 1>; 2],
     is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
-    wrong: WrongGadget<F>,
+    wrong: WrongLeafGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
     is_mod_extension: [Cell<F>; 2],
@@ -287,7 +287,7 @@ impl<F: Field> StorageLeafConfig<F> {
             );
 
             // Wrong leaf / extension node handling
-            config.wrong = WrongGadget::construct(
+            config.wrong = WrongLeafGadget::construct(
                 cb,
                 key_item.hash_rlc(),
                 config.is_non_existing_storage_proof.expr(),
@@ -297,7 +297,6 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.is_placeholder_leaf[true.idx()].expr(),
                 config.parent_data[true.idx()].is_extension.expr(),
                 config.key_data[true.idx()].clone(),
-                config.key_data_prev.clone(),
                 &cb.key_r.expr(),
             );
 

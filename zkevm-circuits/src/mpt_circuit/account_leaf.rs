@@ -16,15 +16,15 @@ use crate::{
     circuit_tools::{
         cached_region::CachedRegion,
         cell_manager::Cell,
-        constraint_builder::{RLCChainable, RLCChainableRev, RLCable},
+        constraint_builder::{RLCChainableRev, RLCable},
         gadgets::IsEqualGadget,
     },
     evm_circuit::util::from_bytes,
     mpt_circuit::{
         helpers::{
-            ext_key_rlc_expr, key_memory, leaf_key_rlc, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget, KECCAK
+            ext_key_rlc_expr, key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongExtNodeGadget, WrongLeafGadget, KECCAK
         },
-        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_ODD, RLP_LIST_LONG, RLP_LONG},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
     },
     table::MPTProofType,
@@ -43,7 +43,8 @@ pub(crate) struct AccountLeafConfig<F> {
     value_list_rlp_bytes: [[Cell<F>; 2]; 2],
     is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
-    wrong: WrongGadget<F>,
+    wrong_leaf: WrongLeafGadget<F>,
+    wrong_ext_node: WrongExtNodeGadget<F>,
     is_non_existing_account_proof: IsEqualGadget<F>,
     is_account_delete_mod: IsEqualGadget<F>,
     is_nonce_mod: IsEqualGadget<F>,
@@ -367,7 +368,7 @@ impl<F: Field> AccountLeafConfig<F> {
             );
 
             // Wrong leaf handling
-            config.wrong = WrongGadget::construct(
+            config.wrong_leaf = WrongLeafGadget::construct(
                 cb,
                 key_item.hash_rlc(),
                 config.is_non_existing_account_proof.expr(),
@@ -377,11 +378,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.is_placeholder_leaf[true.idx()].expr(),
                 config.parent_data[true.idx()].is_extension.expr(),
                 config.key_data[true.idx()].clone(),
-                config.key_data_prev.clone(),
                 &cb.key_r.expr(),
             );
 
-            // TODO: wrong extension node gadget
+            // Wrong extension node handling
             let wrong_ext_middle =
                 ctx.rlp_item(meta, cb, AccountRowType::LongExtNodeKey as usize, RlpItemType::Key);
             let wrong_ext_middle_nibbles =
@@ -391,63 +391,20 @@ impl<F: Field> AccountLeafConfig<F> {
             let wrong_ext_after_nibbles =
                 ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeNibbles as usize, RlpItemType::Nibbles);
 
-            // In the wrong extension node, AccountRowType::Wrong stores the bytes of the key nibbles
-            // up until the extension node.
-            let (mut rlc, _) = wrong_bytes.rlc_chain_data(); 
-            // The nibbles stored in the Wrong row (up until the extension node)
-            // need to be the same as the nibbles in the path.
-            require!(rlc => config.key_data_prev.rlc.expr());
-
-            // We have a key split into three parts in
-            // the wrong extension node case, meaning that there the first part parity doesn't
-            // tell us about the parity of the second part (depends on the third part as well).
-
-            let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];
-            rlc = rlc
-                + ext_key_rlc_expr(
-                    cb,
-                    wrong_ext_middle,
-                    config.key_data_prev.mult.expr(),
-                    config.key_data[1].is_odd.expr(),
-                    config.key_data_prev.is_odd.expr(),
-                    data0
-                        .iter()
-                        .map(|item| item.bytes_be())
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap(),
-                    &cb.key_r.expr(),
-                );
-
-            // odd odd -> even
-            // odd even -> odd
-            // even odd -> odd
-            // even even -> even
-            let after_two_parts_is_odd =
-                xor::expr(config.key_data_prev.is_odd.expr(), config.key_data[1].is_odd.expr());
-
-            // The total number of nibbles is odd, thus:
-            let third_part_is_odd = after_two_parts_is_odd.clone();
-
-            let data1 = [wrong_ext_after.clone(), wrong_ext_after_nibbles.clone()];
-            rlc = rlc
-                + ext_key_rlc_expr(
-                    cb,
-                    wrong_ext_after,
-                    config.key_data[1].mult.expr(),
-                    third_part_is_odd,
-                    after_two_parts_is_odd,
-                    data1
-                        .iter()
-                        .map(|item| item.bytes_be())
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap(),
-                    &cb.key_r.expr(),
-                );
-
-            require!(key_item.hash_rlc() => rlc);
-
+            config.wrong_ext_node = WrongExtNodeGadget::construct(
+                cb,
+                key_item.hash_rlc(),
+                config.is_non_existing_account_proof.expr(),
+                &wrong_ext_middle,
+                &wrong_ext_middle_nibbles,
+                &wrong_ext_after,
+                &wrong_ext_after_nibbles,
+                config.parent_data[true.idx()].is_extension.expr(),
+                config.key_data[true.idx()].clone(),
+                config.key_data_prev.clone(),
+                &cb.key_r.expr(),
+            ); 
+            
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove
             // storage leaves unless it's also a non-existing proof?
@@ -775,7 +732,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 2, // 2 instead of 1 because default values have already been stored above
             )?;
         }
-        self.wrong.assign(
+        self.wrong_leaf.assign(
             region,
             offset,
             is_non_existing_proof,
