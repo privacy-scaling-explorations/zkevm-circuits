@@ -6,7 +6,7 @@ use halo2_proofs::{
 };
 
 use super::{
-    helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
+    helpers::{ext_key_rlc_calc_value, KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
     mod_extension::ModExtensionGadget,
     rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
@@ -742,9 +742,19 @@ impl<F: Field> AccountLeafConfig<F> {
             true,
             parent_data[1].is_extension,
             key_data[true.idx()].clone(),
-            key_data_prev,
             region.key_r,
-        )?;
+        )?; 
+
+        let wrong_ext_middle = rlp_values[AccountRowType::LongExtNodeKey as usize].clone();
+        let wrong_ext_middle_nibbles = rlp_values[AccountRowType::LongExtNodeNibbles as usize].clone();
+        self.wrong_ext_node.assign(
+            region,
+            offset,
+            wrong_ext_middle,
+            wrong_ext_middle_nibbles,
+            key_data[true.idx()].clone(),
+            key_data_prev.clone(),
+        );
 
         // Anything following this node is below the account
         MainData::witness_store(

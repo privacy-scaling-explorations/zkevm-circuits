@@ -48,7 +48,7 @@ pub(crate) struct StorageLeafConfig<F> {
     is_not_hashed: [LtGadget<F, 1>; 2],
     is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
-    wrong: WrongLeafGadget<F>,
+    wrong_leaf: WrongLeafGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
     is_mod_extension: [Cell<F>; 2],
@@ -287,7 +287,7 @@ impl<F: Field> StorageLeafConfig<F> {
             );
 
             // Wrong leaf / extension node handling
-            config.wrong = WrongLeafGadget::construct(
+            config.wrong_leaf = WrongLeafGadget::construct(
                 cb,
                 key_item.hash_rlc(),
                 config.is_non_existing_storage_proof.expr(),
@@ -563,7 +563,7 @@ impl<F: Field> StorageLeafConfig<F> {
             &mut memory[key_memory(false)],
             2, // 2 instead of 1 because default values have already been stored above
         )?;
-        let (_key_rlc, _) = self.wrong.assign(
+        let (_key_rlc, _) = self.wrong_leaf.assign(
             region,
             offset,
             is_non_existing_proof,
@@ -573,7 +573,6 @@ impl<F: Field> StorageLeafConfig<F> {
             false,
             parent_data[1].is_extension,
             key_data[true.idx()].clone(),
-            key_data_prev,
             region.key_r,
         )?;
 

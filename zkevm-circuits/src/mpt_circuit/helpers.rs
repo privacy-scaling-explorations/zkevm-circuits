@@ -1275,30 +1275,18 @@ impl<F: Field> WrongLeafGadget<F> {
         for_placeholder_s: bool,
         is_parent_extension: bool,
         key_data: KeyDataWitness<F>,
-        key_data_prev: KeyDataWitness<F>,
         r: F,
     ) -> Result<(F, F), Error> {
         if is_non_existing {
             let wrong_witness =
                 self.wrong_rlp_key
                     .assign(region, offset, list_bytes, expected_item)?;
-            let key_rlc_wrong: F;
-            if !is_parent_extension {
-                (key_rlc_wrong, _) = wrong_witness.key.key(
-                    wrong_witness.key_item.clone(),
-                    key_data.rlc,
-                    key_data.mult,
-                    r,
-                );
-            } else {
-                (key_rlc_wrong, _) = wrong_witness.key.key(
-                    wrong_witness.key_item.clone(),
-                    key_data_prev.rlc,
-                    key_data_prev.mult,
-                    r,
-                );
-            }
-
+            let (key_rlc_wrong, _) = wrong_witness.key.key(
+                wrong_witness.key_item.clone(),
+                key_data.rlc,
+                key_data.mult,
+                r,
+            );
             let is_key_equal_witness = self.is_key_equal.assign(
                 region,
                 offset,
@@ -1318,7 +1306,6 @@ impl<F: Field> WrongLeafGadget<F> {
 /// Handles wrong extension nodes
 #[derive(Clone, Debug, Default)]
 pub struct WrongExtNodeGadget<F> {
-    wrong_rlp_key: ListKeyGadget<F>,
     is_key_equal: IsEqualGadget<F>,
 }
 
@@ -1346,7 +1333,7 @@ impl<F: Field> WrongExtNodeGadget<F> {
                 // tell us about the parity of the second part (depends on the third part as well).
 
                 let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];
-                let mut rlc = key_data_prev.rlc.expr()
+                let after_middle_rlc = key_data_prev.rlc.expr()
                     + ext_key_rlc_expr(
                         cb,
                         wrong_ext_middle.clone(),
@@ -1373,7 +1360,7 @@ impl<F: Field> WrongExtNodeGadget<F> {
                 let third_part_is_odd = after_two_parts_is_odd.clone();
 
                 let data1 = [wrong_ext_after.clone(), wrong_ext_after_nibbles.clone()];
-                rlc = rlc
+                let rlc = after_middle_rlc.clone()
                     + ext_key_rlc_expr(
                         cb,
                         wrong_ext_after.clone(),
@@ -1390,60 +1377,50 @@ impl<F: Field> WrongExtNodeGadget<F> {
                     );
 
                 require!(rlc => expected_key);
+
+                // Make sure the "after_middle" RLC of the wrong extension node and of
+                // the "after_middle" enquired key/address are different.
+                config.is_key_equal = IsEqualGadget::construct(
+                    &mut cb.base,
+                    key_data.rlc.expr(),
+                    after_middle_rlc.expr(),
+                );
+                require!(config.is_key_equal.expr() => false);
             }}
             config
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        is_non_existing: bool,
-        key_rlc: &[F],
-        list_bytes: &[u8],
-        expected_item: &RLPItemWitness,
-        for_placeholder_s: bool,
-        is_parent_extension: bool,
+        wrong_ext_middle: RLPItemWitness,
+        wrong_ext_middle_nibbles: RLPItemWitness,
         key_data: KeyDataWitness<F>,
         key_data_prev: KeyDataWitness<F>,
-        r: F,
-    ) -> Result<(F, F), Error> {
-        if is_non_existing {
-            let wrong_witness =
-                self.wrong_rlp_key
-                    .assign(region, offset, list_bytes, expected_item)?;
-            let key_rlc_wrong: F;
-            if !is_parent_extension {
-                (key_rlc_wrong, _) = wrong_witness.key.key(
-                    wrong_witness.key_item.clone(),
-                    key_data.rlc,
-                    key_data.mult,
-                    r,
-                );
-            } else {
-                (key_rlc_wrong, _) = wrong_witness.key.key(
-                    wrong_witness.key_item.clone(),
-                    key_data_prev.rlc,
-                    key_data_prev.mult,
-                    r,
-                );
-            }
+    ) {
+        let items = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles];
+        let (after_middle_rlc, _) = ext_key_rlc_calc_value(
+            wrong_ext_middle,
+            key_data_prev.mult,
+            key_data.is_odd,
+            key_data_prev.is_odd,
+            items
+                .iter()
+                .map(|item| item.bytes.clone())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            region.key_r,
+        );
 
-            let is_key_equal_witness = self.is_key_equal.assign(
-                region,
-                offset,
-                key_rlc[for_placeholder_s.idx()],
-                key_rlc_wrong,
-            )?;
-
-            // When key is not equal, we have a non existing account
-            Ok((key_rlc_wrong, is_key_equal_witness.neg()))
-        } else {
-            // existing account
-            Ok((key_rlc[for_placeholder_s.idx()], false.scalar()))
-        }
+        let _ = self.is_key_equal.assign(
+            region,
+            offset,
+            key_data.rlc,
+            after_middle_rlc,
+        );
     }
 }
 
