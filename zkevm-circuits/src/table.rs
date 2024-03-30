@@ -3054,16 +3054,10 @@ impl PowOfRandTable {
         &self,
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
+        max_rows: usize,
     ) -> Result<(), Error> {
         let r = challenges.keccak_input();
-
-        let max_rows = if cfg!(feature = "scroll") && cfg!(feature = "test") {
-            4000
-        } else if cfg!(feature = "test") {
-            2048
-        } else {
-            4094 * 31
-        };
+        log::info!("assign pow of rand with rows {}", max_rows);
 
         layouter.assign_region(
             || "power of randomness table",

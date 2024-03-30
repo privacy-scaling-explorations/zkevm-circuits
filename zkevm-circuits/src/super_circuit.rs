@@ -662,6 +662,10 @@ impl<
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
         log::debug!("assigning evm_circuit");
+        config
+            .evm_circuit
+            .pow_of_rand_table
+            .assign(layouter, challenges, 4094 * 31)?;
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
 

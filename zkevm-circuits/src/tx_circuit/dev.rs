@@ -241,7 +241,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         config
             .tx_config
             .pow_of_rand_table
-            .assign(&mut layouter, &challenges)?;
+            .assign(&mut layouter, &challenges, 4094 * 31)?;
         config.tx_config.rlp_table.dev_load(
             &mut layouter,
             self.tx_circuit

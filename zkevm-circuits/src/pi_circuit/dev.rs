@@ -138,7 +138,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
 
         config
             .pow_of_rand_table
-            .assign(&mut layouter, &challenges)?;
+            .assign(&mut layouter, &challenges, 4094 * 31)?;
 
         self.0.import_tx_values(tx_value_cells);
         self.0.synthesize_sub(&config, &challenges, &mut layouter)?;
