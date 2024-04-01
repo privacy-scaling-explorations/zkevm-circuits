@@ -558,7 +558,13 @@ pub(crate) struct ParentData<F> {
     pub(crate) rlc: Cell<F>,
     pub(crate) is_root: Cell<F>,
     pub(crate) is_placeholder: Cell<F>,
+    // is_extension is used only in a non-existing proof / wrong extension node case -
+    // in account/storage leaf to check whether the parent is an extension node
     pub(crate) is_extension: Cell<F>,
+    // is_ext_last_level is used only in a non-existing proof - in wrong extension node case the branch
+    // is a placeholder and the check for a branch hash being in the parent extension node needs to be ignored,
+    // but it needs to be ignored only in the last branch (the branch above the leaf into which the lookup is made)
+    pub(crate) is_ext_last_level: Cell<F>,
     pub(crate) drifted_parent_hash: WordLoHiCell<F>,
 }
 
@@ -569,6 +575,7 @@ pub(crate) struct ParentDataWitness<F> {
     pub(crate) is_root: bool,
     pub(crate) is_placeholder: bool,
     pub(crate) is_extension: bool,
+    pub(crate) is_ext_last_level: bool,
     pub(crate) drifted_parent_hash: WordLoHi<F>,
 }
 
@@ -584,6 +591,7 @@ impl<F: Field> ParentData<F> {
             is_root: cb.query_cell(),
             is_placeholder: cb.query_cell(),
             is_extension: cb.query_cell(),
+            is_ext_last_level: cb.query_cell(),
             drifted_parent_hash: cb.query_word_unchecked(),
         };
         circuit!([meta, cb.base], {
@@ -597,6 +605,7 @@ impl<F: Field> ParentData<F> {
                     parent_data.is_root.expr(),
                     parent_data.is_placeholder.expr(),
                     parent_data.is_extension.expr(),
+                    parent_data.is_ext_last_level.expr(),
                     parent_data.drifted_parent_hash.lo().expr(),
                     parent_data.drifted_parent_hash.hi().expr(),
                 ],
@@ -613,6 +622,7 @@ impl<F: Field> ParentData<F> {
         is_root: Expression<F>,
         is_placeholder: Expression<F>,
         is_extension: Expression<F>,
+        is_ext_last_level: Expression<F>,
         drifted_parent_hash: WordLoHi<Expression<F>>,
     ) {
         memory.store(
@@ -624,6 +634,7 @@ impl<F: Field> ParentData<F> {
                 is_root,
                 is_placeholder,
                 is_extension,
+                is_ext_last_level,
                 drifted_parent_hash.lo(),
                 drifted_parent_hash.hi(),
             ],
@@ -640,6 +651,7 @@ impl<F: Field> ParentData<F> {
         force_hashed: bool,
         is_placeholder: bool,
         is_extension: bool,
+        is_ext_last_level: bool,
         drifted_parent_hash: WordLoHi<F>,
     ) -> Result<(), Error> {
         memory.witness_store(
@@ -651,6 +663,7 @@ impl<F: Field> ParentData<F> {
                 force_hashed.scalar(),
                 is_placeholder.scalar(),
                 is_extension.scalar(),
+                is_ext_last_level.scalar(),
                 drifted_parent_hash.lo(),
                 drifted_parent_hash.hi(),
             ],
@@ -673,12 +686,13 @@ impl<F: Field> ParentData<F> {
         self.is_root.assign(region, offset, values[3])?;
         self.is_placeholder.assign(region, offset, values[4])?;
         self.is_extension.assign(region, offset, values[5])?;
+        self.is_ext_last_level.assign(region, offset, values[6])?;
         self.drifted_parent_hash
             .lo()
-            .assign(region, offset, values[6])?;
+            .assign(region, offset, values[7])?;
         self.drifted_parent_hash
             .hi()
-            .assign(region, offset, values[7])?;
+            .assign(region, offset, values[8])?;
 
         Ok(ParentDataWitness {
             hash: WordLoHi::new([values[0], values[1]]),
@@ -686,7 +700,8 @@ impl<F: Field> ParentData<F> {
             is_root: values[3] == 1.scalar(),
             is_placeholder: values[4] == 1.scalar(),
             is_extension: values[5] == 1.scalar(),
-            drifted_parent_hash: WordLoHi::new([values[6], values[7]]),
+            is_ext_last_level: values[6] == 1.scalar(),
+            drifted_parent_hash: WordLoHi::new([values[7], values[8]]),
         })
     }
 }
@@ -1273,7 +1288,6 @@ impl<F: Field> WrongLeafGadget<F> {
         list_bytes: &[u8],
         expected_item: &RLPItemWitness,
         for_placeholder_s: bool,
-        is_parent_extension: bool,
         key_data: KeyDataWitness<F>,
         r: F,
     ) -> Result<(F, F), Error> {

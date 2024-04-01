@@ -339,6 +339,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     true.expr(),
                     false.expr(),
                     false.expr(),
+                    false.expr(),
                     storage_items[is_s.idx()].word(),
                 );
             }
@@ -671,6 +672,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 true,
                 false,
                 false,
+                false,
                 storage_items[is_s.idx()].word(),
             )?;
         }
@@ -740,7 +742,6 @@ impl<F: Field> AccountLeafConfig<F> {
             &account.wrong_rlp_bytes,
             &expected_item,
             true,
-            parent_data[1].is_extension,
             key_data[true.idx()].clone(),
             region.key_r,
         )?; 

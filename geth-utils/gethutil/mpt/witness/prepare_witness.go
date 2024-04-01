@@ -412,7 +412,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 			}
 
 			bNode := prepareBranchNode(proof1[i], proof2[i], extNode1, extNode2, extListRlpBytes, extValues,
-				key[keyIndex], key[keyIndex], false, false, isExtension)
+				key[keyIndex], key[keyIndex], false, false, isExtension, false)
 			nodes = append(nodes, bNode)
 
 			keyIndex += 1
@@ -430,9 +430,8 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2,
 				extNibblesS[len1-1], extNibblesC[len2-1],
-				leafRow0, key, neighbourNode,
-				keyIndex, additionalBranch,
-				isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf)
+				leafRow0, key,
+				keyIndex, isShorterProofLastLeaf)
 
 			nodes = append(nodes, bNode)
 
@@ -531,7 +530,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 
 				extNode := proof2[len(proof2)-1] // Let's name it E1
 				bNode := prepareBranchNode(branchRlp, branchRlp, extNode, extNode, extListRlpBytes, extValues,
-					key[keyIndex], key[keyIndex], false, false, isExtension)
+					key[keyIndex], key[keyIndex], false, false, isExtension, true)
 				nodes = append(nodes, bNode)
 
 				// Let's construct the leaf L1 that will have the correct key (the queried one)

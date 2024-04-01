@@ -66,7 +66,7 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 }
 
 func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd byte,
-	isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
+	isBranchSPlaceholder, isBranchCPlaceholder, isExtension, isLastLevel bool) Node {
 	extensionNode := ExtensionNode{
 		ListRlpBytes: extListRlpBytes,
 	}
@@ -115,6 +115,7 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	extensionBranch := ExtensionBranchNode{
 		IsExtension:   isExtension,
 		IsPlaceholder: [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
+		IsLastLevel:   isLastLevel,
 		Extension:     extensionNode,
 		Branch:        branchNode,
 	}
@@ -206,10 +207,8 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 // (used when one of the proofs have one branch more than the other).
 func addBranchAndPlaceholder(proof1, proof2 [][]byte,
 	extNibblesS, extNibblesC []byte,
-	leafRow0, key, neighbourNode []byte,
-	keyIndex int,
-	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool) (bool, bool, int, Node) {
+	leafRow0, key []byte,
+	keyIndex int, isShorterProofLastLeaf bool) (bool, bool, int, Node) {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
@@ -284,7 +283,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte,
 		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 
 		node = prepareBranchNode(proof1[len1-2], proof1[len1-2], extNode, extNode, extListRlpBytes, extValues,
-			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension)
+			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension, true)
 
 		// We now get the first nibble of the leaf that was turned into branch.
 		// This first nibble presents the position of the leaf once it moved
@@ -296,7 +295,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte,
 		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 
 		node = prepareBranchNode(proof2[len2-2], proof2[len2-2], extNode, extNode, extListRlpBytes, extValues,
-			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension)
+			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension, true)
 	}
 
 	return isModifiedExtNode, isExtension, numberOfNibbles, node

@@ -254,6 +254,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     true.expr(),
                     false.expr(),
                     false.expr(),
+                    false.expr(),
                     WordLoHi::zero(),
                 );
             }
@@ -523,6 +524,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 true,
                 false,
                 false,
+                false,
                 WordLoHi::<F>::new([F::ZERO, F::ZERO]),
             )?;
 
@@ -571,7 +573,6 @@ impl<F: Field> StorageLeafConfig<F> {
             &storage.wrong_rlp_bytes,
             &expected_item,
             false,
-            parent_data[1].is_extension,
             key_data[true.idx()].clone(),
             region.key_r,
         )?;

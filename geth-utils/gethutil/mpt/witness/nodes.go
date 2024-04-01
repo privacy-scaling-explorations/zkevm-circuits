@@ -70,6 +70,7 @@ type ExtensionBranchNode struct {
 	// nibbles of the original extension node).
 	IsModExtension [2]bool       `json:"is_mod_extension"`
 	IsPlaceholder  [2]bool       `json:"is_placeholder"`
+	IsLastLevel    bool          `json:"is_last_level"`
 	Extension      ExtensionNode `json:"extension"`
 	Branch         BranchNode    `json:"branch"`
 }
