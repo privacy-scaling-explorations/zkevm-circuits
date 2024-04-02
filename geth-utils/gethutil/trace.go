@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/holiman/uint256"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
@@ -142,7 +144,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		DAOForkBlock:                  big.NewInt(0),
 		DAOForkSupport:                true,
 		EIP150Block:                   big.NewInt(0),
-		EIP150Hash:                    common.Hash{},
+		// EIP150Hash:                    common.Hash{},
 		EIP155Block:                   big.NewInt(0),
 		EIP158Block:                   big.NewInt(0),
 		ByzantiumBlock:                big.NewInt(0),
@@ -226,7 +228,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		stateDB.SetNonce(address, uint64(account.Nonce))
 		stateDB.SetCode(address, account.Code)
 		if account.Balance != nil {
-			stateDB.SetBalance(address, toBigInt(account.Balance))
+			stateDB.SetBalance(address, uint256.MustFromBig(toBigInt(account.Balance)), tracing.BalanceChangeUnspecified)
 		}
 		for key, value := range account.Storage {
 			stateDB.SetState(address, key, value)
@@ -238,7 +240,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
-		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Tracer: tracer.Hooks(), NoBaseFee: true})
 
 		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
 		if err != nil {
