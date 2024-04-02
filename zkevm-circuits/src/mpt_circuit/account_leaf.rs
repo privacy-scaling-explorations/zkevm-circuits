@@ -6,7 +6,7 @@ use halo2_proofs::{
 };
 
 use super::{
-    helpers::{ext_key_rlc_calc_value, KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
+    helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
     mod_extension::ModExtensionGadget,
     rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
@@ -22,7 +22,7 @@ use crate::{
     evm_circuit::util::from_bytes,
     mpt_circuit::{
         helpers::{
-            ext_key_rlc_expr, key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongExtNodeGadget, WrongLeafGadget, KECCAK
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongExtNodeGadget, WrongLeafGadget, KECCAK
         },
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
@@ -391,6 +391,21 @@ impl<F: Field> AccountLeafConfig<F> {
                 ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeKey as usize, RlpItemType::Key);
             let wrong_ext_after_nibbles =
                 ctx.rlp_item(meta, cb, AccountRowType::ShortExtNodeNibbles as usize, RlpItemType::Nibbles);
+
+            // The extension_branch in the last level needs has `is_last_level_and_wrong_ext_case = true`
+            // in the case of wrong extension node.
+            // All other extension_branches (above it) need to have it `false` (constraint in
+            // extension_branch.rs)
+            // TODO: Use is_last_level_and_wrong_ext_case as a flag for one of the three cases
+            // require!(config.parent_data[1].is_last_level_and_wrong_ext_case.expr() => true.expr());
+            // TODO: use C proof everywhere for non-existing proof.
+            
+            // TODO: when non-existing-proof, it needs to be one of the following cases:
+            // wrong leaf, wrong extension node, nil leaf - we need to check the sum of these
+            // three cases is 1.
+            // To check whether it's the wrong leaf case - parent is not extension, leaf is not placeholder
+            // To check whether it's wrong extension node - is_last_level_and_wrong_ext_case = 1, parent is extension
+            // To check whether it's the nil leaf - use IsPlaceholderLeafGadget
 
             config.wrong_ext_node = WrongExtNodeGadget::construct(
                 cb,

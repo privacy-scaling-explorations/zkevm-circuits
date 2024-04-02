@@ -115,7 +115,7 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	extensionBranch := ExtensionBranchNode{
 		IsExtension:   isExtension,
 		IsPlaceholder: [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
-		IsLastLevel:   isLastLevel,
+		IsLastLevelAndWrongExtCase:   isLastLevel,
 		Extension:     extensionNode,
 		Branch:        branchNode,
 	}
@@ -283,7 +283,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte,
 		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 
 		node = prepareBranchNode(proof1[len1-2], proof1[len1-2], extNode, extNode, extListRlpBytes, extValues,
-			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension, true)
+			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension, false)
 
 		// We now get the first nibble of the leaf that was turned into branch.
 		// This first nibble presents the position of the leaf once it moved
@@ -295,7 +295,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte,
 		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 
 		node = prepareBranchNode(proof2[len2-2], proof2[len2-2], extNode, extNode, extListRlpBytes, extValues,
-			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension, true)
+			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension, false)
 	}
 
 	return isModifiedExtNode, isExtension, numberOfNibbles, node

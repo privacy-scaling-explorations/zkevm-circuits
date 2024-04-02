@@ -561,10 +561,11 @@ pub(crate) struct ParentData<F> {
     // is_extension is used only in a non-existing proof / wrong extension node case -
     // in account/storage leaf to check whether the parent is an extension node
     pub(crate) is_extension: Cell<F>,
-    // is_ext_last_level is used only in a non-existing proof - in wrong extension node case the branch
-    // is a placeholder and the check for a branch hash being in the parent extension node needs to be ignored,
-    // but it needs to be ignored only in the last branch (the branch above the leaf into which the lookup is made)
-    pub(crate) is_ext_last_level: Cell<F>,
+    // is_last_level_and_wrong_ext_case is used only in a non-existing proof in wrong extension node case -
+    // the last branch is a placeholder in this case and the check for a branch hash being in the parent
+    // extension node needs to be ignored, but it needs to be ignored only in the last branch
+    // (the branch above the leaf into which the lookup is made)
+    pub(crate) is_last_level_and_wrong_ext_case: Cell<F>,
     pub(crate) drifted_parent_hash: WordLoHiCell<F>,
 }
 
@@ -591,7 +592,7 @@ impl<F: Field> ParentData<F> {
             is_root: cb.query_cell(),
             is_placeholder: cb.query_cell(),
             is_extension: cb.query_cell(),
-            is_ext_last_level: cb.query_cell(),
+            is_last_level_and_wrong_ext_case: cb.query_cell(),
             drifted_parent_hash: cb.query_word_unchecked(),
         };
         circuit!([meta, cb.base], {
@@ -605,7 +606,7 @@ impl<F: Field> ParentData<F> {
                     parent_data.is_root.expr(),
                     parent_data.is_placeholder.expr(),
                     parent_data.is_extension.expr(),
-                    parent_data.is_ext_last_level.expr(),
+                    parent_data.is_last_level_and_wrong_ext_case.expr(),
                     parent_data.drifted_parent_hash.lo().expr(),
                     parent_data.drifted_parent_hash.hi().expr(),
                 ],
@@ -686,7 +687,7 @@ impl<F: Field> ParentData<F> {
         self.is_root.assign(region, offset, values[3])?;
         self.is_placeholder.assign(region, offset, values[4])?;
         self.is_extension.assign(region, offset, values[5])?;
-        self.is_ext_last_level.assign(region, offset, values[6])?;
+        self.is_last_level_and_wrong_ext_case.assign(region, offset, values[6])?;
         self.drifted_parent_hash
             .lo()
             .assign(region, offset, values[7])?;
