@@ -44,6 +44,7 @@ mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
+mod tload;
 
 mod error_code_store;
 mod error_invalid_creation_code;
@@ -110,7 +111,7 @@ use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
 
-#[cfg(feature = "test")]
+#[cfg(any(feature = "test", test))]
 pub use crate::precompile::PrecompileCallArgs;
 
 /// Generic opcode trait which defines the logic of the
