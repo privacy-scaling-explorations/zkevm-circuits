@@ -133,8 +133,8 @@ pub struct MockTransaction {
     pub s: Option<Word>,
     pub transaction_type: U64,
     pub access_list: AccessList,
-    pub max_priority_fee_per_gas: Word,
-    pub max_fee_per_gas: Word,
+    pub max_priority_fee_per_gas: Option<Word>,
+    pub max_fee_per_gas: Option<Word>,
     pub chain_id: Word,
     pub invalid: bool,
 }
@@ -158,8 +158,8 @@ impl Default for MockTransaction {
             s: None,
             transaction_type: U64::zero(),
             access_list: AccessList::default(),
-            max_priority_fee_per_gas: Word::zero(),
-            max_fee_per_gas: Word::zero(),
+            max_priority_fee_per_gas: None,
+            max_fee_per_gas: None,
             chain_id: *MOCK_CHAIN_ID,
             invalid: false,
         }
@@ -185,8 +185,8 @@ impl From<MockTransaction> for Transaction {
             s: mock.s.unwrap_or_default(),
             transaction_type: Some(mock.transaction_type),
             access_list: Some(mock.access_list),
-            max_priority_fee_per_gas: Some(mock.max_priority_fee_per_gas),
-            max_fee_per_gas: Some(mock.max_fee_per_gas),
+            max_priority_fee_per_gas: mock.max_priority_fee_per_gas,
+            max_fee_per_gas: mock.max_fee_per_gas,
             chain_id: Some(mock.chain_id),
             other: OtherFields::default(),
         }
@@ -289,13 +289,13 @@ impl MockTransaction {
 
     /// Set max_priority_fee_per_gas field for the MockTransaction.
     pub fn max_priority_fee_per_gas(&mut self, max_priority_fee_per_gas: Word) -> &mut Self {
-        self.max_priority_fee_per_gas = max_priority_fee_per_gas;
+        self.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
         self
     }
 
     /// Set max_fee_per_gas field for the MockTransaction.
     pub fn max_fee_per_gas(&mut self, max_fee_per_gas: Word) -> &mut Self {
-        self.max_fee_per_gas = max_fee_per_gas;
+        self.max_fee_per_gas = Some(max_fee_per_gas);
         self
     }
 

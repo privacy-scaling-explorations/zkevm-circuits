@@ -6,6 +6,9 @@ use log::{error, info};
 use prettytable::Table;
 use std::process::{Command, Stdio};
 
+/// Chain ID for ETH mainnet
+pub const ETH_CHAIN_ID: u64 = 1;
+
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
     Shanghai = 15,
