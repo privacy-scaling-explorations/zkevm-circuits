@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
+    operation::{CallContextField, TransientStorageOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};
@@ -18,6 +18,7 @@ impl Opcode for Tload {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
+        let next_geth_step = &geth_steps[1];
         let mut exec_step = state.new_step(geth_step)?;
 
         let call_id = state.call()?.call_id;
@@ -59,50 +60,19 @@ impl Opcode for Tload {
         state.stack_read(&mut exec_step, stack_position, key)?;
 
         // Storage read
-        let value = geth_step.storage.get_or_err(&key)?;
+        let value = next_geth_step
+            .stack
+            .last()
+            .expect("No value in stack in TLOAD next step");
 
-        let is_warm = state
-            .sdb
-            .check_account_storage_in_access_list(&(contract_addr, key));
-
-        let (_, committed_value) = state.sdb.get_committed_storage(&contract_addr, &key);
-        let committed_value = *committed_value;
         state.push_op(
             &mut exec_step,
             RW::READ,
-            StorageOp::new(
-                contract_addr,
-                key,
-                value,
-                value,
-                state.tx_ctx.id(),
-                committed_value,
-            ),
+            TransientStorageOp::new(contract_addr, key, value, value, state.tx_ctx.id()),
         )?;
 
         // First stack write
         state.stack_write(&mut exec_step, stack_position, value)?;
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            TxAccessListAccountStorageOp {
-                tx_id: state.tx_ctx.id(),
-                address: contract_addr,
-                key,
-                is_warm,
-                is_warm_prev: is_warm,
-            },
-        )?;
-        state.push_op_reversible(
-            &mut exec_step,
-            TxAccessListAccountStorageOp {
-                tx_id: state.tx_ctx.id(),
-                address: contract_addr,
-                key,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
-        )?;
 
         Ok(vec![exec_step])
     }
@@ -128,7 +98,8 @@ mod tload_tests {
     };
     use pretty_assertions::assert_eq;
 
-    fn test_ok() {
+    #[test]
+    fn tload_opcode() {
         let code = bytecode! {
             // Load transient storage slot 0
             PUSH1(0x00u64)
@@ -152,7 +123,6 @@ mod tload_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
-        println!("{:#?}", builder.block.txs()[0].steps());
         let step = builder.block.txs()[0]
             .steps()
             .iter()
@@ -190,10 +160,5 @@ mod tload_tests {
                 )
             )
         );
-    }
-
-    #[test]
-    fn tload_opcode_impl_warm() {
-        test_ok()
     }
 }

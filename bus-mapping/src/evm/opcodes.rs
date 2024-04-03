@@ -66,7 +66,6 @@ mod precompiles;
 #[cfg(test)]
 mod memory_expansion_test;
 
-use self::{invalid_tx::InvalidTx, sha3::Sha3};
 use address::Address;
 use balance::Balance;
 use begin_end_tx::BeginEndTx;
@@ -97,6 +96,7 @@ use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
 use extcodesize::Extcodesize;
 use gasprice::GasPrice;
+use invalid_tx::InvalidTx;
 use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
@@ -105,11 +105,13 @@ use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
+use sha3::Sha3;
 use sload::Sload;
 use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
+use tload::Tload;
 
 #[cfg(any(feature = "test", test))]
 pub use crate::precompile::PrecompileCallArgs;
@@ -225,6 +227,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
+        OpcodeId::TLOAD => Tload::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,

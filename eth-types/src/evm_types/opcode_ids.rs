@@ -918,7 +918,6 @@ impl OpcodeId {
 
 impl From<u8> for OpcodeId {
     fn from(value: u8) -> Self {
-        println!("from u8: {}", value);
         match value {
             0x00u8 => OpcodeId::STOP,
             0x01u8 => OpcodeId::ADD,
