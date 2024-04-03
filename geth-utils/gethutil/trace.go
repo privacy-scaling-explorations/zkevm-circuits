@@ -1,6 +1,7 @@
 package gethutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -9,11 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/holiman/uint256"
 )
 
@@ -139,11 +140,11 @@ func toBigInt(value *hexutil.Big) *big.Int {
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
-		ChainID:                       toBigInt(config.ChainID),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  big.NewInt(0),
-		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(0),
+		ChainID:        toBigInt(config.ChainID),
+		HomesteadBlock: big.NewInt(0),
+		DAOForkBlock:   big.NewInt(0),
+		DAOForkSupport: true,
+		EIP150Block:    big.NewInt(0),
 		// EIP150Hash:                    common.Hash{},
 		EIP155Block:                   big.NewInt(0),
 		EIP158Block:                   big.NewInt(0),
@@ -155,6 +156,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
 		ShanghaiTime:                  newUint64(0),
+		CancunTime:                    newUint64(0),
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
 	}
@@ -236,32 +238,35 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 	stateDB.Finalise(true)
 
+	var (
+		err     error
+		usedGas uint64
+		raw     json.RawMessage
+		tx      types.Transaction
+	)
+
 	// Run the transactions with tracing enabled.
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
-		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Tracer: tracer.Hooks(), NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, vm.TxContext{GasPrice: big.NewInt(0)}, stateDB, &chainConfig, vm.Config{Tracer: tracer.Hooks(), NoBaseFee: true})
 
-		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
+		tx = *types.NewTransaction(message.Nonce, *message.To, message.Value, message.GasLimit, message.GasPrice, message.Data)
+		stateDB.SetTxContext(tx.Hash(), i)
+
+		_, err = core.ApplyTransactionWithEVM(&message, &chainConfig, new(core.GasPool).AddGas(message.GasLimit), stateDB, blockCtx.BlockNumber, common.Hash{}, &tx, &usedGas, evm)
 		if err != nil {
-			executionResults[i] = &ExecutionResult{
-				Gas:         0,
-				Failed:      true,
-				Invalid:     true,
-				ReturnValue: fmt.Sprintf("%v", err),
-				StructLogs:  []StructLogRes{},
-			}
-		} else {
-			stateDB.Finalise(true)
-
-			executionResults[i] = &ExecutionResult{
-				Gas:         result.UsedGas,
-				Failed:      result.Failed(),
-				Invalid:     false,
-				ReturnValue: fmt.Sprintf("%x", result.ReturnData),
-				StructLogs:  FormatLogs(tracer.StructLogs()),
-			}
+			return nil, fmt.Errorf("tracing failed: %w", err)
 		}
+		raw, _ = tracer.GetResult()
+
+		var result ExecutionResult
+		err = json.Unmarshal(raw, &result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+		}
+
+		executionResults[i] = &result
 	}
 
 	return executionResults, nil
