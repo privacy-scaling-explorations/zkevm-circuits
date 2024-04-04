@@ -18,7 +18,6 @@ impl Opcode for Tload {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let next_geth_step = &geth_steps[1];
         let mut exec_step = state.new_step(geth_step)?;
 
         let call_id = state.call()?.call_id;
@@ -59,11 +58,9 @@ impl Opcode for Tload {
         // Manage first stack read at latest stack position
         state.stack_read(&mut exec_step, stack_position, key)?;
 
-        // Storage read
-        let value = next_geth_step
-            .stack
-            .last()
-            .expect("No value in stack in TLOAD next step");
+        // Transient Storage read
+        let (_, value) = state.sdb.get_transient_storage(&contract_addr, &key);
+        let value = *value;
 
         state.push_op(
             &mut exec_step,

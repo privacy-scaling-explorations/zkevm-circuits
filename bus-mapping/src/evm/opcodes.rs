@@ -45,6 +45,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 mod tload;
+mod tstore;
 
 mod error_code_store;
 mod error_invalid_creation_code;
@@ -112,6 +113,7 @@ use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
 use tload::Tload;
+use tstore::Tstore;
 
 #[cfg(any(feature = "test", test))]
 pub use crate::precompile::PrecompileCallArgs;
@@ -228,6 +230,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
         OpcodeId::TLOAD => Tload::gen_associated_ops,
+        OpcodeId::TSTORE => Tstore::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
