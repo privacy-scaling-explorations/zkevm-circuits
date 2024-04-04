@@ -760,7 +760,7 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 
 func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, [][]byte, error) {
 	k := KeybytesToHex(key)
-	// fmt.Println("k", k)
+	fmt.Println("k", k)
 	if st.nodeType == emptyNode {
 		return [][]byte{}, nil, nil
 	}
@@ -804,10 +804,15 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				panic(error)
 			}
 
-			element, _, _ := rlp.SplitList(c_rlp)
-			nibble := element[0] - 16
-			fmt.Println(" HASHED Ext nibble:", element)
-			nibbles = append(nibbles, []byte{nibble})
+			if c_rlp[0] > 192 && c_rlp[0] < 248 {
+				numNibbles := c_rlp[0] - 225
+				var nibble = make([]byte, numNibbles)
+				for i := 0; i < int(numNibbles); i++ {
+					nibble[i] = c_rlp[i+1] - 16
+				}
+				fmt.Println(" HASHED Ext nibble:", nibble, c_rlp)
+				nibbles = append(nibbles, nibble)
+			}
 
 			proof = append(proof, c_rlp)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
@@ -853,13 +858,17 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 						panic("should not happen!")
 					}
 
-					element, _, _ := rlp.SplitList(raw_rlp)
-					// fmt.Println("** ", element)
-
-					// FIXME only one nibble case
-					nibble := element[0] - 16
-					fmt.Println(" Ext nibble:", element)
-					nibbles = append(nibbles, []byte{nibble})
+					// 192 ~ 247 is a short list
+					// if it's an ext node, it contains 1.)nibbles and 2.) 32bytes hashed value
+					// 2.) 32 bytes long data plus rlp flag, it becomes 33 bytes long data
+					// 192 + 33 = 225, and the left bytes are for nibbles.
+					numNibbles := raw_rlp[0] - 225
+					var nibble = make([]byte, numNibbles)
+					for i := 0; i < int(numNibbles); i++ {
+						nibble[i] = raw_rlp[i+1] - 16
+					}
+					fmt.Println(" Ext nibble:", numNibbles, nibble, raw_rlp)
+					nibbles = append(nibbles, nibble)
 				}
 			}
 
