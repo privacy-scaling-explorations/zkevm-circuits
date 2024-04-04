@@ -332,6 +332,11 @@ impl StateDB {
         }
         self.refund = 0;
     }
+
+    /// Clear transient storage.
+    pub fn clear_transient_storage(&mut self) {
+        self.transient_storage = HashMap::new();
+    }
 }
 
 #[cfg(test)]
