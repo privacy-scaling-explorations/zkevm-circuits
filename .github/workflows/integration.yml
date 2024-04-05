@@ -4,8 +4,8 @@ on:
   merge_group:
   schedule:
     - cron: '50 1 * * SUN'
-  pull_request:
-    types: [synchronize, labeled]
+  # pull_request:
+  #   types: [synchronize, labeled]
   push:
     branches:
       - main
