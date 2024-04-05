@@ -1209,6 +1209,56 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // Account Transient Storage
+    pub(crate) fn account_transient_storage_read(
+        &mut self,
+        account_address: WordLoHi<Expression<F>>,
+        key: WordLoHi<Expression<F>>,
+        value: WordLoHi<Expression<F>>,
+        tx_id: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account_transient_storage_read",
+            false.expr(),
+            Target::TransientStorage,
+            RwValues::new(
+                tx_id,
+                account_address.compress(),
+                0.expr(),
+                key,
+                value.clone(),
+                value,
+                WordLoHi::zero(),
+            ),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_transient_storage_write(
+        &mut self,
+        account_address: WordLoHi<Expression<F>>,
+        key: WordLoHi<Expression<F>>,
+        value: WordLoHi<Expression<F>>,
+        value_prev: WordLoHi<Expression<F>>,
+        tx_id: Expression<F>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
+    ) {
+        self.reversible_write(
+            "account_transient_storage_write",
+            Target::TransientStorage,
+            RwValues::new(
+                tx_id,
+                account_address.compress(),
+                0.expr(),
+                key,
+                value,
+                value_prev,
+                WordLoHi::zero(),
+            ),
+            reversion_info,
+        );
+    }
+
     // Call context
     pub(crate) fn call_context(
         &mut self,

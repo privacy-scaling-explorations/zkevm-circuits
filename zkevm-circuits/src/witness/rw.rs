@@ -276,6 +276,17 @@ pub enum Rw {
         tx_id: usize,
         committed_value: Word,
     },
+    /// AccountTransientStorage
+    AccountTransientStorage {
+        rw_counter: usize,
+        is_write: bool,
+        account_address: Address,
+        storage_key: Word,
+        value: Word,
+        value_prev: Word,
+        tx_id: usize,
+        // committed_value: Word,
+    },
     /// CallContext
     CallContext {
         rw_counter: usize,
@@ -609,6 +620,12 @@ impl Rw {
                 committed_value,
                 ..
             } => (*value, *value_prev, *tx_id, *committed_value),
+            Self::AccountTransientStorage {
+                value,
+                value_prev,
+                tx_id,
+                ..
+            } => (*value, *value_prev, *tx_id, Word::zero()),
             _ => unreachable!(),
         }
     }
@@ -665,6 +682,7 @@ impl Rw {
             | Self::Memory { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
+            | Self::AccountTransientStorage { rw_counter, .. }
             | Self::TxAccessListAccount { rw_counter, .. }
             | Self::TxAccessListAccountStorage { rw_counter, .. }
             | Self::TxRefund { rw_counter, .. }
@@ -682,6 +700,7 @@ impl Rw {
             Self::Memory { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
+            | Self::AccountTransientStorage { is_write, .. }
             | Self::TxAccessListAccount { is_write, .. }
             | Self::TxAccessListAccountStorage { is_write, .. }
             | Self::TxRefund { is_write, .. }
@@ -700,6 +719,7 @@ impl Rw {
             Self::Memory { .. } => Target::Memory,
             Self::Stack { .. } => Target::Stack,
             Self::AccountStorage { .. } => Target::Storage,
+            Self::AccountTransientStorage { .. } => Target::TransientStorage,
             Self::TxAccessListAccount { .. } => Target::TxAccessListAccount,
             Self::TxAccessListAccountStorage { .. } => Target::TxAccessListAccountStorage,
             Self::TxRefund { .. } => Target::TxRefund,
@@ -714,6 +734,7 @@ impl Rw {
     pub(crate) fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
+            | Self::AccountTransientStorage { tx_id, .. }
             | Self::TxAccessListAccount { tx_id, .. }
             | Self::TxAccessListAccountStorage { tx_id, .. }
             | Self::TxRefund { tx_id, .. }
@@ -741,6 +762,9 @@ impl Rw {
                 account_address, ..
             }
             | Self::AccountStorage {
+                account_address, ..
+            }
+            | Self::AccountTransientStorage {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
@@ -776,6 +800,7 @@ impl Rw {
             | Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
+            | Self::AccountTransientStorage { .. }
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
@@ -786,6 +811,7 @@ impl Rw {
     pub(crate) fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
+            | Self::AccountTransientStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
             Self::Padding { .. }
             | Self::Start { .. }
@@ -808,6 +834,7 @@ impl Rw {
             | Self::StepState { value, .. }
             | Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
+            | Self::AccountTransientStorage { value, .. }
             | Self::Stack { value, .. }
             | Self::TxLog { value, .. } => *value,
             Self::TxAccessListAccount { is_warm, .. }
@@ -819,9 +846,9 @@ impl Rw {
 
     pub(crate) fn value_prev_assignment(&self) -> Option<Word> {
         match self {
-            Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
-                Some(*value_prev)
-            }
+            Self::Account { value_prev, .. }
+            | Self::AccountStorage { value_prev, .. }
+            | Self::AccountTransientStorage { value_prev, .. } => Some(*value_prev),
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
                 Some(U256::from(*is_warm_prev as u64))
@@ -865,6 +892,13 @@ impl From<Vec<Rw>> for RwMap {
                         vrw.push(rw)
                     } else {
                         rw_map.insert(Target::Storage, vec![rw]);
+                    }
+                }
+                Rw::AccountTransientStorage { .. } => {
+                    if let Some(vrw) = rw_map.get_mut(&Target::TransientStorage) {
+                        vrw.push(rw)
+                    } else {
+                        rw_map.insert(Target::TransientStorage, vec![rw]);
                     }
                 }
                 Rw::TxAccessListAccount { .. } => {
@@ -1053,6 +1087,22 @@ impl From<&operation::OperationContainer> for RwMap {
                     value_prev: op.op().value_prev,
                     tx_id: op.op().tx_id,
                     committed_value: op.op().committed_value,
+                })
+                .collect(),
+        );
+        rws.insert(
+            Target::TransientStorage,
+            container
+                .transient_storage
+                .iter()
+                .map(|op| Rw::AccountTransientStorage {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    account_address: op.op().address,
+                    storage_key: op.op().key,
+                    value: op.op().value,
+                    value_prev: op.op().value_prev,
+                    tx_id: op.op().tx_id,
                 })
                 .collect(),
         );

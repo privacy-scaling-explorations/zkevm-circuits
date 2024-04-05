@@ -143,6 +143,7 @@ impl Target {
                 | Target::TxRefund
                 | Target::Account
                 | Target::Storage
+                | Target::TransientStorage
         )
     }
 }

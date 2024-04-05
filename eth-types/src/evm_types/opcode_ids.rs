@@ -906,7 +906,6 @@ impl OpcodeId {
 
     /// Returns the all invalid opcodes.
     pub fn invalid_opcodes() -> Vec<Self> {
-        println!("invalid opcodes");
         (u8::MIN..=u8::MAX).fold(vec![], |mut acc, val| {
             if matches!(val.into(), Self::INVALID(_)) {
                 acc.push(Self::INVALID(val));
