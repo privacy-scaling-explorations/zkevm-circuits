@@ -178,21 +178,12 @@ func prepareBranchNode(
 	return node
 }
 
-// getDriftedPosition returns the position in branch to which the leaf drifted because another
-// leaf has been added to the same slot. This information is stored into a branch init row.
-func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
+// getNibbles returns the nibbles of the leaf or extension node.
+func getNibbles(leafKeyRow []byte) []byte {
 	var nibbles []byte
 	if leafKeyRow[0] != 248 {
-		keyLen := 0
-		if leafKeyRow[0] == 226 {
-			// In this case, we only have 1 nibble
-			// Prove: 226 - 192 = 34, the payload is 34 bytes and the 1st byte is RLP byte (aka 226)
-			// So, 33 bytes left, hash occupies 32 bytes in the end of the payload.
-			// 33 - 32 = 1, which is the nibble.
-			keyLen = 1
-			nibbles = append(nibbles, leafKeyRow[1]-16)
-			numberOfNibbles = 0
-		} else {
+		var keyLen int
+		if leafKeyRow[1] > 128 {
 			keyLen = int(leafKeyRow[1] - 128)
 			if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
 				if leafKeyRow[2] < 32 { // extension node
@@ -201,13 +192,16 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 					nibbles = append(nibbles, leafKeyRow[2]-48)
 				}
 			}
-		}
-		for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
-			b := leafKeyRow[3+i]
-			n1 := b / 16
-			n2 := b - n1*16
-			nibbles = append(nibbles, n1)
-			nibbles = append(nibbles, n2)
+			for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
+				b := leafKeyRow[3+i]
+				n1 := b / 16
+				n2 := b - n1*16
+				nibbles = append(nibbles, n1)
+				nibbles = append(nibbles, n2)
+			}
+		} else {
+			keyLen = 1
+			nibbles = append(nibbles, leafKeyRow[1]-16)
 		}
 	} else {
 		keyLen := int(leafKeyRow[2] - 128)
@@ -227,16 +221,24 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 		}
 	}
 
+	return nibbles
+}
+
+// getDriftedPosition returns the position in branch to which the leaf drifted because another
+// leaf has been added to the same slot. This information is stored into a branch init row.
+func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
+	nibbles := getNibbles(leafKeyRow)
+	if len(nibbles) == 1 {
+		return nibbles[0]
+	}
 	return nibbles[numberOfNibbles]
 }
 
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
-func addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC [][]byte,
-	leafRow0, key, neighbourNode []byte,
-	keyIndex, extensionNodeInd int,
-	additionalBranch, isAccountProof, nonExistingAccountProof, isShorterProofLastLeaf bool,
-	toBeHashed *[][]byte) (bool, bool, int, Node) {
+func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC []byte,
+	leafRow0, key []byte, keyIndex int, isShorterProofLastLeaf bool,
+) (bool, bool, int, Node) {
 
 	len1 := len(proof1)
 	len2 := len(proof2)
@@ -262,7 +264,7 @@ func addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC [][]byte,
 	if isExtension || need_placeholder_ext {
 		var numNibbles byte
 		var proof []byte
-		var extNibbles [][]byte
+		var extNibbles []byte
 		if need_placeholder_ext {
 			extNibbles = extNibblesS
 			proof = proof1[0]
@@ -275,7 +277,7 @@ func addBranchAndPlaceholder(proof1, proof2, extNibblesS, extNibblesC [][]byte,
 				proof = proof2[len2-3]
 			}
 		}
-		numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibbles, extensionNodeInd, proof, proof)
+		numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibbles, proof, proof)
 		numberOfNibbles = int(numNibbles)
 	}
 

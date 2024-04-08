@@ -120,8 +120,13 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 	}
 }
 
+func TestTransaction144(t *testing.T) {
+	txs := makeTransactions(146)
+	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
+}
+
 func TestTransactionInsertion(t *testing.T) {
-	txs := makeTransactions(256)
+	txs := makeTransactions(145)
 	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
 }
 

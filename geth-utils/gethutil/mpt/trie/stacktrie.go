@@ -850,6 +850,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				} else {
 					proof = append(proof, rlp)
 				}
+				nibbles = append(nibbles, nil)
 			} else if node.nodeType == branchNode || node.nodeType == extNode {
 				node.hash(false)
 
@@ -876,6 +877,8 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 					}
 					fmt.Println(" Ext nibble:", numNibbles, nibble, raw_rlp)
 					nibbles = append(nibbles, nibble)
+				} else {
+					nibbles = append(nibbles, nil)
 				}
 			}
 
