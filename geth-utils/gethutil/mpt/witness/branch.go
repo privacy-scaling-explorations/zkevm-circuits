@@ -38,7 +38,9 @@ func isTxLeaf(proofEl []byte) bool {
 }
 
 func isTxExt(proofEl []byte) bool {
-	return proofEl[0] == 226 && proofEl[1]%16 == 0 && proofEl[2] == 160
+	elems, _, _ := rlp.SplitList(proofEl)
+	idx := proofEl[0] - 225
+	return len(proofEl) < 50 && proofEl[0] < 248 && elems[idx] == 160
 }
 
 // prepareBranchWitness takes the rows that are to be filled with branch data and it takes

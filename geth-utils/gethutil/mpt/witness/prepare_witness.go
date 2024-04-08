@@ -346,13 +346,13 @@ func prepareWitnessSpecial(testName string, trieModifications []TrieModification
 //	-[] [EXT] -> [BRANCH - BRANCH - BRANCH - LEAF] --> 144
 //	-[] [BRANCH - LEAF] -> [BRANCH - BRANCH - LEAF] (modified extension)
 //	-[] [BRANCH - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - (...BRANCH) - LEAF]
-//	-[] [BRANCH - BRANCH - BRANCH - EXT] -> [BRANCH - BRANCH - BRANCH - BRANCH - LEAF]
 //	-[] [BRANCH - BRANCH - LEAF ] -> [BRANCH - BRANCH - LEAF - BRANCH - LEAF]
 //	-[] [LEAF] -> [LEAF]
 //	-[] [EXT] -> [EXT]
 //	-[] [EXT - EXT] -> [EXT - EXT]
 //	-[] [EXT - LEAF] -> [LEAF]
 //	-[] [BRANCH - LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF]
+//	-[] [BRANCH - BRANCH - EXT] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF]
 //	-[] [BRANCH - BRANCH - EXT - BRANCH - (LEAF)] -> [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH - LEAF]
 //	-[] [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH) - LEAF]
 //	-[] [LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - BRANCH - LEAF]

@@ -651,15 +651,21 @@ func isTxLeaf(proofEl []byte) bool {
 	c, _ := rlp.CountValues(elems)
 
 	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
-	return c == 9 || c == 2
+	return (c == 9 || c == 2) && !isTxExt(proofEl)
+}
+
+func isTxExt(proofEl []byte) bool {
+	elems, _, _ := rlp.SplitList(proofEl)
+	idx := proofEl[0] - 225
+	return len(proofEl) < 50 && proofEl[0] < 248 && elems[idx] == 160
 }
 
 func printProof(ps [][]byte, idx []byte) {
 
-	enable := byte(150)
+	enable := byte(200)
 	fmt.Print(" [")
 	for _, p := range ps {
-		if p[0] == 226 && p[1]%16 == 0 && p[2] == 160 {
+		if isTxExt(p) {
 			fmt.Print("EXT - ")
 			if idx[0] > enable {
 				fmt.Print(" (", p, ") - ")
@@ -784,6 +790,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 	isHashed := false
 
 	for i := 0; i < len(k); i++ {
+		// fmt.Print(k[i], "- ")
 		if c.nodeType == extNode {
 			nodes = append(nodes, c)
 			c = c.children[0]
