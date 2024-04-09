@@ -135,6 +135,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 key_mult_post_ext.expr(),
                 num_nibbles.expr(),
                 is_key_odd.expr(),
+                config.is_last_level_and_wrong_ext_case.expr(),
             );
             let branch = config.branch.get_post_state();
 

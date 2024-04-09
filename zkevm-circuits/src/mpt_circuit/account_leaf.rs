@@ -205,6 +205,8 @@ impl<F: Field> AccountLeafConfig<F> {
                 MPTProofType::CodeHashChanged.expr(),
             );
 
+            let is_wrong_ext_case = parent_data[1].is_last_level_and_wrong_ext_case.expr();
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
                     // Placeholder leaf checks
@@ -273,7 +275,9 @@ impl<F: Field> AccountLeafConfig<F> {
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                     let num_nibbles =
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
-                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+                    ifx! {not!(is_wrong_ext_case) => {
+                        require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+                    }}
 
                     // Check if the leaf is in its parent.
                     // Check is skipped for placeholder leaves which are dummy leaves.
@@ -282,7 +286,8 @@ impl<F: Field> AccountLeafConfig<F> {
                     // Note that the constraint works for the case when there is the placeholder branch above
                     // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
                     // branch.
-                    ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
+                    ifx! {not!(or::expr(&[config.is_placeholder_leaf[is_s.idx()].expr(), is_wrong_ext_case.clone()])) => {
+                    // ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
                         let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                     } elsex {
@@ -305,7 +310,9 @@ impl<F: Field> AccountLeafConfig<F> {
                                 // Note that this does not hold when there is NonExistingAccountProof wrong leaf scenario,
                                 // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
                                 // so the check below is not triggered.
-                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                                ifx! {not!(is_wrong_ext_case) => {
+                                    require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                                }}
                             }}
                         }}
                     }}
@@ -407,18 +414,20 @@ impl<F: Field> AccountLeafConfig<F> {
             // To check whether it's wrong extension node - is_last_level_and_wrong_ext_case = 1, parent is extension
             // To check whether it's the nil leaf - use IsPlaceholderLeafGadget
 
+            // TODO: when is_last_level_and_wrong_ext_case, the proof type needs to be non-existing
+            // config.is_non_existing_account_proof.expr(),
+            // config.parent_data[true.idx()].is_extension.expr(),
+
             config.wrong_ext_node = WrongExtNodeGadget::construct(
                 cb,
                 key_item.hash_rlc(),
-                config.is_non_existing_account_proof.expr(),
+                is_wrong_ext_case,
                 &wrong_ext_middle,
                 &wrong_ext_middle_nibbles,
                 &wrong_ext_after,
                 &wrong_ext_after_nibbles,
-                config.parent_data[true.idx()].is_extension.expr(),
                 config.key_data[true.idx()].clone(),
                 config.key_data_prev.clone(),
-                &cb.key_r.expr(),
             ); 
             
             // Anything following this node is below the account

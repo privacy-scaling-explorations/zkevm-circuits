@@ -1329,20 +1329,17 @@ impl<F: Field> WrongExtNodeGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         expected_key: Expression<F>,
-        is_non_existing: Expression<F>,
+        is_wrong_ext_case: Expression<F>,
         wrong_ext_middle: &RLPItemView<F>,
         wrong_ext_middle_nibbles: &RLPItemView<F>,
         wrong_ext_after: &RLPItemView<F>,
         wrong_ext_after_nibbles: &RLPItemView<F>,
-        is_parent_extension: Expression<F>,
         key_data: KeyData<F>,
         key_data_prev: KeyData<F>,
-        r: &Expression<F>,
     ) -> Self {
         let mut config = WrongExtNodeGadget::default();
         circuit!([meta, cb.base], {
-            // TODO: distinguish between wrong extension node / wrong leaf / nil leaf
-            ifx! {and::expr(&[is_non_existing, is_parent_extension]) => { 
+            ifx! {is_wrong_ext_case => { 
                 // We have a key split into three parts,
                 // meaning that there the first part parity doesn't
                 // tell us about the parity of the second part (depends on the third part as well).

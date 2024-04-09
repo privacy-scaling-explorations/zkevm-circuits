@@ -64,6 +64,7 @@ impl<F: Field> BranchGadget<F> {
         key_mult: Expression<F>,
         num_nibbles: Expression<F>,
         is_key_odd: Expression<F>,
+        is_last_level_and_wrong_ext_case: Expression<F>,
     ) -> Self {
         let mut config = BranchGadget::default();
 
@@ -193,7 +194,7 @@ impl<F: Field> BranchGadget<F> {
                     )
                 };
 
-                ifx! {not!(is_placeholder[is_s.idx()]) => {
+                ifx! {not!(or::expr(&[is_placeholder[is_s.idx()].expr(), is_last_level_and_wrong_ext_case.clone()])) => {
                     ifx!{or::expr(&[is_root[is_s.idx()].expr(), not!(is_not_hashed)]) => {
                         // Hashed branch hash in parent branch
                         let hash = &parent_hash[is_s.idx()];
