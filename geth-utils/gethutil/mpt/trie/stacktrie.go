@@ -651,7 +651,7 @@ func isTxLeaf(proofEl []byte) bool {
 	c, _ := rlp.CountValues(elems)
 
 	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
-	return (c == 9 || c == 2) && !isTxExt(proofEl)
+	return (c == 9) && !isTxExt(proofEl)
 }
 
 func isTxExt(proofEl []byte) bool {
@@ -672,15 +672,17 @@ func printProof(ps [][]byte, idx []byte) {
 			}
 		} else if isBranch((p)) {
 			fmt.Print("BRANCH - ")
+			// fmt.Print(" (", p, ") - ")
 		} else if isTxLeaf(p) {
 			fmt.Print("LEAF - ")
 			if idx[0] > enable {
 				fmt.Print(" (", p, ") - ")
 			}
 		} else {
-			elems, _, _ := rlp.SplitList(p)
-			c, _ := rlp.CountValues(elems)
-			fmt.Print(c, " (", elems, ") - ")
+			fmt.Print("HASHED - ")
+			// elems, _, _ := rlp.SplitList(p)
+			// c, _ := rlp.CountValues(elems)
+			// fmt.Print(c, " (", p, ") - ")
 		}
 	}
 	fmt.Println("]")
@@ -705,10 +707,10 @@ func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value 
 	len2 := len(proofC)
 	printProof(proofC, indexBuf)
 
-	// fmt.Println(len1, len2)
-	if len1 >= len2 {
-		fmt.Println(KeybytesToHex(indexBuf))
-	}
+	fmt.Println(len1, len2)
+	// if len1 >= len2 {
+	// 	fmt.Println(KeybytesToHex(indexBuf))
+	// }
 
 	return StackProof{proofS, proofC, nibblesS, nibblesC}, nil
 }
@@ -787,10 +789,10 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 	var proof [][]byte
 	var nodes []*StackTrie
 	c := st
-	isHashed := false
+	// isHashed := false
 
 	for i := 0; i < len(k); i++ {
-		// fmt.Print(k[i], "- ")
+		// fmt.Print(k[i], "/", c.nodeType, " | ")
 		if c.nodeType == extNode {
 			nodes = append(nodes, c)
 			c = c.children[0]
@@ -805,7 +807,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 			nodes = append(nodes, c)
 			break
 		} else if c.nodeType == hashedNode {
-			isHashed = true
+			// isHashed = true
 			c_rlp, error := db.Get(c.val)
 			if error != nil {
 				panic(error)
@@ -821,9 +823,9 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				nibbles = append(nibbles, nibble)
 			}
 
+			// fmt.Println(" c_rlp:", c_rlp)
 			proof = append(proof, c_rlp)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
-
 			// branchChild is of length 1 when there is no child at this position in the branch
 			// (`branchChild = [128]` in this case), but it is also of length 1 when `c_rlp` is a leaf.
 			if len(branchChild) == 1 && (branchChild[0] == 128 || branchChild[0] == 0) {
@@ -839,54 +841,58 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 	// to them - which is needed in MPT proof, because we need a proof for each modification (after
 	// the first modification, some nodes are hashed and we cannot add children to the hashed node).
 
-	if !isHashed {
-		lNodes := len(nodes)
-		for i := lNodes - 1; i >= 0; i-- {
-			node := nodes[i]
-			if node.nodeType == leafNode {
-				rlp, error := db.Get(node.val)
-				if error != nil { // TODO: avoid error when RLP
-					proof = append(proof, node.val) // already have RLP
-				} else {
-					proof = append(proof, rlp)
-				}
-				nibbles = append(nibbles, nil)
-			} else if node.nodeType == branchNode || node.nodeType == extNode {
-				node.hash(false)
-
-				raw_rlp, error := db.Get(node.val)
-				if error != nil {
-					return nil, nil, error
-				}
-				proof = append(proof, raw_rlp)
-				if node.nodeType == extNode {
-
-					rlp_flag := uint(raw_rlp[0])
-					if rlp_flag < 192 || rlp_flag >= 248 {
-						panic("should not happen!")
-					}
-
-					// 192 ~ 247 is a short list
-					// if it's an ext node, it contains 1.)nibbles and 2.) 32bytes hashed value
-					// 2.) 32 bytes long data plus rlp flag, it becomes 33 bytes long data
-					// 192 + 33 = 225, and the left bytes are for nibbles.
-					numNibbles := raw_rlp[0] - 225
-					var nibble = make([]byte, numNibbles)
-					for i := 0; i < int(numNibbles); i++ {
-						nibble[i] = raw_rlp[i+1] - 16
-					}
-					fmt.Println(" Ext nibble:", numNibbles, nibble, raw_rlp)
-					nibbles = append(nibbles, nibble)
-				} else {
-					nibbles = append(nibbles, nil)
-				}
+	// if !isHashed {
+	lNodes := len(nodes)
+	for i := lNodes - 1; i >= 0; i-- {
+		node := nodes[i]
+		if node.nodeType == leafNode {
+			rlp, error := db.Get(node.val)
+			if error != nil { // TODO: avoid error when RLP
+				proof = append(proof, node.val) // already have RLP
+			} else {
+				proof = append(proof, rlp)
 			}
+			nibbles = append(nibbles, nil)
+		} else if node.nodeType == branchNode || node.nodeType == extNode {
+			node.hash(false)
 
+			raw_rlp, error := db.Get(node.val)
+			if error != nil {
+				return nil, nil, error
+			}
+			proof = append(proof, raw_rlp)
+			if node.nodeType == extNode {
+
+				rlp_flag := uint(raw_rlp[0])
+				if rlp_flag < 192 || rlp_flag >= 248 {
+					panic("should not happen!")
+				}
+
+				// 192 ~ 247 is a short list
+				// if it's an ext node, it contains 1.)nibbles and 2.) 32bytes hashed value
+				// 2.) 32 bytes long data plus rlp flag, it becomes 33 bytes long data
+				// 192 + 33 = 225, and the left bytes are for nibbles.
+				numNibbles := raw_rlp[0] - 225
+				var nibble = make([]byte, numNibbles)
+				for i := 0; i < int(numNibbles); i++ {
+					nibble[i] = raw_rlp[i+1] - 16
+				}
+				// fmt.Println(" Ext nibble:", numNibbles, nibble, raw_rlp)
+				nibbles = append(nibbles, nibble)
+			} else {
+				nibbles = append(nibbles, nil)
+			}
 		}
-		// The proof is now reversed (only for non-hashed),
-		// let's reverse it back to have the leaf at the bottom:
-		slices.Reverse(proof)
+
 	}
+	// if isHashed {
+	// 	proof = append(proof, hashedNodeProof)
+
+	// }
+	// The proof is now reversed (only for non-hashed),
+	// let's reverse it back to have the leaf at the bottom:
+	slices.Reverse(proof)
+	// }
 
 	return proof, nibbles, nil
 }

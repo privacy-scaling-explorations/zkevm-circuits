@@ -339,23 +339,19 @@ func prepareWitnessSpecial(testName string, trieModifications []TrieModification
 
 // For stack trie, we have the following combinations ([proofS] -> [proofC])
 //
-//	-[x] [(empty)] -> [LEAF]
-//	-[] [LEAF] -> [EXT - BRANCH - LEAF]
-//	-[x] [EXT - BRANCH] -> [EXT - BRANCH - LEAF]
-//	-[] [EXT - BRANCH] -> [BRANCH - LEAF] (modified extension)
-//	-[] [EXT] -> [BRANCH - BRANCH - BRANCH - LEAF] --> 144
-//	-[] [BRANCH - LEAF] -> [BRANCH - BRANCH - LEAF] (modified extension)
-//	-[x] [BRANCH - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - (...BRANCH) - LEAF]
-//	-[] [BRANCH - BRANCH - LEAF] -> [BRANCH - BRANCH - LEAF - BRANCH - LEAF]
-//	-[x] [LEAF] -> [LEAF]  --> 510
-//	-[] [EXT] -> [EXT]
-//	-[] [EXT - EXT] -> [EXT - EXT]
-//	-[] [EXT - LEAF] -> [LEAF]
-//	-[] [BRANCH - LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF]
-//	-[] [BRANCH - BRANCH - EXT] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF] --> 512
-//	-[x] [BRANCH - BRANCH - EXT - BRANCH - (LEAF)] -> [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH - LEAF]
-//	-[] [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH) - LEAF]
-//	-[] [LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - BRANCH - LEAF]
+//	-[x] [(empty)] -> [LEAF] --> 1
+//	-[] [LEAF] -> [EXT - BRANCH - LEAF] --> 2
+//	-[x] [EXT - BRANCH] -> [EXT - BRANCH - LEAF]  --> < 16
+//	-[] [EXT - BRANCH] -> [BRANCH - LEAF] (modified extension) --> 0 under 128 txs
+//	-[] [BRANCH - HASHED] -> [BRANCH - BRANCH - LEAF] --> 97
+//	-[] [BRANCH - BRANCH - EXT] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF] --> 129
+//	-[] [BRANCH - BRANCH - EXT - BRANCH] -> [BRANCH - BRANCH - BRANCH - LEAF] --> 144
+//	-[x] [BRANCH - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - (...BRANCH) - LEAF] --> 146 ~ 176
+//	-[] [BRANCH - BRANCH - EXT - BRANCH - HASHED] -> [BRANCH - BRANCH - EXT - BRANCH - HASHED - HASHED] --> 258
+//	-[] [BRANCH - BRANCH - EXT - BRANCH - HASHED - HASHED] -> [BRANCH - BRANCH - EXT - BRANCH - HASHED - HASHED] --> 259
+//	-[] [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF] --> 512
+//	-[x] [BRANCH - BRANCH - EXT - BRANCH - (LEAF)] -> [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH - LEAF] --> 1024 ~ 1040
+//	-[] [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - EXT - BRANCH - (...BRANCH) - LEAF] --> 521~
 func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []Node {
 	k := trie.KeybytesToHex(key)
 	k = k[:len(k)-1]
