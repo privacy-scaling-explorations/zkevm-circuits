@@ -4,7 +4,7 @@ use super::{
 use crate::{
     evm_circuit::util::{math_gadget::generate_lagrange_base_polynomial, not},
     table::{AccountFieldTag, MPTProofType},
-    util::{word, Expr},
+    util::{word::{self, WordExpr}, Expr},
 };
 use bus_mapping::operation::Target;
 use eth_types::Field;
@@ -205,13 +205,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 "non-first access reads don't change value (lo)",
                 q.is_read() * (q.rw_table.value.lo() - q.rw_table.value_prev.lo()),
             );
-            cb.require_zero(
-                "initial value doesn't change in an access group (hi)",
-                q.initial_value.hi() - q.initial_value_prev().hi(),
-            );
-            cb.require_zero(
-                "initial value doesn't change in an access group (lo)",
-                q.initial_value.lo() - q.initial_value_prev().lo(),
+            cb.require_word_equal(
+                "initial value doesn't change in an access group",
+                q.initial_value.to_word(),
+                q.initial_value_prev(),
             );
         });
     }
