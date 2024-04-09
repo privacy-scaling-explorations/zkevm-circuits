@@ -220,7 +220,7 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 		if meter != nil {
 			*meter += time.Since(readStart)
 		}
-		}()
+	}()
 
 	if s.db.snap != nil {
 		meter = &s.db.SnapshotStorageReads
