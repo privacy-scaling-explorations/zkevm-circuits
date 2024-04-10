@@ -16,9 +16,7 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget,
-            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData,
-            ParentDataWitness, KECCAK,
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness, WrongExtNodeGadget, KECCAK
         },
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
@@ -49,6 +47,7 @@ pub(crate) struct StorageLeafConfig<F> {
     is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong_leaf: WrongLeafGadget<F>,
+    wrong_ext_node: WrongExtNodeGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
     is_non_existing_storage_proof: IsEqualGadget<F>,
     is_mod_extension: [Cell<F>; 2],
@@ -131,6 +130,8 @@ impl<F: Field> StorageLeafConfig<F> {
                 MPTProofType::StorageDoesNotExist.expr(),
             );
 
+            let is_wrong_ext_case = parent_data[1].is_last_level_and_wrong_ext_case.expr();
+
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
                     // Placeholder leaf checks
@@ -190,7 +191,9 @@ impl<F: Field> StorageLeafConfig<F> {
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
                     let num_nibbles =
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
-                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+                    ifx! {not!(is_wrong_ext_case) => {
+                        require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+                    }}
 
                     // Placeholder leaves default to value `0`.
                     ifx! {is_placeholder_leaf => {
@@ -199,14 +202,16 @@ impl<F: Field> StorageLeafConfig<F> {
 
                     // Make sure the RLP encoding is correct.
                     // storage = [key, "value"]
-                    require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
+                    ifx! {not!(is_wrong_ext_case) => {
+                        require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
+                    }}
 
                     // Check if the leaf is in its parent.
                     // Check is skipped for placeholder leaves which are dummy leaves.
                     // Note that the constraint works for the case when there is the placeholder branch above
                     // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
                     // branch.
-                    ifx! {not!(is_placeholder_leaf) => {
+                    ifx! {not!(or::expr(&[config.is_placeholder_leaf[is_s.idx()].expr(), is_wrong_ext_case.clone()])) => {
                         config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                         ifx!{or::expr(&[parent_data[is_s.idx()].is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                             // Hashed leaf in parent branch
@@ -236,7 +241,9 @@ impl<F: Field> StorageLeafConfig<F> {
                                 // Note that this does not hold when there is NonExistingStorageProof wrong leaf scenario,
                                 // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
                                 // so the check below is not triggered.
-                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                                ifx! {not!(is_wrong_ext_case) => {
+                                    require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                                }}
                             }}
 
                         }}
@@ -287,18 +294,57 @@ impl<F: Field> StorageLeafConfig<F> {
                 &cb.key_r.expr(),
             );
 
-            // Wrong leaf / extension node handling
+            let is_wrong_leaf_case = and::expr(&[config.is_non_existing_storage_proof.expr(), not!(config.parent_data[1].is_extension), not!(config.is_placeholder_leaf[1].expr())]);
+
+            // When non-existing-proof, it needs to be one of the following cases:
+            // (1) wrong leaf, (2) wrong extension node, (3) nil leaf - we need to check the sum of these
+            // three cases is 1.
+            ifx! {config.is_non_existing_storage_proof => {
+                require!(is_wrong_ext_case.clone() + is_wrong_leaf_case.clone() + config.is_placeholder_leaf[1].expr() => 1.expr());
+            }}
+
+            // When is_last_level_and_wrong_ext_case, the proof type needs to be non-existing
+            ifx! {is_wrong_ext_case => {
+                require!(config.is_non_existing_storage_proof.expr() => 1.expr());
+            }}
+
+            // Wrong leaf handling
             config.wrong_leaf = WrongLeafGadget::construct(
                 cb,
                 key_item.hash_rlc(),
-                config.is_non_existing_storage_proof.expr(),
-                &config.rlp_key[true.idx()].key_value,
-                &key_rlc[true.idx()],
+                is_wrong_leaf_case,
+                &config.rlp_key[1].key_value, // C proof is used for non-existing proof
+                &key_rlc[1],
                 &expected_item,
-                config.is_placeholder_leaf[true.idx()].expr(),
-                config.parent_data[true.idx()].is_extension.expr(),
-                config.key_data[true.idx()].clone(),
+                config.key_data[1].clone(),
                 &cb.key_r.expr(),
+            );
+
+            // Wrong extension node handling
+            let wrong_ext_middle =
+                ctx.rlp_item(meta, cb, StorageRowType::LongExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_middle_nibbles =
+                ctx.rlp_item(meta, cb, StorageRowType::LongExtNodeNibbles as usize, RlpItemType::Nibbles);
+            let wrong_ext_after =
+                ctx.rlp_item(meta, cb, StorageRowType::ShortExtNodeKey as usize, RlpItemType::Key);
+            let wrong_ext_after_nibbles =
+                ctx.rlp_item(meta, cb, StorageRowType::ShortExtNodeNibbles as usize, RlpItemType::Nibbles);
+
+            // The extension_branch in the last level needs has `is_last_level_and_wrong_ext_case = true`
+            // in the case of wrong extension node.
+            // All other extension_branches (above it) need to have it `false` (constraint in
+            // extension_branch.rs)
+
+            config.wrong_ext_node = WrongExtNodeGadget::construct(
+                cb,
+                key_item.hash_rlc(),
+                is_wrong_ext_case,
+                &wrong_ext_middle,
+                &wrong_ext_middle_nibbles,
+                &wrong_ext_after,
+                &wrong_ext_after_nibbles,
+                config.key_data[1].clone(), // C proof should be used everywhere for non-existing proof
+                config.key_data_prev.clone(),
             );
 
             // Reset the main memory
@@ -573,9 +619,20 @@ impl<F: Field> StorageLeafConfig<F> {
             &storage.wrong_rlp_bytes,
             &expected_item,
             false,
-            key_data[true.idx()].clone(),
+            key_data[1].clone(),
             region.key_r,
         )?;
+
+        let wrong_ext_middle = rlp_values[StorageRowType::LongExtNodeKey as usize].clone();
+        let wrong_ext_middle_nibbles = rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone();
+        self.wrong_ext_node.assign(
+            region,
+            offset,
+            wrong_ext_middle,
+            wrong_ext_middle_nibbles,
+            key_data[1].clone(),
+            key_data_prev.clone(),
+        );
 
         // Reset the main memory
         MainData::witness_store(

@@ -533,29 +533,23 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					key[keyIndex], key[keyIndex], false, false, isExtension, true)
 				nodes = append(nodes, bNode)
 
-				// Let's construct the leaf L1 that will have the correct key (the queried one)
 				if isAccountProof {
 					dummyLeaf := []byte{248,108,157,52,45,53,199,120,18,165,14,109,22,4,141,198,233,128,219,44,247,218,241,231,2,206,125,246,58,246,15,3,184,76,248,74,4,134,85,156,208,108,8,0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,112}
 					node := prepareAccountLeafNode(addr, addrh, dummyLeaf, dummyLeaf, dummyLeaf, nil, addr_nibbles, false, false, false)
-
 					node = equipLeafWithWrongExtension(node, keyMiddle, keyAfter, nibblesMiddle, nibblesAfter)
-
 					nodes = append(nodes, node)
 				} else {
-
 					// The remaining `key` nibbles are to be stored in the constructed leaf - in our example [1 2 4 ...]
 					compact := trie.HexToCompact(key[start:])
 					// Add RLP:
 					compactLen := byte(len(compact))
 					rlp2 := 128 + compactLen
 					rlp1 := 192 + compactLen + 1
-					// Constructed leaf L1:
 					dummyLeaf := append([]byte{rlp1, rlp2}, compact...)
-
 					// Add dummy value:
 					dummyLeaf = append(dummyLeaf, 0)
-
 					node := prepareStorageLeafNode(dummyLeaf, dummyLeaf, dummyLeaf, nil, storage_key, key, nonExistingStorageProof, false, false, false, false)
+					node = equipLeafWithWrongExtension(node, keyMiddle, keyAfter, nibblesMiddle, nibblesAfter)
 					nodes = append(nodes, node)
 				}
 			}

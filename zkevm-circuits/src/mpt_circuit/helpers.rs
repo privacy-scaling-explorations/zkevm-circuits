@@ -1241,18 +1241,16 @@ impl<F: Field> WrongLeafGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         expected_key: Expression<F>,
-        is_non_existing: Expression<F>,
+        is_wrong_leaf_case: Expression<F>,
         key_value: &RLPItemView<F>,
         key_rlc: &Expression<F>,
         expected_item: &RLPItemView<F>,
-        is_placeholder: Expression<F>,
-        is_parent_extension: Expression<F>,
         key_data: KeyData<F>,
         r: &Expression<F>,
     ) -> Self {
         let mut config = WrongLeafGadget::default();
         circuit!([meta, cb.base], {
-            ifx! {and::expr(&[is_non_existing, not!(is_placeholder), not!(is_parent_extension)]) => { 
+            ifx! {is_wrong_leaf_case => { 
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
 
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
@@ -1341,7 +1339,7 @@ impl<F: Field> WrongExtNodeGadget<F> {
         circuit!([meta, cb.base], {
             ifx! {is_wrong_ext_case => { 
                 // We have a key split into three parts,
-                // meaning that there the first part parity doesn't
+                // meaning that the first part parity doesn't
                 // tell us about the parity of the second part (depends on the third part as well).
 
                 let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];

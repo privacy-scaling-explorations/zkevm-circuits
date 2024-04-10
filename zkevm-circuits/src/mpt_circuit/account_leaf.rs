@@ -287,7 +287,6 @@ impl<F: Field> AccountLeafConfig<F> {
                     // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
                     // branch.
                     ifx! {not!(or::expr(&[config.is_placeholder_leaf[is_s.idx()].expr(), is_wrong_ext_case.clone()])) => {
-                    // ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
                         let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                     } elsex {
@@ -374,18 +373,30 @@ impl<F: Field> AccountLeafConfig<F> {
                 &config.is_mod_extension,
                 &cb.key_r.expr(),
             );
+ 
+            let is_wrong_leaf_case = and::expr(&[config.is_non_existing_account_proof.expr(), not!(config.parent_data[1].is_extension), not!(config.is_placeholder_leaf[1].expr())]);
+
+            // When non-existing-proof, it needs to be one of the following cases:
+            // (1) wrong leaf, (2) wrong extension node, (3) nil leaf - we need to check the sum of these
+            // three cases is 1.
+            ifx! {config.is_non_existing_account_proof => {
+                require!(is_wrong_ext_case.clone() + is_wrong_leaf_case.clone() + config.is_placeholder_leaf[1].expr() => 1.expr());
+            }}
+
+            // When is_last_level_and_wrong_ext_case, the proof type needs to be non-existing
+            ifx! {is_wrong_ext_case => {
+                require!(config.is_non_existing_account_proof.expr() => 1.expr());
+            }}
 
             // Wrong leaf handling
             config.wrong_leaf = WrongLeafGadget::construct(
                 cb,
                 key_item.hash_rlc(),
-                config.is_non_existing_account_proof.expr(),
-                &config.rlp_key[true.idx()].key_value,
-                &key_rlc[true.idx()],
+                is_wrong_leaf_case,
+                &config.rlp_key[1].key_value, // C proof is used for non-existing proof
+                &key_rlc[1],
                 &wrong_bytes,
-                config.is_placeholder_leaf[true.idx()].expr(),
-                config.parent_data[true.idx()].is_extension.expr(),
-                config.key_data[true.idx()].clone(),
+                config.key_data[1].clone(),
                 &cb.key_r.expr(),
             );
 
@@ -403,20 +414,6 @@ impl<F: Field> AccountLeafConfig<F> {
             // in the case of wrong extension node.
             // All other extension_branches (above it) need to have it `false` (constraint in
             // extension_branch.rs)
-            // TODO: Use is_last_level_and_wrong_ext_case as a flag for one of the three cases
-            // require!(config.parent_data[1].is_last_level_and_wrong_ext_case.expr() => true.expr());
-            // TODO: use C proof everywhere for non-existing proof.
-            
-            // TODO: when non-existing-proof, it needs to be one of the following cases:
-            // wrong leaf, wrong extension node, nil leaf - we need to check the sum of these
-            // three cases is 1.
-            // To check whether it's the wrong leaf case - parent is not extension, leaf is not placeholder
-            // To check whether it's wrong extension node - is_last_level_and_wrong_ext_case = 1, parent is extension
-            // To check whether it's the nil leaf - use IsPlaceholderLeafGadget
-
-            // TODO: when is_last_level_and_wrong_ext_case, the proof type needs to be non-existing
-            // config.is_non_existing_account_proof.expr(),
-            // config.parent_data[true.idx()].is_extension.expr(),
 
             config.wrong_ext_node = WrongExtNodeGadget::construct(
                 cb,
@@ -426,7 +423,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 &wrong_ext_middle_nibbles,
                 &wrong_ext_after,
                 &wrong_ext_after_nibbles,
-                config.key_data[true.idx()].clone(),
+                config.key_data[1].clone(), // C proof is used for non-existing proof
                 config.key_data_prev.clone(),
             ); 
             
@@ -766,7 +763,7 @@ impl<F: Field> AccountLeafConfig<F> {
             &account.wrong_rlp_bytes,
             &expected_item,
             true,
-            key_data[true.idx()].clone(),
+            key_data[1].clone(),
             region.key_r,
         )?; 
 
@@ -777,7 +774,7 @@ impl<F: Field> AccountLeafConfig<F> {
             offset,
             wrong_ext_middle,
             wrong_ext_middle_nibbles,
-            key_data[true.idx()].clone(),
+            key_data[1].clone(),
             key_data_prev.clone(),
         );
 
