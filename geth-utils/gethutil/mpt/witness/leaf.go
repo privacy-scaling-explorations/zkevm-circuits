@@ -163,7 +163,7 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 	driftedRlpBytes := []byte{0}
 	keyDrifted := make([]byte, valueLen)
 	if neighbourNode != nil {
-		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighbourNode, false, false, false)
+		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighbourNode, false, false)
 	}
 
 	wrongValue := make([]byte, valueLen)
@@ -349,12 +349,12 @@ func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, pr
 func prepareTxLeafNode(idx uint, leafS, leafC, key, neighborNode []byte, isSPlaceholder, isSModExtension, isCModExtension bool) Node {
 	var rows [][]byte
 
-	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareStorageLeafInfo(leafS, false, isSPlaceholder, true)
+	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareTxLeafInfo(leafS, false, isSPlaceholder)
 
 	rows = append(rows, keyS)
 	rows = append(rows, valueS)
 
-	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareStorageLeafInfo(leafC, false, false, true)
+	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareTxLeafInfo(leafC, false, false)
 
 	rows = append(rows, keyC)
 	rows = append(rows, valueC)
@@ -370,7 +370,7 @@ func prepareTxLeafNode(idx uint, leafS, leafC, key, neighborNode []byte, isSPlac
 	driftedRlpBytes := []byte{0}
 	keyDrifted := make([]byte, valueLen)
 	if neighborNode != nil {
-		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighborNode, false, false, true)
+		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighborNode, false, false)
 	}
 	rows = append(rows, keyDrifted)
 
@@ -484,96 +484,115 @@ func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyI
 	return prepareStorageLeafNode(leaf, leaf, nil, storage_key, key, false, true, true, false, false)
 }
 
-func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder, isTxLeaf bool) ([]byte, []byte, []byte, []byte) {
+func setKeyValue(row, keyRlp []byte, keyLen, offset byte, valueIsZero, isPlaceholder bool) ([]byte, []byte) {
+	var valueRlp []byte
+	value := make([]byte, valueLen)
+
+	if !isPlaceholder {
+		valueRlp = row[keyLen+offset : keyLen+offset+1]
+		if !valueIsZero {
+			copy(value, row[keyLen+offset+1:])
+		}
+	} else {
+		// If placeholder, we leave the value to be 0.
+		valueRlp = []byte{0}
+		// We need to take into account that the value is 0, so of length 1.
+		// keyRlp holds the RLP of the whole leaf:
+		// - (keyLen + 1) is the number of key bytes
+		// - 1 is the number of value bytes
+		if row[0] == 248 {
+			// keyRlp have two bytes, we need to have only one (when value is 0, it's always short)
+			keyRlp = []byte{192 + keyLen + 2}
+		} else {
+			keyRlp[0] = 192 + keyLen + 2
+		}
+	}
+
+	return keyRlp, valueRlp
+}
+
+func prepareTxLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
 	var keyRlp []byte
 	var valueRlp []byte
 	var keyRlpLen byte
 	key := make([]byte, valueLen)
 	value := make([]byte, valueLen)
 
-	var setKeyValue = func(keyLen, offset byte) {
-		if !isPlaceholder {
-			valueRlp = row[keyLen+offset : keyLen+offset+1]
-			if !valueIsZero {
-				copy(value, row[keyLen+offset+1:])
-			}
-		} else {
-			// If placeholder, we leave the value to be 0.
-			valueRlp = []byte{0}
-			// We need to take into account that the value is 0, so of length 1.
-			// keyRlp holds the RLP of the whole leaf:
-			// - (keyLen + 1) is the number of key bytes
-			// - 1 is the number of value bytes
-			if row[0] == 248 {
-				// keyRlp have two bytes, we need to have only one (when value is 0, it's always short)
-				keyRlp = []byte{192 + keyLen + 2}
-			} else {
-				keyRlp[0] = 192 + keyLen + 2
-			}
-		}
-	}
+	keyLen := byte(0)
+	offset := byte(1)
+	keyRlpLen = 1
+	keyRlp = make([]uint8, keyRlpLen)
+	copy(keyRlp, row[:keyRlpLen])
+	// [248 200 129 128 131 4 147 224 98 148 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 130 5 9 184 100 0 0 0 3 3 3 3 3 0 0 0 0 0 0 0 0 0 0 0 0 0 ...]
+	key[0] = row[0]
+	key[1] = row[1]
+	keyLen = byte(2)
+	offset = byte(0)
+
+	keyRlp, valueRlp = setKeyValue(row, keyRlp, keyLen, offset, valueIsZero, isPlaceholder)
+
+	return key, value, keyRlp, valueRlp
+}
+
+func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
+	var keyRlp []byte
+	var valueRlp []byte
+	var keyRlpLen byte
+	key := make([]byte, valueLen)
+	value := make([]byte, valueLen)
 
 	keyLen := byte(0)
 	offset := byte(1)
-	if isTxLeaf {
+
+	if len(row) < 32 { // the node doesn't get hashed in this case
 		keyRlpLen = 1
 		keyRlp = make([]uint8, keyRlpLen)
 		copy(keyRlp, row[:keyRlpLen])
-		// [248 200 129 128 131 4 147 224 98 148 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 130 5 9 184 100 0 0 0 3 3 3 3 3 0 0 0 0 0 0 0 0 0 0 0 0 0 ...]
-		key[0] = row[0]
-		key[1] = row[1]
-		keyLen = byte(2)
-		offset = byte(0)
-	} else {
-		if len(row) < 32 { // the node doesn't get hashed in this case
-			keyRlpLen = 1
-			keyRlp = make([]uint8, keyRlpLen)
-			copy(keyRlp, row[:keyRlpLen])
 
-			// 192 + 32 = 224
-			if row[1] < 128 {
-				// last level: [194,32,1]
-				// or
-				// only one nibble in a leaf (as soon as the leaf has two nibbles, row[1] will have 128 + length)
-				// [194,48,1] - this one contains nibble 0 = 48 - 48
-				keyLen = byte(1)
-				copy(key, row[keyRlpLen:keyLen+1])
-				offset = byte(1)
-			} else {
-				// [196,130,32,0,1]
-				keyLen = row[1] - 128
-				copy(key, row[keyRlpLen:keyLen+2])
-				offset = byte(2)
-			}
-		} else if row[0] == 248 {
-			// [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
-			keyRlpLen = 2
-			keyLen = row[2] - 128
-			keyRlp = row[:keyRlpLen]
-			copy(key, row[keyRlpLen:keyLen+3])
-			offset = byte(3)
+		// 192 + 32 = 224
+		if row[1] < 128 {
+			// last level: [194,32,1]
+			// or
+			// only one nibble in a leaf (as soon as the leaf has two nibbles, row[1] will have 128 + length)
+			// [194,48,1] - this one contains nibble 0 = 48 - 48
+			keyLen = byte(1)
+			copy(key, row[keyRlpLen:keyLen+1])
+			offset = byte(1)
 		} else {
-			keyRlpLen = 1
-			keyRlp = make([]uint8, keyRlpLen)
-			copy(keyRlp, row[:keyRlpLen])
-			if row[1] < 128 {
-				// last level:
-				// [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-				// one nibble:
-				// [227,48,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-				key[0] = row[0]
-				key[1] = row[1]
-				keyLen = byte(2)
-				offset = byte(0)
-			} else {
-				// [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-				keyLen = row[1] - 128
-				copy(key, row[keyRlpLen:keyLen+2])
-				offset = byte(2)
-			}
+			// [196,130,32,0,1]
+			keyLen = row[1] - 128
+			copy(key, row[keyRlpLen:keyLen+2])
+			offset = byte(2)
+		}
+	} else if row[0] == 248 {
+		// [248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...
+		keyRlpLen = 2
+		keyLen = row[2] - 128
+		keyRlp = row[:keyRlpLen]
+		copy(key, row[keyRlpLen:keyLen+3])
+		offset = byte(3)
+	} else {
+		keyRlpLen = 1
+		keyRlp = make([]uint8, keyRlpLen)
+		copy(keyRlp, row[:keyRlpLen])
+		if row[1] < 128 {
+			// last level:
+			// [227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+			// one nibble:
+			// [227,48,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+			key[0] = row[0]
+			key[1] = row[1]
+			keyLen = byte(2)
+			offset = byte(0)
+		} else {
+			// [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
+			keyLen = row[1] - 128
+			copy(key, row[keyRlpLen:keyLen+2])
+			offset = byte(2)
 		}
 	}
-	setKeyValue(keyLen, offset)
+
+	keyRlp, valueRlp = setKeyValue(row, keyRlp, keyLen, offset, valueIsZero, isPlaceholder)
 
 	return key, value, keyRlp, valueRlp
 }
@@ -581,12 +600,12 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder, isTxLeaf boo
 func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key common.Hash, key []byte, nonExistingStorageProof, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension bool) Node {
 	var rows [][]byte
 
-	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareStorageLeafInfo(leafS, false, isSPlaceholder, false)
+	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareStorageLeafInfo(leafS, false, isSPlaceholder)
 
 	rows = append(rows, keyS)
 	rows = append(rows, valueS)
 
-	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareStorageLeafInfo(leafC, false, isCPlaceholder, false)
+	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareStorageLeafInfo(leafC, false, isCPlaceholder)
 
 	fmt.Println("-", key)
 	fmt.Println("-", keyS, leafS)
@@ -606,7 +625,7 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	driftedRlpBytes := []byte{0}
 	keyDrifted := make([]byte, valueLen)
 	if neighbourNode != nil {
-		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighbourNode, false, false, false)
+		keyDrifted, _, driftedRlpBytes, _ = prepareStorageLeafInfo(neighbourNode, false, false)
 	}
 	rows = append(rows, keyDrifted)
 
