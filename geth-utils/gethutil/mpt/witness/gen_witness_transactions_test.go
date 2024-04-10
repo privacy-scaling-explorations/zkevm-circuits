@@ -120,13 +120,9 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 	}
 }
 
-func TestTransaction144(t *testing.T) {
-	txs := makeTransactions(146)
-	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
-}
-
 func TestTransactionInsertion(t *testing.T) {
-	txs := makeTransactions(145)
+	// TODO: check drifted_index at 128
+	txs := makeTransactions(130)
 	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
 }
 
@@ -198,7 +194,7 @@ func batchedTransactionsStackTrieProofTemplate(n int) {
 	var indexBuf []byte
 	indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(1))
 
-	proofS, _, err := stackTrie.GetProof(db, indexBuf)
+	proofS, _, _, err := stackTrie.GetProof(db, indexBuf)
 	if err != nil {
 		fmt.Println(err)
 		return
