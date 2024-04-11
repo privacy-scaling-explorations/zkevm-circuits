@@ -383,20 +383,16 @@ func prepareWitnessSpecial(testName string, trieModifications []TrieModification
 //	-[o] [(empty)] -> [LEAF] --> 1
 //	-[o] [LEAF] -> [EXT - BRANCH - LEAF] --> 2
 //	-[o] [EXT - BRANCH] -> [EXT - BRANCH - LEAF]  --> "< 16"
-//	-[M] [EXT - BRANCH] -> [BRANCH - LEAF]  --> 16 (modified ext.)
+//	-[M] [EXT - BRANCH] -> [BRANCH - LEAF]  --> 0 under 16 txs or 16 (modified ext.)
 //	-[o] [BRANCH - BRANCH] -> [BRANCH - BRANCH - LEAF]  --> "< 127"
 //	-[o] [BRANCH - LEAF] -> [BRANCH - BRANCH - LEAF]  --> 129
 //	-[o] [BRANCH] -> [BRANCH - LEAF]  --> 0
-//	-[M] [EXT - BRANCH] -> [BRANCH - LEAF] (modified extension) --> 0 under 16 txs
 //	-[o] [BRANCH - BRANCH - LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF] --> 129
 //	-[o] [BRANCH - BRANCH - EXT - BRANCH] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF] --> 130
-//	-[H] [BRANCH - BRANCH - EXT - BRANCH - HASHED] -> [BRANCH - BRANCH - BRANCH - LEAF] --> 144 (hashed node)
+//	-[H] [BRANCH - BRANCH - EXT - BRANCH - HASHED] -> [BRANCH - BRANCH - BRANCH - LEAF] --> 144, 512 (hashed node)
 //	-[o] [BRANCH - BRANCH - (...BRANCH)] -> [BRANCH - BRANCH - (...BRANCH) - LEAF] --> 146 ~ 176
-//
-//	-[] [BRANCH - BRANCH - EXT - BRANCH - LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - BRANCH - HASHED] --> 258
-//	-[] [BRANCH - BRANCH - EXT - BRANCH - BRANCH - HASHED] -> [BRANCH - BRANCH - EXT - BRANCH - BRANCH - HASHED] --> 259~
-//	-[] [BRANCH - BRANCH - EXT - BRANCH - BRANCH - BRANCH - HASHED] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF] --> 512
-//	-[] [[BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH] -> [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH - LEAF] --> 514~
+//	-[o] [BRANCH - BRANCH - EXT - (BRANCH..)] -> [BRANCH - BRANCH - EXT - (BRANCH..) - LEAF] --> 258~
+//	-[o] [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH] -> [BRANCH - BRANCH - EXT - BRANCH - EXT - BRANCH - LEAF] --> 514~
 func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []Node {
 	k := trie.KeybytesToHex(key)
 	k = k[:len(k)-1]

@@ -806,6 +806,8 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 		// fmt.Print(" ", k[i], "/", c.nodeType, " | ")
 		proofType = append(proofType, c.nodeType)
 		if c.nodeType == extNode {
+			fmt.Print(c.key, " ")
+			i += len(c.key) - 1
 			nodes = append(nodes, c)
 			c = c.children[0]
 		} else if c.nodeType == branchNode {
@@ -833,6 +835,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				nibbles = append(nibbles, nibble)
 			}
 
+			fmt.Print(" hashed node key:", c.key, " ")
 			// fmt.Println(" c_rlp:", c_rlp)
 			proof = append(proof, c_rlp)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
@@ -844,7 +847,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 			}
 			c.val = branchChild
 			// if there are children, the node type should be branch
-			proofType[i] = branchNode
+			proofType[len(proofType)-1] = branchNode
 		}
 	}
 
@@ -888,8 +891,8 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				for i := 0; i < int(numNibbles); i++ {
 					nibble[i] = raw_rlp[i+1] - 16
 				}
-				// fmt.Println(" Ext nibble:", numNibbles, nibble)
-				nibbles = append(nibbles, nibble)
+				// fmt.Println(" Ext nibble:", numNibbles, node.key)
+				nibbles = append(nibbles, node.key)
 			} else {
 				nibbles = append(nibbles, []byte{})
 			}
