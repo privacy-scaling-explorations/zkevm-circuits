@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, Chunk, ExecStep, Transaction},
@@ -25,7 +23,6 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct TloadGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
-    reversion_info: ReversionInfo<F>, // TODO maybe TLOAD doesn't need this
     callee_address: WordLoHiCell<F>,
     key: WordLoHiCell<F>,
     value: WordLoHiCell<F>,
@@ -40,7 +37,6 @@ impl<F: Field> ExecutionGadget<F> for TloadGadget<F> {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-        let reversion_info = cb.reversion_info_read(None);
         let callee_address = cb.call_context_read_as_word(None, CallContextFieldTag::CalleeAddress);
 
         let key = cb.query_word_unchecked();
@@ -58,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for TloadGadget<F> {
         cb.stack_push(value.to_word());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(5.expr()),
             program_counter: Delta(1.expr()),
             reversible_write_counter: Delta(0.expr()),
             gas_left: Delta(-OpcodeId::TLOAD.constant_gas_cost().expr()),
@@ -69,7 +65,6 @@ impl<F: Field> ExecutionGadget<F> for TloadGadget<F> {
         Self {
             same_context,
             tx_id,
-            reversion_info,
             callee_address,
             key,
             value,
@@ -90,18 +85,12 @@ impl<F: Field> ExecutionGadget<F> for TloadGadget<F> {
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id)))?;
-        self.reversion_info.assign(
-            region,
-            offset,
-            call.rw_counter_end_of_reversion,
-            call.is_persistent,
-        )?;
         self.callee_address
             .assign_h160(region, offset, call.address)?;
 
         let mut rws = StepRws::new(block, step);
 
-        rws.offset_add(4);
+        rws.offset_add(2);
 
         let key = rws.next().stack_value();
         rws.next(); // TLOAD rw

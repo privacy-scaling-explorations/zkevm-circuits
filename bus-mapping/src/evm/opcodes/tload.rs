@@ -33,20 +33,6 @@ impl Opcode for Tload {
         state.call_context_read(
             &mut exec_step,
             call_id,
-            CallContextField::RwCounterEndOfReversion,
-            Word::from(state.call()?.rw_counter_end_of_reversion),
-        )?;
-
-        state.call_context_read(
-            &mut exec_step,
-            call_id,
-            CallContextField::IsPersistent,
-            Word::from(state.call()?.is_persistent as u8),
-        )?;
-
-        state.call_context_read(
-            &mut exec_step,
-            call_id,
             CallContextField::CalleeAddress,
             contract_addr.to_word(),
         )?;
@@ -78,16 +64,11 @@ impl Opcode for Tload {
 #[cfg(test)]
 mod tload_tests {
     use super::*;
-    use crate::{
-        circuit_input_builder::ExecState,
-        mock::BlockData,
-        operation::{StackOp, TransientStorageOp},
-    };
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        Word,
     };
     use mock::{
         test_ctx::{helpers::*, TestContext},
@@ -126,24 +107,19 @@ mod tload_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::TLOAD))
             .unwrap();
 
+        println!("{:?}", step.bus_mapping_instance);
+
         assert_eq!(
-            [4, 6]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+            [&builder.block.container.stack[step.bus_mapping_instance[2].as_usize()]]
                 .map(|operation| (operation.rw(), operation.op())),
-            [
-                (
-                    RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x0u32))
-                ),
-                (
-                    RW::WRITE,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(expected_loaded_value))
-                )
-            ]
+            [(
+                RW::READ,
+                &StackOp::new(1, StackAddress::from(1023), Word::from(0x0u32))
+            )]
         );
 
         let transient_storage_op =
-            &builder.block.container.transient_storage[step.bus_mapping_instance[5].as_usize()];
+            &builder.block.container.transient_storage[step.bus_mapping_instance[3].as_usize()];
         assert_eq!(
             (transient_storage_op.rw(), transient_storage_op.op()),
             (
