@@ -443,7 +443,7 @@ impl fmt::Debug for TransientStorageOp {
 }
 
 impl TransientStorageOp {
-    /// Create a new instance of a `TransientStorageOp` from it's components.
+    /// Create a new instance of a `TransientStorageOp` from its components.
     pub const fn new(
         address: Address,
         key: Word,

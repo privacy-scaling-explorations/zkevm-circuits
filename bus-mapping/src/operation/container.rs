@@ -29,7 +29,7 @@ pub struct OperationContainer {
     /// Operations of StorageOp
     pub storage: Vec<Operation<StorageOp>>,
     /// Operations of TransientStorageOp
-    pub transient_storage: Vec<Operation<TransientStorageOp>>, // TODO change
+    pub transient_storage: Vec<Operation<TransientStorageOp>>,
     /// Operations of TxAccessListAccountOp
     pub tx_access_list_account: Vec<Operation<TxAccessListAccountOp>>,
     /// Operations of TxAccessListAccountStorageOp

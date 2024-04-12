@@ -57,7 +57,7 @@ impl TransientStorage {
         self.0.get(key)
     }
 
-    /// Get the word for a given key in the EVM transient storage.  Returns error if key
+    /// Get the word for a given key in the EVM transient storage. Return error if key
     /// is not found.
     pub fn get_or_err(&self, key: &Word) -> Result<Word, Error> {
         self.get(key)
