@@ -1320,6 +1320,7 @@ impl<F: Field> WrongLeafGadget<F> {
 #[derive(Clone, Debug, Default)]
 pub struct WrongExtNodeGadget<F> {
     is_key_equal: IsEqualGadget<F>,
+    mult_without_branch_nibble: Cell<F>,
 }
 
 impl<F: Field> WrongExtNodeGadget<F> {
@@ -1338,17 +1339,31 @@ impl<F: Field> WrongExtNodeGadget<F> {
         let mut config = WrongExtNodeGadget::default();
         circuit!([meta, cb.base], {
             ifx! {is_wrong_ext_case => { 
+                config.mult_without_branch_nibble = cb.query_cell();
+
                 // We have a key split into three parts,
                 // meaning that the first part parity doesn't
                 // tell us about the parity of the second part (depends on the third part as well).
 
                 let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];
+
+                // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and we do not want this,
+                // the actual value we need is not!(key_data.is_odd)
+
+                // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and we do not want this,
+                // the actual value we need is !key_data.is_odd
+                // key_data_prev.is_odd = true, key_data.is_odd = true -> is_key_part_odd = true
+                // key_data_prev.is_odd = true, key_data.is_odd = false -> is_key_part_odd = false
+                // key_data_prev.is_odd = false, key_data.is_odd = true -> is_key_part_odd = false
+                // key_data_prev.is_odd = false, key_data.is_odd = false -> is_key_part_odd = true
+                let is_key_part_odd = not!(xor::expr(key_data_prev.is_odd.expr(), key_data.is_odd.expr()));
+
                 let after_middle_rlc = key_data_prev.rlc.expr()
                     + ext_key_rlc_expr(
                         cb,
                         wrong_ext_middle.clone(),
                         key_data_prev.mult.expr(),
-                        key_data.is_odd.expr(),
+                        is_key_part_odd,
                         key_data_prev.is_odd.expr(),
                         data0
                             .iter()
@@ -1359,22 +1374,25 @@ impl<F: Field> WrongExtNodeGadget<F> {
                         &cb.key_r.expr(),
                     );
 
-                // odd odd -> even
-                // odd even -> odd
-                // even odd -> odd
-                // even even -> even
-                let after_two_parts_is_odd =
-                    xor::expr(key_data_prev.is_odd.expr(), key_data.is_odd.expr());
+                let after_two_parts_is_odd = not!(key_data.is_odd.expr());
 
                 // The total number of nibbles is odd, thus:
                 let third_part_is_odd = after_two_parts_is_odd.clone();
+
+                // We cannot use key_data.mult because it takes into account also the branch nibble.
+                let mult = config.mult_without_branch_nibble.expr();
+                ifx! {key_data.is_odd => {
+                    require!(mult => key_data.mult.expr());
+                } elsex {
+                    require!(mult.clone() * cb.key_r.expr() => key_data.mult.expr());
+                }}
 
                 let data1 = [wrong_ext_after.clone(), wrong_ext_after_nibbles.clone()];
                 let rlc = after_middle_rlc.clone()
                     + ext_key_rlc_expr(
                         cb,
                         wrong_ext_after.clone(),
-                        key_data.mult.expr(),
+                        mult.clone(),
                         third_part_is_odd,
                         after_two_parts_is_odd,
                         data1
@@ -1411,10 +1429,18 @@ impl<F: Field> WrongExtNodeGadget<F> {
         key_data_prev: KeyDataWitness<F>,
     ) {
         let items = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles];
-        let (after_middle_rlc, _) = ext_key_rlc_calc_value(
+
+        // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and we do not want this,
+        // the actual value we need is !key_data.is_odd
+        // key_data_prev.is_odd = true, key_data.is_odd = true -> is_key_part_odd = true
+        // key_data_prev.is_odd = true, key_data.is_odd = false -> is_key_part_odd = false
+        // key_data_prev.is_odd = false, key_data.is_odd = true -> is_key_part_odd = false
+        // key_data_prev.is_odd = false, key_data.is_odd = false -> is_key_part_odd = true
+        let is_key_part_odd = key_data_prev.is_odd == key_data.is_odd;
+        let after_middle_rlc = key_data_prev.rlc + ext_key_rlc_calc_value(
             wrong_ext_middle,
             key_data_prev.mult,
-            key_data.is_odd,
+            is_key_part_odd,
             key_data_prev.is_odd,
             items
                 .iter()
@@ -1423,7 +1449,18 @@ impl<F: Field> WrongExtNodeGadget<F> {
                 .try_into()
                 .unwrap(),
             region.key_r,
-        );
+        ).0;
+
+        let mut mult = key_data.mult;
+        if !key_data.is_odd {
+            let iters = (key_data.num_nibbles - 1 - 1) / 2; // -1 because of the branch nibble, -1 because of being odd
+            mult = F::one();
+
+            for _ in 0..iters {
+                mult = mult * region.key_r;
+            }
+        }
+        let _ = self.mult_without_branch_nibble.assign(region, offset, mult);
 
         let _ = self.is_key_equal.assign(
             region,

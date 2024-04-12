@@ -296,6 +296,9 @@ impl<F: Field> StorageLeafConfig<F> {
 
             let is_wrong_leaf_case = and::expr(&[config.is_non_existing_storage_proof.expr(), not!(config.parent_data[1].is_extension), not!(config.is_placeholder_leaf[1].expr())]);
 
+            require!(is_wrong_leaf_case => 0.expr());
+            require!(config.is_placeholder_leaf[1].expr() => 0.expr());
+
             // When non-existing-proof, it needs to be one of the following cases:
             // (1) wrong leaf, (2) wrong extension node, (3) nil leaf - we need to check the sum of these
             // three cases is 1.
