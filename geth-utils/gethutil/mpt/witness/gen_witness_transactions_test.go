@@ -121,8 +121,9 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 }
 
 func TestTransactionInsertion(t *testing.T) {
-	// TODO: check drifted_index at 128
-	txs := makeTransactions(130)
+	// potential ext. mod nodes
+	// 145, 513, 529, 785, 1041, 1297, 1553, 1809
+	txs := makeTransactions(2015)
 	prepareStackTrieWitness("TransactionInsertion", types.Transactions(txs))
 }
 

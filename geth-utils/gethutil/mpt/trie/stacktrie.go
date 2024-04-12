@@ -671,12 +671,12 @@ func isTxExt(proofEl []byte) bool {
 
 func printProof(ps [][]byte, t, idx []byte) {
 
-	enable := byte(200)
+	enable := byte(150)
 	fmt.Print(" [")
 	for i, p := range ps {
 		if t[i] == extNode {
 			fmt.Print("EXT - ")
-			if idx[0] > enable {
+			if idx[0] >= enable {
 				fmt.Print(" (", p, ") - ")
 			}
 		} else if t[i] == branchNode {
@@ -684,7 +684,7 @@ func printProof(ps [][]byte, t, idx []byte) {
 			// fmt.Print(" (", p, ") - ")
 		} else if t[i] == leafNode {
 			fmt.Print("LEAF - ")
-			if idx[0] > enable {
+			if idx[0] >= enable {
 				fmt.Print(" (", p, ") - ")
 			}
 		} else if t[i] == hashedNode {
@@ -706,7 +706,6 @@ func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value 
 	if err != nil {
 		return StackProof{}, err
 	}
-	len1 := len(proofS)
 	printProof(proofS, typesS, indexBuf)
 
 	st.Update(indexBuf, value)
@@ -715,13 +714,7 @@ func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value 
 	if err != nil {
 		return StackProof{}, err
 	}
-	len2 := len(proofC)
 	printProof(proofC, typesC, indexBuf)
-
-	// fmt.Println(len1, len2)
-	if len1 > len2 {
-		fmt.Println(KeybytesToHex(indexBuf))
-	}
 
 	return StackProof{proofS, proofC, nibblesS, nibblesC, typesS, typesC}, nil
 }
@@ -806,7 +799,7 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 		// fmt.Print(" ", k[i], "/", c.nodeType, " | ")
 		proofType = append(proofType, c.nodeType)
 		if c.nodeType == extNode {
-			fmt.Print(c.key, " ")
+			// fmt.Print(c.key, " ")
 			i += len(c.key) - 1
 			nodes = append(nodes, c)
 			c = c.children[0]
@@ -825,19 +818,18 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				panic(error)
 			}
 
-			if c_rlp[0] > 192 && c_rlp[0] < 248 {
-				numNibbles := c_rlp[0] - 225
-				var nibble = make([]byte, numNibbles)
-				for i := 0; i < int(numNibbles); i++ {
-					nibble[i] = c_rlp[i+1] - 16
-				}
-				// fmt.Println(" HASHED Ext nibble:", nibble, c_rlp)
-				nibbles = append(nibbles, nibble)
-			}
+			// if c_rlp[0] > 192 && c_rlp[0] < 248 {
+			// 	numNibbles := c_rlp[0] - 225
+			// 	var nibble = make([]byte, numNibbles)
+			// 	for i := 0; i < int(numNibbles); i++ {
+			// 		nibble[i] = c_rlp[i+1] - 16
+			// 	}
+			// 	// fmt.Println(" HASHED Ext nibble:", nibble, c_rlp)
+			// }
 
-			fmt.Print(" hashed node key:", c.key, " ")
 			// fmt.Println(" c_rlp:", c_rlp)
 			proof = append(proof, c_rlp)
+			nibbles = append(nibbles, c.key)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
 			// branchChild is of length 1 when there is no child at this position in the branch
 			// (`branchChild = [128]` in this case), but it is also of length 1 when `c_rlp` is a leaf.
@@ -886,11 +878,11 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				// if it's an ext node, it contains 1.)nibbles and 2.) 32bytes hashed value
 				// 2.) 32 bytes long data plus rlp flag, it becomes 33 bytes long data
 				// 192 + 33 = 225, and the left bytes are for nibbles.
-				numNibbles := raw_rlp[0] - 225
-				var nibble = make([]byte, numNibbles)
-				for i := 0; i < int(numNibbles); i++ {
-					nibble[i] = raw_rlp[i+1] - 16
-				}
+				// numNibbles := raw_rlp[0] - 225
+				// var nibble = make([]byte, numNibbles)
+				// for i := 0; i < int(numNibbles); i++ {
+				// 	nibble[i] = raw_rlp[i+1] - 16
+				// }
 				// fmt.Println(" Ext nibble:", numNibbles, node.key)
 				nibbles = append(nibbles, node.key)
 			} else {

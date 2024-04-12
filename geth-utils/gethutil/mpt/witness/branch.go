@@ -1,7 +1,6 @@
 package witness
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/ethereum/go-ethereum/rlp"
@@ -237,11 +236,12 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
 func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC []byte,
-	leafRow0, key []byte, keyIndex int, isShorterProofLastLeaf bool,
+	proofTx, leafRow0, key []byte, keyIndex int, isShorterProofLastLeaf bool,
 ) (bool, bool, int, Node) {
 
 	len1 := len(proof1)
 	len2 := len(proof2)
+	isTxProof := len(proofTx) != 0
 
 	var node Node
 
@@ -252,22 +252,14 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 		extValues = append(extValues, make([]byte, valueLen))
 	}
 
-	// For stack trie
-	// if 1 st node of proof2 is a branch node and 1st node of Proof1 is an ext node
-	need_placeholder_ext := isBranch(proof2[0]) && isTxExt(proof1[0])
-	if need_placeholder_ext {
-		fmt.Println("need_placeholder_ext", isTxLeaf(proof1[0]), isBranch(proof1[0]), proof1[0])
-		fmt.Println("need_placeholder_ext", isBranch(proof2[0]), proof2[0])
-		fmt.Println("nibble:", extNibblesS)
-	}
-	isExtension := (len1 == len2+2) || (len2 == len1+2)
-	if isExtension || need_placeholder_ext {
+	isExtension := (len1 == len2+2) || (len2 == len1+2) || (isTxProof && !isBranch(proofTx))
+	if isExtension {
 		var numNibbles byte
 		var proof []byte
 		var extNibbles []byte
-		if need_placeholder_ext {
+		if isTxProof {
 			extNibbles = extNibblesS
-			proof = proof1[0]
+			proof = proofTx
 		} else {
 			if len1 > len2 {
 				extNibbles = extNibblesS
@@ -306,18 +298,19 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 		in the rows before we add a leaf.
 	*/
 	var longExtNode []byte
-	if len1 > len2 {
-		longExtNode = proof2[len2-1]
+	if isTxProof {
+		longExtNode = proofTx
 	} else {
-		longExtNode = proof1[len1-1]
+		if len1 > len2 {
+			longExtNode = proof2[len2-1]
+		} else {
+			longExtNode = proof1[len1-1]
+		}
 	}
 
-	// TODO: fix
 	var extNode []byte
-	if need_placeholder_ext {
-		extNode = proof1[0]
-		// FIXME should move to above and need to avoid above [len-3] operation
-		isExtension = need_placeholder_ext
+	if isTxProof {
+		extNode = proofTx
 	} else {
 		if isExtension {
 			if len1 > len2 {
@@ -329,7 +322,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 	}
 
 	// Note that isModifiedExtNode happens also when we have a branch instead of shortExtNode
-	isModifiedExtNode := (!isBranch(longExtNode) && !isShorterProofLastLeaf) || need_placeholder_ext
+	isModifiedExtNode := (!isBranch(longExtNode) && !isShorterProofLastLeaf)
 
 	// We now get the first nibble of the leaf that was turned into branch.
 	// This first nibble presents the position of the leaf once it moved
