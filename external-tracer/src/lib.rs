@@ -75,11 +75,11 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     // Don't throw only for specific invalid transactions we support.
     for trace in trace.iter() {
         let error = &trace.return_value;
-        let allowed_cases = error.starts_with("nonce too low")
-            || error.starts_with("nonce too high")
-            || error.starts_with("intrinsic gas too low")
-            || error.starts_with("insufficient funds for gas * price + value")
-            || error.starts_with("insufficient funds for transfer");
+        let allowed_cases = error.contains("nonce too low")
+            || error.contains("nonce too high")
+            || error.contains("intrinsic gas too low")
+            || error.contains("insufficient funds for gas * price + value")
+            || error.contains("insufficient funds for transfer");
         if trace.invalid && !allowed_cases {
             return Err(Error::TracingError(error.clone()));
         }
