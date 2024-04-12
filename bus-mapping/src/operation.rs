@@ -313,7 +313,7 @@ impl Ord for StackOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
-/// implied by an specific
+/// implied by a specific
 /// [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
@@ -414,7 +414,7 @@ impl Ord for StorageOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the transient storage
-/// implied by an specific
+/// implied by a specific
 /// [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
