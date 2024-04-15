@@ -285,7 +285,6 @@ pub enum Rw {
         value: Word,
         value_prev: Word,
         tx_id: usize,
-        // committed_value: Word,
     },
     /// CallContext
     CallContext {
