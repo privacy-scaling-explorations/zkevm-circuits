@@ -203,12 +203,15 @@ func getNibbles(leafKeyRow []byte) []byte {
 			nibbles = append(nibbles, leafKeyRow[1]-16)
 		}
 	} else {
-		keyLen := int(leafKeyRow[2] - 128)
-		if (leafKeyRow[3] != 32) && (leafKeyRow[3] != 0) { // second term is for extension node
-			if leafKeyRow[3] < 32 { // extension node
-				nibbles = append(nibbles, leafKeyRow[3]-16)
+		// [248 202 48 184 199 248 197 128 131 4 147 224 98 148 0 ...]
+		// `202` (leafKeyRow[1]) is the length of the payload
+		// `48` (leafKeyRow[2]) is the first byte of the payload
+		keyLen := int(leafKeyRow[1] - 128)
+		if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
+			if leafKeyRow[2] < 32 { // extension node
+				nibbles = append(nibbles, leafKeyRow[2]-16)
 			} else { // leaf
-				nibbles = append(nibbles, leafKeyRow[3]-48)
+				nibbles = append(nibbles, leafKeyRow[2]-48)
 			}
 		}
 		for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
