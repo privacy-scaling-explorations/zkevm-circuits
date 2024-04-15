@@ -11,16 +11,19 @@ import (
 // These rows are added only when an existing extension node gets shortened or elongated (in terms
 // of the extension node nibbles) because of another extension node being added or deleted.
 // The rows added are somewhat exceptional as otherwise they do not appear.
-func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address, proof1, proof2, proofTx,
-	extNibblesS, extNibblesC [][]byte,
-	key []byte, keyIndex, numberOfNibbles int, isAccountProof bool) Node {
+func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address,
+	proof1, proof2, extNibblesS, extNibblesC [][]byte,
+	proofTx, key []byte,
+	keyIndex, numberOfNibbles int, isAccountProof bool) Node {
+
 	len1 := len(proof1)
 	len2 := len(proof2)
+	isTxProof := len(proofTx) != 0
 
 	var longExtNode []byte
 	// FIXME this is a workaround to get ext node
-	if len(proofTx) != 0 {
-		longExtNode = proof1[0]
+	if isTxProof {
+		longExtNode = proofTx
 	} else {
 		if len1 > len2 {
 			longExtNode = proof2[len2-1]
@@ -38,7 +41,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 
 	_, extListRlpBytesS, extValuesS := prepareExtensions(extNibbles[len(extNibbles)-1], longExtNode, longExtNode)
 
-	// Get nibbles of the extension node that gets shortened because of the newly insertd
+	// Get nibbles of the extension node that gets shortened because of the newly inserted
 	// extension node:
 	longNibbles := getExtensionNodeNibbles(longExtNode)
 
@@ -57,10 +60,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	ky := common.BytesToHash(k)
 	var proof [][]byte
 	var err error
-	// FIXME refactor for 3 different kinds of proofs
-	if len(proofTx) != 0 {
-		proof = proofTx
-	} else {
+	if !isTxProof {
 		if isAccountProof {
 			proof, _, _, _, _, err = statedb.GetProof(addr)
 		} else {
@@ -72,7 +72,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	// There is no short extension node when `len(longNibbles) - numberOfNibbles = 1`, in this case there
 	// is simply a branch instead.
 	// stack trie is always a short ext node.
-	shortExtNodeIsBranch := (len(longNibbles)-numberOfNibbles == 1) || (len(proofTx) != 0)
+	shortExtNodeIsBranch := (len(longNibbles)-numberOfNibbles == 1) || isTxProof
 
 	var shortExtNode []byte
 	var extListRlpBytesC []byte
@@ -144,7 +144,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	keccakData = append(keccakData, longExtNode)
 	keccakData = append(keccakData, shortExtNode)
 
-	if len(proofTx) != 0 {
+	if isTxProof {
 		leafNode.Transaction.ModListRlpBytes = listRlpBytes
 	} else {
 		if leafNode.Account == nil {

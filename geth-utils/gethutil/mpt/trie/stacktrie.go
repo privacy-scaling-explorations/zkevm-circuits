@@ -701,7 +701,8 @@ func printProof(ps [][]byte, t, idx []byte) {
 }
 
 func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value []byte) (StackProof, error) {
-	fmt.Println(" ====", indexBuf)
+	fmt.Println(" ====", indexBuf, "-->", KeybytesToHex(indexBuf))
+
 	proofS, nibblesS, typesS, err := st.GetProof(db, indexBuf)
 	if err != nil {
 		return StackProof{}, err
@@ -772,7 +773,7 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 
 func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, [][]byte, []uint8, error) {
 	k := KeybytesToHex(key)
-	fmt.Println(" k", k)
+	// fmt.Println(" k", k)
 	if st.nodeType == emptyNode {
 		return [][]byte{}, nil, []uint8{emptyNode}, nil
 	}

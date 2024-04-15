@@ -239,12 +239,12 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
 func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC []byte,
-	proofTx, leafRow0, key []byte, keyIndex int, isShorterProofLastLeaf bool,
+	extProofTx, leafRow0, key []byte, keyIndex int, isShorterProofLastLeaf bool,
 ) (bool, bool, int, Node) {
 
 	len1 := len(proof1)
 	len2 := len(proof2)
-	isTxProof := len(proofTx) != 0
+	isTxProof := len(extProofTx) != 0
 
 	var node Node
 
@@ -255,14 +255,14 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 		extValues = append(extValues, make([]byte, valueLen))
 	}
 
-	isExtension := (len1 == len2+2) || (len2 == len1+2) || (isTxProof && !isBranch(proofTx))
+	isExtension := (len1 == len2+2) || (len2 == len1+2) || (isTxProof && !isBranch(extProofTx))
 	if isExtension {
 		var numNibbles byte
 		var proof []byte
 		var extNibbles []byte
 		if isTxProof {
 			extNibbles = extNibblesS
-			proof = proofTx
+			proof = extProofTx
 		} else {
 			if len1 > len2 {
 				extNibbles = extNibblesS
@@ -302,7 +302,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 	*/
 	var longExtNode []byte
 	if isTxProof {
-		longExtNode = proofTx
+		longExtNode = extProofTx
 	} else {
 		if len1 > len2 {
 			longExtNode = proof2[len2-1]
@@ -313,7 +313,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 
 	var extNode []byte
 	if isTxProof {
-		extNode = proofTx
+		extNode = extProofTx
 	} else {
 		if isExtension {
 			if len1 > len2 {
