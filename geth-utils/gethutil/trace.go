@@ -251,7 +251,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
 		evm := vm.NewEVM(blockCtx, vm.TxContext{GasPrice: big.NewInt(0)}, stateDB, &chainConfig, vm.Config{Tracer: tracer.Hooks(), NoBaseFee: true})
 
-		tx = *types.NewTransaction(message.Nonce, *message.To, message.Value, message.GasLimit, message.GasPrice, message.Data)
+		tx = *types.NewTx(ToTxData(message, chainConfig.ChainID))
 		stateDB.SetTxContext(tx.Hash(), i)
 
 		_, err = core.ApplyTransactionWithEVM(&message, &chainConfig, new(core.GasPool).AddGas(message.GasLimit), stateDB, blockCtx.BlockNumber, common.Hash{}, &tx, &usedGas, evm)
@@ -270,4 +270,75 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 
 	return executionResults, nil
+}
+
+func ToTxData(message core.Message, ChainID *big.Int) types.TxData {
+	var data types.TxData
+	switch {
+	case message.BlobHashes != nil:
+		al := types.AccessList{}
+		if message.AccessList != nil {
+			al = message.AccessList
+		}
+		data = &types.BlobTx{
+			To:         *message.To,
+			ChainID:    uint256.MustFromBig((*big.Int)(ChainID)),
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasFeeCap:  uint256.MustFromBig((*big.Int)(message.GasFeeCap)),
+			GasTipCap:  uint256.MustFromBig((*big.Int)(message.GasTipCap)),
+			Value:      uint256.MustFromBig((*big.Int)(message.Value)),
+			Data:       message.Data,
+			AccessList: al,
+			BlobHashes: message.BlobHashes,
+			BlobFeeCap: uint256.MustFromBig((*big.Int)(message.BlobGasFeeCap)),
+		}
+		// if message.Blobs != nil {
+		// 	data.(*types.BlobTx).Sidecar = &types.BlobTxSidecar{
+		// 		Blobs:       message.Blobs,
+		// 		Commitments: message.Commitments,
+		// 		Proofs:      message.Proofs,
+		// 	}
+		// }
+
+	case message.GasFeeCap != nil:
+		al := types.AccessList{}
+		if message.AccessList != nil {
+			al = message.AccessList
+		}
+		data = &types.DynamicFeeTx{
+			To:         message.To,
+			ChainID:    (*big.Int)(ChainID),
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasFeeCap:  message.GasFeeCap,
+			GasTipCap:  message.GasTipCap,
+			Value:      message.Value,
+			Data:       message.Data,
+			AccessList: al,
+		}
+
+	case message.AccessList != nil:
+		data = &types.AccessListTx{
+			To:         message.To,
+			ChainID:    ChainID,
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasPrice:   message.GasPrice,
+			Value:      message.Value,
+			Data:       message.Data,
+			AccessList: message.AccessList,
+		}
+
+	default:
+		data = &types.LegacyTx{
+			To:       message.To,
+			Nonce:    message.Nonce,
+			Gas:      message.GasLimit,
+			GasPrice: message.GasPrice,
+			Value:    message.Value,
+			Data:     message.Data,
+		}
+	}
+	return data
 }
