@@ -200,7 +200,6 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			storageProof, neighbourNode1, extNibbles1, isLastLeaf1, isNeighbourNodeHashed1, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
-			fmt.Println("Storage ProofS:", len(storageProof), storageProof)
 
 			sRoot := statedb.GetTrie().Hash()
 
@@ -221,7 +220,6 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 
 			storageProof1, neighbourNode2, extNibbles2, isLastLeaf2, isNeighbourNodeHashed2, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
-			fmt.Println("Storage ProofC:", len(storageProof1), storageProof1)
 
 			aNode := aNeighbourNode2
 			aIsLastLeaf := aIsLastLeaf1
@@ -318,9 +316,9 @@ func prepareWitnessSpecial(testName string, trieModifications []TrieModification
 // E. [(EXT, BRANCH) - LEAF] -> [(EXT, BRANCH) - EXT - BRANCH - LEAF] --> 130, 514
 //
 // --- TODO: modified extension nodes, not working now
-// M. [EXT - BRANCH] -> [BRANCH - LEAF]  --> 0 under 16 txs or 16 (modified ext.)
-// M. [(BRANCH) - EXT - BRANCH - HASHED] -> [(BRANCH) - BRANCH - LEAF] --> 144
-// M. [(BRANCH, EXT) - BRANCH - HASHED] -> [(BRANCH, EXT) - LEAF] -->  512
+// M1. [EXT - BRANCH] -> [BRANCH - LEAF]  --> 0 under 16 txs or 16 (modified ext.)
+// M2. [(BRANCH) - EXT - BRANCH - HASHED] -> [(BRANCH) - BRANCH - LEAF] --> 144
+// M3. [(BRANCH, EXT) - BRANCH - HASHED] -> [(BRANCH, EXT) - LEAF] -->  512
 // Issue:
 // Take tx144 as example, the proof is
 // [BRANCH_S1 - BRANCH_S2 - EXT_S - BRANCH_S3 - HASHED] -> [BRANCH_C1 - BRANCH_C2 - BRANCH_C3 - LEAF]
@@ -518,7 +516,8 @@ func updateStateAndPrepareWitness(testName string, keys, values []common.Hash, a
 // convertProofToWitness takes two GetProof proofs (before and after a single modification) and prepares
 // a witness for the MPT circuit. Alongside, it prepares the byte streams that need to be hashed
 // and inserted into the Keccak lookup table.
-func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []byte,
+func convertProofToWitness(
+	statedb *state.StateDB, addr common.Address, addrh []byte,
 	proof1, proof2, extNibblesS, extNibblesC [][]byte,
 	storage_key common.Hash, key []byte, neighbourNode []byte,
 	isAccountProof, nonExistingAccountProof, nonExistingStorageProof, isShorterProofLastLeaf bool) []Node {
@@ -619,8 +618,16 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				leafRow0 = proof2[len2-1]
 			}
 
+			var lastExtNibbleS, lastExtNibbleC []byte
+			if len(extNibblesS) != 0 {
+				lastExtNibbleS = extNibblesS[len1-1]
+			}
+			if len(extNibblesC) != 0 {
+				lastExtNibbleC = extNibblesC[len2-1]
+			}
+
 			isModifiedExtNode, _, numberOfNibbles, bNode :=
-				addBranchAndPlaceholder(proof1, proof2, extNibblesS[len1-1], extNibblesC[len2-1], nil, leafRow0, key, keyIndex, isShorterProofLastLeaf)
+				addBranchAndPlaceholder(proof1, proof2, lastExtNibbleS, lastExtNibbleC, nil, leafRow0, key, keyIndex, isShorterProofLastLeaf)
 
 			nodes = append(nodes, bNode)
 

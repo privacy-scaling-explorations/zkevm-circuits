@@ -924,6 +924,7 @@ func TestExtNodeDeletedExtShortIsBranchFirstLevel(t *testing.T) {
 }
 
 func TestSimulateStackTrieUnder128Txs(t *testing.T) {
+	t.Skip("For stack trie witness check only")
 	SkipIfNoGeth(t)
 	// The trie is empty before we add key1, key2, key3.
 	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")

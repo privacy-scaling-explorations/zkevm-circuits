@@ -6,12 +6,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-func PrepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd byte,
-	isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
-	return prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes, extValues, key, driftedInd,
-		isBranchSPlaceholder, isBranchCPlaceholder, isExtension)
-}
-
 // isBranch takes GetProof element and returns whether the element is a branch.
 func isBranch(proofEl []byte) bool {
 	elems, _, err := rlp.SplitList(proofEl)
@@ -25,23 +19,6 @@ func isBranch(proofEl []byte) bool {
 	return c == 17
 }
 
-func isTxLeaf(proofEl []byte) bool {
-	elems, _, err := rlp.SplitList(proofEl)
-	check(err)
-	c, err1 := rlp.CountValues(elems)
-	check(err1)
-	// 2: hashed node
-	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
-	// ext node is also 2
-	return (c == 9 || c == 2) && !isTxExt(proofEl)
-}
-
-func isTxExt(proofEl []byte) bool {
-	elems, _, _ := rlp.SplitList(proofEl)
-	idx := proofEl[0] - 225
-	return len(proofEl) < 50 && proofEl[0] < 248 && elems[idx] == 160
-}
-
 // prepareBranchWitness takes the rows that are to be filled with branch data and it takes
 // a branch as returned by GetProof. There are 19 rows for a branch and prepareBranchWitness
 // fills the rows from index 1 to index 16 (index 0 is init, index 17 and 18 are for extension
@@ -53,7 +30,7 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 	rowInd := 1
 	colInd := branchNodeRLPLen - 1
 
-	// TODO: if input branch is a leaf node, it'll work abnormally
+	// TODO: if the input is a leaf, it would throw exception
 	i := 0
 	insideInd := -1
 	for {
@@ -203,15 +180,12 @@ func getNibbles(leafKeyRow []byte) []byte {
 			nibbles = append(nibbles, leafKeyRow[1]-16)
 		}
 	} else {
-		// [248 202 48 184 199 248 197 128 131 4 147 224 98 148 0 ...]
-		// `202` (leafKeyRow[1]) is the length of the payload
-		// `48` (leafKeyRow[2]) is the first byte of the payload
-		keyLen := int(leafKeyRow[1] - 128)
-		if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
-			if leafKeyRow[2] < 32 { // extension node
-				nibbles = append(nibbles, leafKeyRow[2]-16)
+		keyLen := int(leafKeyRow[2] - 128)
+		if (leafKeyRow[3] != 32) && (leafKeyRow[3] != 0) { // second term is for extension node
+			if leafKeyRow[3] < 32 { // extension node
+				nibbles = append(nibbles, leafKeyRow[3]-16)
 			} else { // leaf
-				nibbles = append(nibbles, leafKeyRow[2]-48)
+				nibbles = append(nibbles, leafKeyRow[3]-48)
 			}
 		}
 		for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
@@ -238,8 +212,11 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
-func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC []byte,
-	extProofTx, leafRow0, key []byte, keyIndex int, isShorterProofLastLeaf bool,
+func addBranchAndPlaceholder(
+	proof1, proof2 [][]byte,
+	extNibblesS, extNibblesC []byte,
+	extProofTx, leafRow0, key []byte,
+	keyIndex int, isShorterProofLastLeaf bool,
 ) (bool, bool, int, Node) {
 
 	len1 := len(proof1)
@@ -261,6 +238,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 		var proof []byte
 		var extNibbles []byte
 		if isTxProof {
+			// At 16th tx, the length of proofS/C is 2 only
 			extNibbles = extNibblesS
 			proof = extProofTx
 		} else {
@@ -325,7 +303,7 @@ func addBranchAndPlaceholder(proof1, proof2 [][]byte, extNibblesS, extNibblesC [
 	}
 
 	// Note that isModifiedExtNode happens also when we have a branch instead of shortExtNode
-	isModifiedExtNode := (!isBranch(longExtNode) && !isShorterProofLastLeaf)
+	isModifiedExtNode := !isBranch(longExtNode) && !isShorterProofLastLeaf
 
 	// We now get the first nibble of the leaf that was turned into branch.
 	// This first nibble presents the position of the leaf once it moved

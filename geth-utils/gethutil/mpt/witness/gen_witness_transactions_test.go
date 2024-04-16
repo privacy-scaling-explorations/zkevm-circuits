@@ -159,7 +159,7 @@ func TestStackTrieInsertion_33Txs(t *testing.T) {
 }
 
 func TestStackTrieInsertion_129Txs(t *testing.T) {
-	// The first tx (index 0) is inserted into position 8 of the top branch
+	// The first tx (index 0) is inserted into position 8 of the branch of the first layer
 	// Th 129th tx is the neighbor of the first tx
 	transactionsStackTrieInsertionTemplate(t, 129)
 }

@@ -655,20 +655,6 @@ func isBranch(proofEl []byte) bool {
 	return c == 17
 }
 
-func isTxLeaf(proofEl []byte) bool {
-	elems, _, _ := rlp.SplitList(proofEl)
-	c, _ := rlp.CountValues(elems)
-
-	// 9: for tx (Nonce, Gas, GasPrice, Value, To, Data, r, s, v)
-	return (c == 9) && !isTxExt(proofEl)
-}
-
-func isTxExt(proofEl []byte) bool {
-	elems, _, _ := rlp.SplitList(proofEl)
-	idx := proofEl[0] - 225
-	return len(proofEl) < 50 && proofEl[0] < 248 && elems[idx] == 160
-}
-
 func printProof(ps [][]byte, t, idx []byte) {
 
 	enable := byte(150)
@@ -701,13 +687,13 @@ func printProof(ps [][]byte, t, idx []byte) {
 }
 
 func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value []byte) (StackProof, error) {
-	fmt.Println(" ====", indexBuf, "-->", KeybytesToHex(indexBuf))
+	// fmt.Println(" ====", indexBuf, "-->", KeybytesToHex(indexBuf))
 
 	proofS, nibblesS, typesS, err := st.GetProof(db, indexBuf)
 	if err != nil {
 		return StackProof{}, err
 	}
-	printProof(proofS, typesS, indexBuf)
+	// printProof(proofS, typesS, indexBuf)
 
 	st.Update(indexBuf, value)
 
@@ -715,7 +701,7 @@ func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value 
 	if err != nil {
 		return StackProof{}, err
 	}
-	printProof(proofC, typesC, indexBuf)
+	// printProof(proofC, typesC, indexBuf)
 
 	return StackProof{proofS, proofC, nibblesS, nibblesC, typesS, typesC}, nil
 }

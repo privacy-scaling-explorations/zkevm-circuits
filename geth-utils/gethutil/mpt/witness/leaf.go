@@ -1,7 +1,6 @@
 package witness
 
 import (
-	"fmt"
 	"math"
 
 	"main/gethutil/mpt/trie"
@@ -606,10 +605,6 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	rows = append(rows, valueS)
 
 	keyC, valueC, listRlpBytes2, valueRlpBytes2 := prepareStorageLeafInfo(leafC, false, isCPlaceholder)
-
-	fmt.Println("-", key)
-	fmt.Println("-", keyS, leafS)
-	fmt.Println("-", storage_key)
 
 	rows = append(rows, keyC)
 	rows = append(rows, valueC)

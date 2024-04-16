@@ -11,7 +11,8 @@ import (
 // These rows are added only when an existing extension node gets shortened or elongated (in terms
 // of the extension node nibbles) because of another extension node being added or deleted.
 // The rows added are somewhat exceptional as otherwise they do not appear.
-func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address,
+func equipLeafWithModExtensionNode(
+	statedb *state.StateDB, leafNode Node, addr common.Address,
 	proof1, proof2, extNibblesS, extNibblesC [][]byte,
 	proofTx, key []byte,
 	keyIndex, numberOfNibbles int, isAccountProof bool) Node {
@@ -21,7 +22,6 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	isTxProof := len(proofTx) != 0
 
 	var longExtNode []byte
-	// FIXME this is a workaround to get ext node
 	if isTxProof {
 		longExtNode = proofTx
 	} else {
