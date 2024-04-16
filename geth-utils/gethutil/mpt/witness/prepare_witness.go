@@ -566,7 +566,14 @@ func convertProofToWitness(
 	for i := 0; i < upTo; i++ {
 		if !isBranch(proof1[i]) {
 			isNonExistingProof := (isAccountProof && nonExistingAccountProof) || (!isAccountProof && nonExistingStorageProof)
-			areThereNibbles := len(extNibblesS) != 0 || len(extNibblesC) != 0
+			var curExtNibblesS, curExtNibblesC []byte
+			if len(extNibblesS) > i {
+				curExtNibblesS = extNibblesS[i]
+			}
+			if len(extNibblesC) > i {
+				curExtNibblesC = extNibblesC[i]
+			}
+			areThereNibbles := len(curExtNibblesS) != 0 || len(curExtNibblesC) != 0
 			// If i < upTo-1, it means it's not a leaf, so it's an extension node.
 			// There is no any special relation between isNonExistingProof and isExtension,
 			// except that in the non-existing proof the extension node can appear in `i == upTo-1`.
@@ -577,7 +584,7 @@ func convertProofToWitness(
 			if (i != upTo-1) || (areThereNibbles && isNonExistingProof) { // extension node
 				var numberOfNibbles byte
 				isExtension = true
-				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS[i], proof1[i], proof2[i])
+				numberOfNibbles, extListRlpBytes, extValues = prepareExtensions(curExtNibblesS, proof1[i], proof2[i])
 
 				keyIndex += int(numberOfNibbles)
 				extensionNodeInd++
@@ -620,10 +627,10 @@ func convertProofToWitness(
 
 			var lastExtNibbleS, lastExtNibbleC []byte
 			if len(extNibblesS) != 0 {
-				lastExtNibbleS = extNibblesS[len1-1]
+				lastExtNibbleS = extNibblesS[len(extNibblesS)-1]
 			}
 			if len(extNibblesC) != 0 {
-				lastExtNibbleC = extNibblesC[len2-1]
+				lastExtNibbleC = extNibblesC[len(extNibblesC)-1]
 			}
 
 			isModifiedExtNode, _, numberOfNibbles, bNode :=
