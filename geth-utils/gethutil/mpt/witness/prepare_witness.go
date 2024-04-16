@@ -428,8 +428,16 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				leafRow0 = proof2[len2-1]
 			}
 
+			extensionNibblesS := []byte{}
+			extensionNibblesC := []byte{}
+			if len1 > 2 {
+				extensionNibblesS = extNibblesS[len1-3]
+			}
+			if len2 > 2 {
+				extensionNibblesC = extNibblesC[len2-3]
+			}
 			isModifiedExtNode, _, numberOfNibbles, bNode := addBranchAndPlaceholder(proof1, proof2,
-				extNibblesS[len1-1], extNibblesC[len2-1],
+				extensionNibblesS, extensionNibblesC,
 				leafRow0, key,
 				keyIndex, isShorterProofLastLeaf)
 
@@ -484,9 +492,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 		// When non existing proof and only the branches are returned, we add a placeholder leaf.
 		// This is to enable the lookup (in account leaf row), most constraints are disabled for these rows.
 
-		isLastBranch := isBranch(proof2[len(proof2)-1])
-
-		if (len1 == 0 && len2 == 0) || isLastBranch {
+		if (len1 == 0 && len2 == 0) || isBranch(proof2[len(proof2)-1]) {
 			// We need to add a placeholder leaf
 			if isAccountProof {
 				node := prepareAccountLeafPlaceholderNode(addr, addrh, key, keyIndex)

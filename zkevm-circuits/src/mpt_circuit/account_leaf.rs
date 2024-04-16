@@ -745,38 +745,40 @@ impl<F: Field> AccountLeafConfig<F> {
             region.key_r,
         )?;
 
-        // Wrong leaf / extension node handling
-        let mut key_data_prev = KeyDataWitness::default();
-        if offset > 2 {
-            key_data_prev = self.key_data_prev.witness_load(
+        if is_non_existing_proof {
+            // Wrong leaf / extension node handling
+            let mut key_data_prev = KeyDataWitness::default();
+            if offset > 2 {
+                key_data_prev = self.key_data_prev.witness_load(
+                    region,
+                    offset,
+                    &mut memory[key_memory(false)],
+                    2, // 2 instead of 1 because default values have already been stored above
+                )?;
+            }
+            self.wrong_leaf.assign(
                 region,
                 offset,
-                &mut memory[key_memory(false)],
-                2, // 2 instead of 1 because default values have already been stored above
-            )?;
-        }
-        self.wrong_leaf.assign(
-            region,
-            offset,
-            is_non_existing_proof,
-            &key_rlc,
-            &account.wrong_rlp_bytes,
-            &expected_item,
-            true,
-            key_data[1].clone(),
-            region.key_r,
-        )?; 
+                is_non_existing_proof,
+                &key_rlc,
+                &account.wrong_rlp_bytes,
+                &expected_item,
+                true,
+                key_data[1].clone(),
+                region.key_r,
+            )?; 
 
-        let wrong_ext_middle = rlp_values[AccountRowType::LongExtNodeKey as usize].clone();
-        let wrong_ext_middle_nibbles = rlp_values[AccountRowType::LongExtNodeNibbles as usize].clone();
-        self.wrong_ext_node.assign(
-            region,
-            offset,
-            wrong_ext_middle,
-            wrong_ext_middle_nibbles,
-            key_data[1].clone(),
-            key_data_prev.clone(),
-        );
+            let wrong_ext_middle = rlp_values[AccountRowType::LongExtNodeKey as usize].clone();
+            let wrong_ext_middle_nibbles = rlp_values[AccountRowType::LongExtNodeNibbles as usize].clone();
+            self.wrong_ext_node.assign(
+                region,
+                offset,
+                wrong_ext_middle,
+                wrong_ext_middle_nibbles,
+                key_data[1].clone(),
+                key_data_prev.clone(),
+            );
+        }
 
         // Anything following this node is below the account
         MainData::witness_store(
