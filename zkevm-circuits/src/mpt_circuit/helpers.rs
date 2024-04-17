@@ -895,7 +895,6 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
             key_mult_first_odd,
         )
     } else {
-        assert!(bytes[0] == KEY_PREFIX_EVEN.scalar());
         (0.scalar(), 1.scalar())
     };
     (rlc, key_mult_prev * mult).rlc_chain_value(bytes[1..].iter().collect::<Vec<&F>>(), r)
