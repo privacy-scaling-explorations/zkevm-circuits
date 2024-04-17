@@ -141,8 +141,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
 
             // Set the new keys
             for is_s in [true, false] {
-                // The extension_branch in the last level needs to have `is_ext_last_level = true` (checked
-                // in account_leaf.rs / storage_leaf.rs).
+                // The extension_branch in the last level needs to have `is_ext_last_level = true`
+                // (checked in account_leaf.rs / storage_leaf.rs).
                 // All other extension_branches need to have it `false`:
                 require!(config.parent_data[is_s.idx()].is_last_level_and_wrong_ext_case.expr() => false.expr());
 
@@ -197,7 +197,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         config.is_extension.expr(),
                         config.is_last_level_and_wrong_ext_case.expr(),
                         branch.mod_word[is_s.idx()].clone(),
-                    ); 
+                    );
                 }}
             }
         });
@@ -220,8 +220,13 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let is_extension = extension_branch.is_extension.scalar();
         self.is_extension.assign(region, offset, is_extension)?;
 
-        let is_last_level_and_wrong_ext_case = extension_branch.is_last_level_and_wrong_ext_case.scalar();
-        self.is_last_level_and_wrong_ext_case.assign(region, offset, is_last_level_and_wrong_ext_case)?;
+        let is_last_level_and_wrong_ext_case =
+            extension_branch.is_last_level_and_wrong_ext_case.scalar();
+        self.is_last_level_and_wrong_ext_case.assign(
+            region,
+            offset,
+            is_last_level_and_wrong_ext_case,
+        )?;
 
         let key_data =
             self.key_data

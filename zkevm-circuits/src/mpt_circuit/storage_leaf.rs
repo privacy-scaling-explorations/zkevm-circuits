@@ -16,7 +16,9 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{
-            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness, WrongExtNodeGadget, KECCAK
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget,
+            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, MainData, ParentData,
+            ParentDataWitness, WrongExtNodeGadget, KECCAK,
         },
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
@@ -294,11 +296,15 @@ impl<F: Field> StorageLeafConfig<F> {
                 &cb.key_r.expr(),
             );
 
-            let is_wrong_leaf_case = and::expr(&[config.is_non_existing_storage_proof.expr(), not!(config.parent_data[1].is_extension), not!(config.is_placeholder_leaf[1].expr())]);
+            let is_wrong_leaf_case = and::expr(&[
+                config.is_non_existing_storage_proof.expr(),
+                not!(config.parent_data[1].is_extension),
+                not!(config.is_placeholder_leaf[1].expr()),
+            ]);
 
             // When non-existing-proof, it needs to be one of the following cases:
-            // (1) wrong leaf, (2) wrong extension node, (3) nil leaf - we need to check the sum of these
-            // three cases is 1.
+            // (1) wrong leaf, (2) wrong extension node, (3) nil leaf - we need to check the sum of
+            // these three cases is 1.
             ifx! {config.is_non_existing_storage_proof => {
                 require!(is_wrong_ext_case.clone() + is_wrong_leaf_case.clone() + config.is_placeholder_leaf[1].expr() => 1.expr());
             }}
@@ -321,17 +327,33 @@ impl<F: Field> StorageLeafConfig<F> {
             );
 
             // Wrong extension node handling
-            let wrong_ext_middle =
-                ctx.rlp_item(meta, cb, StorageRowType::LongExtNodeKey as usize, RlpItemType::Key);
-            let wrong_ext_middle_nibbles =
-                ctx.rlp_item(meta, cb, StorageRowType::LongExtNodeNibbles as usize, RlpItemType::Nibbles);
-            let wrong_ext_after =
-                ctx.rlp_item(meta, cb, StorageRowType::ShortExtNodeKey as usize, RlpItemType::Key);
-            let wrong_ext_after_nibbles =
-                ctx.rlp_item(meta, cb, StorageRowType::ShortExtNodeNibbles as usize, RlpItemType::Nibbles);
+            let wrong_ext_middle = ctx.rlp_item(
+                meta,
+                cb,
+                StorageRowType::LongExtNodeKey as usize,
+                RlpItemType::Key,
+            );
+            let wrong_ext_middle_nibbles = ctx.rlp_item(
+                meta,
+                cb,
+                StorageRowType::LongExtNodeNibbles as usize,
+                RlpItemType::Nibbles,
+            );
+            let wrong_ext_after = ctx.rlp_item(
+                meta,
+                cb,
+                StorageRowType::ShortExtNodeKey as usize,
+                RlpItemType::Key,
+            );
+            let wrong_ext_after_nibbles = ctx.rlp_item(
+                meta,
+                cb,
+                StorageRowType::ShortExtNodeNibbles as usize,
+                RlpItemType::Nibbles,
+            );
 
-            // The extension_branch in the last level needs has `is_last_level_and_wrong_ext_case = true`
-            // in the case of wrong extension node.
+            // The extension_branch in the last level needs has `is_last_level_and_wrong_ext_case =
+            // true` in the case of wrong extension node.
             // All other extension_branches (above it) need to have it `false` (constraint in
             // extension_branch.rs)
 
@@ -343,7 +365,8 @@ impl<F: Field> StorageLeafConfig<F> {
                 &wrong_ext_middle_nibbles,
                 &wrong_ext_after,
                 &wrong_ext_after_nibbles,
-                config.key_data[1].clone(), // C proof should be used everywhere for non-existing proof
+                config.key_data[1].clone(), /* C proof should be used everywhere for
+                                             * non-existing proof */
                 config.key_data_prev.clone(),
             );
 
@@ -624,7 +647,8 @@ impl<F: Field> StorageLeafConfig<F> {
         )?;
 
         let wrong_ext_middle = rlp_values[StorageRowType::LongExtNodeKey as usize].clone();
-        let wrong_ext_middle_nibbles = rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone();
+        let wrong_ext_middle_nibbles =
+            rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone();
         self.wrong_ext_node.assign(
             region,
             offset,

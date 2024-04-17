@@ -561,10 +561,10 @@ pub(crate) struct ParentData<F> {
     // is_extension is used only in a non-existing proof / wrong extension node case -
     // in account/storage leaf to check whether the parent is an extension node
     pub(crate) is_extension: Cell<F>,
-    // is_last_level_and_wrong_ext_case is used only in a non-existing proof in wrong extension node case -
-    // the last branch is a placeholder in this case and the check for a branch hash being in the parent
-    // extension node needs to be ignored, but it needs to be ignored only in the last branch
-    // (the branch above the leaf into which the lookup is made)
+    // is_last_level_and_wrong_ext_case is used only in a non-existing proof in wrong extension
+    // node case - the last branch is a placeholder in this case and the check for a branch
+    // hash being in the parent extension node needs to be ignored, but it needs to be ignored
+    // only in the last branch (the branch above the leaf into which the lookup is made)
     pub(crate) is_last_level_and_wrong_ext_case: Cell<F>,
     pub(crate) drifted_parent_hash: WordLoHiCell<F>,
 }
@@ -687,7 +687,8 @@ impl<F: Field> ParentData<F> {
         self.is_root.assign(region, offset, values[3])?;
         self.is_placeholder.assign(region, offset, values[4])?;
         self.is_extension.assign(region, offset, values[5])?;
-        self.is_last_level_and_wrong_ext_case.assign(region, offset, values[6])?;
+        self.is_last_level_and_wrong_ext_case
+            .assign(region, offset, values[6])?;
         self.drifted_parent_hash
             .lo()
             .assign(region, offset, values[7])?;
@@ -1249,7 +1250,7 @@ impl<F: Field> WrongLeafGadget<F> {
     ) -> Self {
         let mut config = WrongLeafGadget::default();
         circuit!([meta, cb.base], {
-            ifx! {is_wrong_leaf_case => { 
+            ifx! {is_wrong_leaf_case => {
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
 
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
@@ -1337,7 +1338,7 @@ impl<F: Field> WrongExtNodeGadget<F> {
     ) -> Self {
         let mut config = WrongExtNodeGadget::default();
         circuit!([meta, cb.base], {
-            ifx! {is_wrong_ext_case => { 
+            ifx! {is_wrong_ext_case => {
                 config.mult_without_branch_nibble = cb.query_cell();
 
                 // We have a key split into three parts,
@@ -1429,26 +1430,28 @@ impl<F: Field> WrongExtNodeGadget<F> {
     ) {
         let items = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles];
 
-        // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and we do not want this,
-        // the actual value we need is !key_data.is_odd
+        // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and
+        // we do not want this, the actual value we need is !key_data.is_odd
         // key_data_prev.is_odd = true, key_data.is_odd = true -> is_key_part_odd = true
         // key_data_prev.is_odd = true, key_data.is_odd = false -> is_key_part_odd = false
         // key_data_prev.is_odd = false, key_data.is_odd = true -> is_key_part_odd = false
         // key_data_prev.is_odd = false, key_data.is_odd = false -> is_key_part_odd = true
         let is_key_part_odd = key_data_prev.is_odd == key_data.is_odd;
-        let after_middle_rlc = key_data_prev.rlc + ext_key_rlc_calc_value(
-            wrong_ext_middle,
-            key_data_prev.mult,
-            is_key_part_odd,
-            key_data_prev.is_odd,
-            items
-                .iter()
-                .map(|item| item.bytes.clone())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-            region.key_r,
-        ).0;
+        let after_middle_rlc = key_data_prev.rlc
+            + ext_key_rlc_calc_value(
+                wrong_ext_middle,
+                key_data_prev.mult,
+                is_key_part_odd,
+                key_data_prev.is_odd,
+                items
+                    .iter()
+                    .map(|item| item.bytes.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                region.key_r,
+            )
+            .0;
 
         let mut mult = key_data.mult;
         if !key_data.is_odd {
@@ -1463,12 +1466,9 @@ impl<F: Field> WrongExtNodeGadget<F> {
         }
         let _ = self.mult_without_branch_nibble.assign(region, offset, mult);
 
-        let _ = self.is_key_equal.assign(
-            region,
-            offset,
-            key_data.rlc,
-            after_middle_rlc,
-        );
+        let _ = self
+            .is_key_equal
+            .assign(region, offset, key_data.rlc, after_middle_rlc);
     }
 }
 

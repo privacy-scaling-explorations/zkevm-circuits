@@ -217,7 +217,7 @@ impl<F: Field> Witness<F> {
                     storage_keys: Vec::new(),
                 });
             }
-        } 
+        }
 
         let mut initial_values = Vec::new();
         let mut changed_values = Vec::new();
@@ -239,8 +239,10 @@ impl<F: Field> Witness<F> {
                     .await?;
 
                 // Skip if the account doesn't exist in the old block.
-                if old.balance.is_zero() && old.code_hash.is_zero()
-                    && old.nonce.is_zero() && old.storage_hash.is_zero()
+                if old.balance.is_zero()
+                    && old.code_hash.is_zero()
+                    && old.nonce.is_zero()
+                    && old.storage_hash.is_zero()
                 {
                     continue;
                 }
@@ -302,8 +304,7 @@ impl<F: Field> Witness<F> {
                 changed_values.push(TrieModification::balance(address, new.balance));
             }
 
-            if old.code_hash != new.code_hash && new.code_hash != *DEFAULT_CODE_HASH
-            {
+            if old.code_hash != new.code_hash && new.code_hash != *DEFAULT_CODE_HASH {
                 changed_values.push(TrieModification::codehash(address, new.code_hash));
             }
 
