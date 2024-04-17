@@ -544,7 +544,7 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 	if err != nil {
 		panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
 	}
-	
+
 	if !oracle.AccountPreventHashingInSecureTrie {
 		if err = s.trie.TryUpdateAlwaysHash(addr[:], data); err != nil {
 			s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))

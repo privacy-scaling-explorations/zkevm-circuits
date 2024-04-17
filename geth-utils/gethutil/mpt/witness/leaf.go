@@ -585,7 +585,7 @@ func equipLeafWithWrongExtension(leafNode Node, keyMiddle, keyAfter, nibblesMidd
 	leafNode.Values[l-modifiedExtensionNodeRowLen] = keyMiddle
 	startNibblePos := 2 // we don't need any nibbles for case keyLen = 1
 	if len(keyMiddle) > 1 {
-		if len(nibblesMiddle) % 2 == 0 {
+		if len(nibblesMiddle)%2 == 0 {
 			startNibblePos = 1
 		} else {
 			startNibblePos = 2
@@ -593,14 +593,14 @@ func equipLeafWithWrongExtension(leafNode Node, keyMiddle, keyAfter, nibblesMidd
 	}
 	ind := 0
 	for j := startNibblePos; j < len(nibblesMiddle); j += 2 {
-		leafNode.Values[l-modifiedExtensionNodeRowLen + 1][2+ind] = nibblesMiddle[j]
+		leafNode.Values[l-modifiedExtensionNodeRowLen+1][2+ind] = nibblesMiddle[j]
 		ind++
 	}
 
-	leafNode.Values[l-modifiedExtensionNodeRowLen + 3] = keyAfter
+	leafNode.Values[l-modifiedExtensionNodeRowLen+3] = keyAfter
 	startNibblePos = 2 // we don't need any nibbles for case keyLen = 1
 	if len(keyAfter) > 1 {
-		if len(nibblesAfter) % 2 == 0 {
+		if len(nibblesAfter)%2 == 0 {
 			startNibblePos = 1
 		} else {
 			startNibblePos = 2
@@ -608,7 +608,7 @@ func equipLeafWithWrongExtension(leafNode Node, keyMiddle, keyAfter, nibblesMidd
 	}
 	ind = 0
 	for j := startNibblePos; j < len(nibblesAfter); j += 2 {
-		leafNode.Values[l-modifiedExtensionNodeRowLen + 4][2+ind] = nibblesAfter[j]
+		leafNode.Values[l-modifiedExtensionNodeRowLen+4][2+ind] = nibblesAfter[j]
 		ind++
 	}
 

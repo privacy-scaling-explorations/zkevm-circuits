@@ -1007,7 +1007,7 @@ func TestAccountWrongExtensionNode(t *testing.T) {
 
 	trieMod := TrieModification{
 		Type:    AccountDoesNotExist,
-		Address:     addr3,
+		Address: addr3,
 	}
 	trieModifications := []TrieModification{trieMod}
 

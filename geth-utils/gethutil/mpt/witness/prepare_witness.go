@@ -108,7 +108,7 @@ func obtainAccountProofAndConvertToWitness(tMod TrieModification, statedb *state
 	cRoot := statedb.GetTrie().Hash()
 
 	accountProof1, aNeighbourNode2, aExtNibbles2, isLastLeaf2, aIsNeighbourNodeHashed2, err := statedb.GetProof(addr)
-	check(err)	
+	check(err)
 
 	if tMod.Type == AccountDoesNotExist && len(accountProof) == 0 {
 		// If there is only one account in the state trie and we want to prove for some
@@ -508,7 +508,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				// We are in a non-existing-proof and an extension node is the last element of getProof.
 				// However, this extension node has not been added to the nodes yet (it's always added
 				// together with a branch).
-				
+
 				nibbles := getNibbles(proof2[len(proof2)-1])
 				newKey := make([]byte, len(key))
 				copy(newKey, key)
@@ -518,14 +518,14 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 					newKey = make([]byte, len(addr_nibbles))
 					copy(newKey, addr_nibbles)
 				}
-				
+
 				start := keyIndex - len(nibbles)
 
 				nibblesMiddle := newKey[start:keyIndex]
 				keyMiddle := []byte{160}
 				keyMiddle = append(keyMiddle, trie.HexToCompact(nibblesMiddle)...)
 
-				nibblesAfter := newKey[keyIndex:len(newKey)-1] // Remove the last flag (16)
+				nibblesAfter := newKey[keyIndex : len(newKey)-1] // Remove the last flag (16)
 				keyAfter := []byte{160}
 				keyAfter = append(keyAfter, trie.HexToCompact(nibblesAfter)...)
 
@@ -540,7 +540,7 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				nodes = append(nodes, bNode)
 
 				if isAccountProof {
-					dummyLeaf := []byte{248,108,157,52,45,53,199,120,18,165,14,109,22,4,141,198,233,128,219,44,247,218,241,231,2,206,125,246,58,246,15,3,184,76,248,74,4,134,85,156,208,108,8,0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,112}
+					dummyLeaf := []byte{248, 108, 157, 52, 45, 53, 199, 120, 18, 165, 14, 109, 22, 4, 141, 198, 233, 128, 219, 44, 247, 218, 241, 231, 2, 206, 125, 246, 58, 246, 15, 3, 184, 76, 248, 74, 4, 134, 85, 156, 208, 108, 8, 0, 160, 86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33, 160, 197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202, 130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112}
 					node := prepareAccountLeafNode(addr, addrh, dummyLeaf, dummyLeaf, dummyLeaf, nil, addr_nibbles, false, false, false)
 					node = equipLeafWithWrongExtension(node, keyMiddle, keyAfter, nibblesMiddle, nibblesAfter)
 					nodes = append(nodes, node)
