@@ -7,6 +7,7 @@
         "extension_branch": null,
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0dd18f580803b8bd34318683578a96c2d41a1e4a885a53a0a5b5904763aa2ba3d00",
@@ -44,6 +45,7 @@
             ]
         },
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a120fced34088582b4a78f611c7366195e3e94f9080637f4104bbbd0d07ffb783d49",
@@ -79,6 +81,7 @@
         "extension_branch": null,
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0000000000000000000000000000000000000000000000000000000000000000000",

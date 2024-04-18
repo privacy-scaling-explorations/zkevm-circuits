@@ -7,6 +7,7 @@
         "extension_branch": null,
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a033f9be195cc36090a3df03cc33c65cb4130659f45a71cb01f3ca6929dad0884c00",
@@ -40,6 +41,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a051a1665ba013906c8365651780fe177f1542fd8e6803dd0cf60c4b9753a508f700",
@@ -95,6 +97,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a00ba14fcb4c005ec5f715220fedfbba659c9bfec400ade7dcb240d617c192f9e900",
@@ -150,6 +153,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a08fe0591eb8c4996084084859ed1726c6c534d530a0a35a8f15f63030f31b39e900",
@@ -205,6 +209,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a080d24024e85719979d3505a3ecebeeeef4de60311d1f0d996805e71607c8df9d00",
@@ -260,6 +265,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a016186c3f6e0bab87a81b283e507ce826f7462f8332ed1bb174e06100dc6900cf00",
@@ -315,6 +321,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0987269780a0a5b267e2e6380cb9e442096898e8edc670744f7e77d443245ad1f00",
@@ -370,6 +377,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0b930ecef9a9ea1b7799c5635b04baa916cd1c7887f19a90fac264fd4e597154e00",
@@ -429,6 +437,7 @@
             ]
         },
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "9d392f082487dc034fa4aacb6a5bbd4a24aec57fdffb49bd80b318e4b99e00000000",
@@ -482,6 +491,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "80000000000000000000000000000000000000000000000000000000000000000000",
@@ -537,6 +547,7 @@
                 "00000000000000000000000000000000000000000000000000000000000000000000"
             ]
         },
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0310000000000000000000000000000000000000000000000000000000000000000",
@@ -553,8 +564,8 @@
             "00000000000000000000000000000000000000000000000000000000000000000000"
         ],
         "keccak_data": [
-            "e2a03100000000000000000000000000000000000000000000000000000000000000",
-            "e2a03100000000000000000000000000000000000000000000000000000000000000",
+            "e2a0310000000000000000000000000000000000000000000000000000000000000000",
+            "e2a0310000000000000000000000000000000000000000000000000000000000000000",
             "0000000000000000000000000000000000000000000000000000000000000022"
         ]
     },
@@ -566,6 +577,7 @@
         "extension_branch": null,
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0000000000000000000000000000000000000000000000000000000000000000000",
