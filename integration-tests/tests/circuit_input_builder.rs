@@ -16,6 +16,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
     let cli = BuilderClient::new(
         cli,
         FixedCParams {
+            total_chunks: 1,
             max_rws: 16384,
             max_txs: 1,
             max_withdrawals: 1,
@@ -25,6 +26,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
             max_evm_rows: 0,
             max_exp_steps: 1000,
             max_keccak_rows: 0,
+            max_vertical_circuit_rows: 0,
         },
     )
     .await
@@ -73,7 +75,7 @@ macro_rules! declare_tests {
 }
 
 // This test builds the complete circuit inputs for the block where 1 ETH is
-// transfered.
+// transferred.
 declare_tests!(test_circuit_input_builder_block_transfer_0, "Transfer 0");
 // This test builds the complete circuit inputs for the block where the Greeter
 // contract is deployed.

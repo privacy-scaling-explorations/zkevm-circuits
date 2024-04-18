@@ -12,7 +12,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             select, sum, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, Word4, WordExpr},
@@ -99,8 +99,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let p_lo = cb.query_cell();
         let p_hi = cb.query_cell();
         let p_top = cb.query_cell();
-        let is_neg = LtGadget::construct(cb, 127.expr(), a.limbs[31].expr());
-        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.limbs[1..32]));
+        let is_neg = cb.is_lt(127.expr(), a.limbs[31].expr());
+        let shf_lt256 = cb.is_zero(sum::expr(&shift.limbs[1..32]));
 
         for idx in 0..4 {
             cb.require_equal(
@@ -112,23 +112,23 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
         // Constrain `a64s_lo[idx] < p_lo`.
         let a64s_lo_lt_p_lo = array_init(|idx| {
-            let lt = LtGadget::construct(cb, a64s_lo[idx].expr(), p_lo.expr());
+            let lt = cb.is_lt(a64s_lo[idx].expr(), p_lo.expr());
             cb.require_zero("a64s_lo[idx] < p_lo", 1.expr() - lt.expr());
             lt
         });
 
         // Constrain `a64s_hi[idx] < p_hi`.
         let a64s_hi_lt_p_hi = array_init(|idx| {
-            let lt = LtGadget::construct(cb, a64s_hi[idx].expr(), p_hi.expr());
+            let lt = cb.is_lt(a64s_hi[idx].expr(), p_hi.expr());
             cb.require_zero("a64s_hi[idx] < p_hi", 1.expr() - lt.expr());
             lt
         });
 
-        // Merge contraints
-        let shf_lo_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
-        let shf_lo_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
-        let shf_lo_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
-        let shf_lo_div64_eq3 = IsEqualGadget::construct(cb, shf_div64.expr(), 3.expr());
+        // Merge constraints
+        let shf_lo_div64_eq0 = cb.is_zero(shf_div64.expr());
+        let shf_lo_div64_eq1 = cb.is_eq(shf_div64.expr(), 1.expr());
+        let shf_lo_div64_eq2 = cb.is_eq(shf_div64.expr(), 2.expr());
+        let shf_lo_div64_eq3 = cb.is_eq(shf_div64.expr(), 3.expr());
         let shf_div64_eq0 = shf_lt256.expr() * shf_lo_div64_eq0.expr();
         let shf_div64_eq1 = shf_lt256.expr() * shf_lo_div64_eq1.expr();
         let shf_div64_eq2 = shf_lt256.expr() * shf_lo_div64_eq2.expr();
@@ -179,9 +179,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
 
         // Shift constraint
-        let shf_div64_lt_4 = LtGadget::construct(cb, shf_div64.expr(), 4.expr());
+        let shf_div64_lt_4 = cb.is_lt(shf_div64.expr(), 4.expr());
         cb.require_equal("shf_div64 < 4", shf_div64_lt_4.expr(), 1.expr());
-        let shf_mod64_lt_64 = LtGadget::construct(cb, shf_mod64.expr(), 64.expr());
+        let shf_mod64_lt_64 = cb.is_lt(shf_mod64.expr(), 64.expr());
         cb.require_equal("shf_mod64 < 64", shf_mod64_lt_64.expr(), 1.expr());
         cb.require_equal(
             "shift[0] == shf_mod64 + shf_div64 * 64",
@@ -268,6 +268,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

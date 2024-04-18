@@ -13,7 +13,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             select, sum, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32, Word32Cell, WordExpr},
@@ -52,12 +52,11 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // need to do any changes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition to enable the selector.
-        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.limbs[1..32]));
+        let is_msb_sum_zero = cb.is_zero(sum::expr(&index.limbs[1..32]));
 
         // Check if this byte is selected looking only at the LSB of the index
         // word
-        let is_byte_selected =
-            array_init(|idx| IsEqualGadget::construct(cb, index.limbs[0].expr(), idx.expr()));
+        let is_byte_selected = array_init(|idx| cb.is_eq(index.limbs[0].expr(), idx.expr()));
 
         // We need to find the byte we have to get the sign from so we can
         // extend correctly. We go byte by byte and check if `idx ==
@@ -159,6 +158,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
@@ -281,7 +281,7 @@ mod test {
         let pos_extend = 0u8;
         let neg_extend = 0xFFu8;
 
-        for (value, byte_extend) in vec![(pos_value, pos_extend), (neg_value, neg_extend)].iter() {
+        for (value, byte_extend) in [(pos_value, pos_extend), (neg_value, neg_extend)].iter() {
             for idx in 0..33 {
                 test_ok(
                     (idx as u64).into(),

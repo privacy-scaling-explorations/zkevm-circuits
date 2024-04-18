@@ -7,7 +7,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
@@ -20,7 +20,7 @@ use super::{
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F: Field, C: CellType, MB: MemoryBank<F, C>> {
-    banks: HashMap<C, MB>,
+    banks: BTreeMap<C, MB>,
     _phantom: PhantomData<F>,
     tag_counter: usize,
 }
@@ -42,7 +42,7 @@ impl<F: Field, C: CellType, MB: MemoryBank<F, C>> IndexMut<C> for Memory<F, C, M
 impl<F: Field, C: CellType, MB: MemoryBank<F, C>> Memory<F, C, MB> {
     pub(crate) fn new() -> Self {
         Self {
-            banks: HashMap::new(),
+            banks: BTreeMap::new(),
             _phantom: PhantomData,
             tag_counter: 0,
         }

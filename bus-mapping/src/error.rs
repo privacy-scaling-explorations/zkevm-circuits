@@ -105,7 +105,7 @@ pub enum OogError {
     SelfDestruct,
 }
 
-// Given OpCodeId, returns correponding OogError.
+// Given OpCodeId, returns corresponding OogError.
 impl From<&OpcodeId> for OogError {
     fn from(op: &OpcodeId) -> Self {
         match op {

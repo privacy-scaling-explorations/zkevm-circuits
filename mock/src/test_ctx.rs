@@ -80,7 +80,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// Account list
     pub accounts: [Account; NACC],
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
@@ -172,7 +172,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
     }
 }
 
-/// Collection of helper functions which contribute to specific rutines on the
+/// Collection of helper functions which contribute to specific routines on the
 /// builder pattern used to construct [`TestContext`]s.
 pub mod helpers {
     use super::*;

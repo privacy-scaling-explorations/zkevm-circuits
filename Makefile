@@ -77,7 +77,7 @@ stats_evm_circuit: # Print a table with EVM Circuit stats by ExecState/opcode
 stats_copy_circuit: # Print a table with Copy Circuit stats by ExecState/opcode
 	@cargo run --bin stats --features stats -- copy
 
-evm_exec_steps_occupancy: # Print a table for each EVM-CellManager CellType with the top 10 occupancy ExecutionSteps associated
+evm_exec_steps_occupancy: # Print a table for each EVM-CellManager CellType with the top 10 occupancy ExecSteps associated
 	@cargo run --bin stats --features stats -- exec
 
 .PHONY: clippy doc fmt test test_benches test-all evm_bench state_bench circuit_benches evm_exec_steps_occupancy stats_state_circuit stats_evm_circuit stats_copy_circuit help

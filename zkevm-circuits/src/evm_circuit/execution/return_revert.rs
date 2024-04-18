@@ -13,9 +13,9 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, CachedRegion, Cell,
+            not, CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // These are globally defined because they are used across multiple cases.
         let copy_rw_increase = cb.query_cell();
-        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
+        let copy_rw_increase_is_zero = cb.is_zero(copy_rw_increase.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 
@@ -218,8 +218,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     CallContextFieldTag::ReturnDataLength,
                 ]
                 .map(|field_tag| cb.call_context(None, field_tag));
-                let copy_length =
-                    MinMaxGadget::construct(cb, return_data_length.expr(), range.length());
+                let copy_length = cb.min_max(return_data_length.expr(), range.length());
                 cb.require_equal(
                     "increase rw counter twice for each memory to memory byte copied",
                     copy_length.min() + copy_length.min(),
@@ -283,6 +282,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -293,7 +293,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             Value::known(F::from(step.opcode().unwrap().as_u64())),
         )?;
 
-        let [memory_offset, length] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let memory_offset = rws.next().stack_value();
+        let length = rws.next().stack_value();
+
         let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
@@ -349,8 +353,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment = call.is_create() && call.is_success && !length.is_zero();
 
+        rws.next();
+
         let init_code_first_byte = if is_contract_deployment {
-            block.get_rws(step, 3).memory_value()
+            rws.next().memory_value()
         } else {
             0
         }

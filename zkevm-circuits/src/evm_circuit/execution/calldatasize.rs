@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{
@@ -65,6 +65,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

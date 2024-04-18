@@ -13,9 +13,9 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            not, select, AccountAddress, CachedRegion, Cell,
+            not, select, AccountAddress, CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::word::{Word32Cell, WordExpr, WordLoHi},
@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash.to_word());
+        let not_exists = cb.is_zero_word(&code_hash.to_word());
         let exists = not::expr(not_exists.expr());
         cb.condition(exists.expr(), |cb| {
             cb.bytecode_length(code_hash.to_word(), code_size.expr());
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {
-            // Set source start to the minimun value of code offset and code size.
+            // Set source start to the minimum value of code offset and code size.
             let src_addr = select::expr(
                 code_offset.lt_cap(),
                 code_offset.valid_value(),
@@ -176,14 +176,20 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [external_address, memory_offset, code_offset, memory_length] =
-            [0, 1, 2, 3].map(|idx| block.get_rws(step, idx).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let external_address = rws.next().stack_value();
+        let memory_offset = rws.next().stack_value();
+        let code_offset = rws.next().stack_value();
+        let memory_length = rws.next().stack_value();
+
         self.external_address_word
             .assign_u256(region, offset, external_address)?;
         let memory_address =
@@ -199,11 +205,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.get_rws(step, 7).tx_access_list_value_pair();
+        rws.offset_add(3);
+
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 8).account_codehash_pair().0;
+        let code_hash = rws.next().account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists.assign_u256(region, offset, code_hash)?;
 

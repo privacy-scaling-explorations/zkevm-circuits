@@ -13,7 +13,7 @@ serde_json = { version = "1.0.66", features = ["unbounded_depth"] }
 serde = { version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 eth-types = { path = "../eth-types" }
-zkevm-circuits = { path = "../zkevm-circuits", features = ["test-circuits"] }
+zkevm-circuits = { path = "../zkevm-circuits", features = ["test-circuits", "mock-challenge"] }
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"
@@ -24,6 +24,7 @@ rand_chacha = "0.3"
 paste = "1.0"
 rand_xorshift = "0.3.0"
 rand_core = "0.6.4"
+itertools = "0.10"
 mock = { path = "../mock" }
 
 [dev-dependencies]

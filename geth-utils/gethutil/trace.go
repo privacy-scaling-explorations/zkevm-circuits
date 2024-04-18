@@ -99,25 +99,26 @@ type Account struct {
 }
 
 type Transaction struct {
-	From       common.Address  `json:"from"`
-	To         *common.Address `json:"to"`
-	Nonce      hexutil.Uint64  `json:"nonce"`
-	Value      *hexutil.Big    `json:"value"`
-	GasLimit   hexutil.Uint64  `json:"gas_limit"`
-	GasPrice   *hexutil.Big    `json:"gas_price"`
-	GasFeeCap  *hexutil.Big    `json:"gas_fee_cap"`
-	GasTipCap  *hexutil.Big    `json:"gas_tip_cap"`
-	CallData   hexutil.Bytes   `json:"call_data"`
-	AccessList []struct {
-		Address     common.Address `json:"address"`
-		StorageKeys []common.Hash  `json:"storage_keys"`
-	} `json:"access_list"`
+	From       common.Address   `json:"from"`
+	To         *common.Address  `json:"to"`
+	Nonce      hexutil.Uint64   `json:"nonce"`
+	Value      *hexutil.Big     `json:"value"`
+	GasLimit   hexutil.Uint64   `json:"gas_limit"`
+	GasPrice   *hexutil.Big     `json:"gas_price"`
+	GasFeeCap  *hexutil.Big     `json:"gas_fee_cap"`
+	GasTipCap  *hexutil.Big     `json:"gas_tip_cap"`
+	CallData   hexutil.Bytes    `json:"call_data"`
+	AccessList types.AccessList `json:"access_list"`
+	Type       string           `json:"tx_type"`
+	V          int64            `json:"v"`
+	R          *hexutil.Big     `json:"r"`
+	S          *hexutil.Big     `json:"s"`
 }
 
 type TraceConfig struct {
 	ChainID *hexutil.Big `json:"chain_id"`
 	// HistoryHashes contains most recent 256 block hashes in history,
-	// where the lastest one is at HistoryHashes[len(HistoryHashes)-1].
+	// where the latest one is at HistoryHashes[len(HistoryHashes)-1].
 	HistoryHashes []*hexutil.Big             `json:"history_hashes"`
 	Block         Block                      `json:"block_constants"`
 	Accounts      map[common.Address]Account `json:"accounts"`
@@ -160,10 +161,14 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]core.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
-		// If gas price is specified directly, the tx is treated as legacy type.
 		if tx.GasPrice != nil {
-			tx.GasFeeCap = tx.GasPrice
-			tx.GasTipCap = tx.GasPrice
+			// Set GasFeeCap and GasTipCap to GasPrice if not exist.
+			if tx.GasFeeCap == nil {
+				tx.GasFeeCap = tx.GasPrice
+			}
+			if tx.GasTipCap == nil {
+				tx.GasTipCap = tx.GasPrice
+			}
 		}
 
 		txAccessList := make(types.AccessList, len(tx.AccessList))

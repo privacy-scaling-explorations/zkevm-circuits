@@ -9,7 +9,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroWordGadget},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{WordExpr, WordLoHi, WordLoHiCell},
@@ -54,14 +54,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             vec![OpcodeId::JUMP.expr(), OpcodeId::JUMPI.expr()],
         );
 
-        let is_jumpi = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::JUMPI.expr());
+        let is_jumpi = cb.is_eq(opcode.expr(), OpcodeId::JUMPI.expr());
 
         // initialize is_jump_dest
-        let is_jump_dest = IsEqualGadget::construct(cb, value.expr(), OpcodeId::JUMPDEST.expr());
+        let is_jump_dest = cb.is_eq(value.expr(), OpcodeId::JUMPDEST.expr());
 
         // first default this condition, if use will re-construct with real condition
         // value
-        let is_condition_zero = IsZeroWordGadget::construct(cb, &condition);
+        let is_condition_zero = cb.is_zero_word(&condition);
 
         // Pop the value from the stack
         cb.stack_pop(dest.original_word().to_word());
@@ -111,6 +111,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,

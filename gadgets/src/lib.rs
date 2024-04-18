@@ -16,6 +16,7 @@ pub mod binary_number;
 pub mod is_zero;
 pub mod less_than;
 pub mod mul_add;
+pub mod permutation;
 pub mod util;
 
 use eth_types::Field;

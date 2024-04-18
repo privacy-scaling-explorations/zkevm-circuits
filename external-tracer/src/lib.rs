@@ -5,7 +5,7 @@ use eth_types::{
     Address, Error, GethExecTrace, Word,
 };
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Configuration structure for `geth_utils::trace`
 #[derive(Debug, Default, Clone, Serialize)]
@@ -18,7 +18,7 @@ pub struct TraceConfig {
     /// block constants
     pub block_constants: BlockConstants,
     /// accounts
-    pub accounts: HashMap<Address, Account>,
+    pub accounts: BTreeMap<Address, Account>,
     /// transaction
     pub transactions: Vec<Transaction>,
     /// withdrawal
@@ -78,7 +78,8 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
         let allowed_cases = error.starts_with("nonce too low")
             || error.starts_with("nonce too high")
             || error.starts_with("intrinsic gas too low")
-            || error.starts_with("insufficient funds for gas * price + value");
+            || error.starts_with("insufficient funds for gas * price + value")
+            || error.starts_with("insufficient funds for transfer");
         if trace.invalid && !allowed_cases {
             return Err(Error::TracingError(error.clone()));
         }

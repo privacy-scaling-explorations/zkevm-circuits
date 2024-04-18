@@ -20,7 +20,7 @@ pub struct BlockData<C: CircuitsParams> {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
@@ -96,8 +96,15 @@ impl BlockData<FixedCParams> {
 }
 
 impl BlockData<DynamicCParams> {
-    /// Create a new block from the given Geth data with default CircuitsParams.
+    /// Create a new block with one chunk
+    /// from the given Geth data with default CircuitsParams.
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
+        Self::new_from_geth_data_chunked(geth_data, 1)
+    }
+
+    /// Create a new block with given number of chunks
+    /// from the given Geth data with default CircuitsParams.
+    pub fn new_from_geth_data_chunked(geth_data: GethData, total_chunks: usize) -> Self {
         let (sdb, code_db) = Self::init_dbs(&geth_data);
 
         Self {
@@ -107,7 +114,7 @@ impl BlockData<DynamicCParams> {
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
             geth_traces: geth_data.geth_traces,
-            circuits_params: DynamicCParams {},
+            circuits_params: DynamicCParams { total_chunks },
         }
     }
 }

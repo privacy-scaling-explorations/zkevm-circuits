@@ -44,7 +44,7 @@ impl Opcode for ErrorWriteProtection {
         .contains(&geth_step.op));
 
         if geth_step.op == OpcodeId::CALL {
-            // get only the frist three stack elements since the third one is the value we
+            // get only the first three stack elements since the third one is the value we
             // want to check.
             for i in 0..3 {
                 state.stack_read(

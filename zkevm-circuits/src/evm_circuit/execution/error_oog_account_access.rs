@@ -9,7 +9,7 @@ use crate::{
             math_gadget::LtGadget,
             select, AccountAddress, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{word::WordExpr, Expr},
@@ -62,8 +62,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
 
-        let insufficient_gas_cost =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        let insufficient_gas_cost = cb.is_lt(cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
             "Gas left is less than gas cost",
@@ -88,6 +87,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

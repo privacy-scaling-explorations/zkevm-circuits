@@ -9,7 +9,10 @@ use crate::{
 use bus_mapping::operation::Target;
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
-use halo2_proofs::plonk::Expression;
+use halo2_proofs::{
+    plonk::{Column, ConstraintSystem, Expression, Fixed},
+    poly::Rotation,
+};
 use strum::IntoEnumIterator;
 use word::WordLoHi;
 
@@ -110,12 +113,23 @@ impl<F: Field> ConstraintBuilder<F> {
             .collect()
     }
 
-    pub fn lookups(&self) -> Vec<Lookup<F>> {
-        self.lookups.clone()
+    pub fn lookups(&self, meta: &mut ConstraintSystem<F>, selector: Column<Fixed>) {
+        self.lookups.iter().cloned().for_each(|(name, mut lookup)| {
+            meta.lookup_any(name, |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                for (expression, _) in lookup.iter_mut() {
+                    *expression = expression.clone() * selector.clone();
+                }
+                lookup
+            });
+        });
     }
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
+        self.condition(q.tag_matches(Target::Padding), |cb| {
+            cb.build_padding_constraints(q)
+        });
         self.condition(q.tag_matches(Target::Start), |cb| {
             cb.build_start_constraints(q)
         });
@@ -200,6 +214,36 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.initial_value.lo() - q.initial_value_prev().lo(),
             );
         });
+    }
+
+    fn build_padding_constraints(&mut self, q: &Queries<F>) {
+        // 1.0. Unused keys are 0
+        self.require_zero("field_tag is 0 for Start", q.field_tag());
+        self.require_zero("address is 0 for Start", q.rw_table.address.clone());
+        self.require_zero("id is 0 for Start", q.id());
+        self.require_word_zero("storage_key is 0 for Start", q.rw_table.storage_key.clone());
+        // 1.1. rw_counter increases by 0 or 1 for every non-first row
+        // this is to serve multiple chunk usage, for padding rw counter is only local unique
+        // and not global unique
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_boolean(
+                "if previous row is also Padding. rw counter change is 0 or 1",
+                q.rw_counter_change(),
+            )
+        });
+        // 1.2. Start value is 0
+        self.require_word_zero("Start value is 0", q.value());
+        // 1.3. Start initial value is 0
+        self.require_word_zero("Start initial_value is 0", q.initial_value());
+        // 1.4. state_root is unchanged for every non-first row
+        self.condition(q.lexicographic_ordering_selector.clone(), |cb| {
+            cb.require_word_equal(
+                "state_root is unchanged for Start",
+                q.state_root(),
+                q.state_root_prev(),
+            )
+        });
+        self.require_word_zero("value_prev column is 0 for Start", q.value_prev_column());
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {

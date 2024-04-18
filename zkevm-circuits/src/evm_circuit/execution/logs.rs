@@ -12,9 +12,9 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, sum, CachedRegion, Cell,
+            not, sum, CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxLogFieldTag},
     util::{
@@ -195,13 +195,18 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let memory_start = rws.next().stack_value();
+        let msize = rws.next().stack_value();
+
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;
@@ -402,10 +407,10 @@ mod test {
         code.write_op(cur_op_code);
 
         // second log op code
-        // prepare additinal bytes for memory reading
+        // prepare additional bytes for memory reading
         code.append(&prepare_code(&pushdata, 0x20));
         mstart = 0x00usize;
-        // when mszie > 0x20 (32) needs multi copy steps
+        // when msize > 0x20 (32) needs multi copy steps
         msize = 0x30usize;
         for topic in topics {
             code.push(32, *topic);

@@ -1,14 +1,11 @@
 use super::{AccountMatch, StateTest, StateTestResult};
-use crate::config::TestSuite;
+use crate::{config::TestSuite, utils::ETH_CHAIN_ID};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, FixedCParams},
     mock::BlockData,
 };
 use eth_types::{geth_types, Address, Bytes, Error, GethExecTrace, U256, U64};
-use ethers_core::{
-    k256::ecdsa::SigningKey,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest, Withdrawal},
-};
+use ethers_core::{k256::ecdsa::SigningKey, types::Withdrawal, utils::keccak256};
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
@@ -17,7 +14,7 @@ use thiserror::Error;
 use zkevm_circuits::{
     super_circuit::SuperCircuit,
     test_util::{CircuitTestBuilder, CircuitTestError},
-    witness::Block,
+    witness::{Block, Chunk},
 };
 
 #[derive(PartialEq, Eq, Error, Debug)]
@@ -138,28 +135,22 @@ fn check_post(
 }
 
 fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
-    let chain_id = 1;
-    let wallet = LocalWallet::from_str(&hex::encode(st.secret_key.0)).unwrap();
-    let mut tx = TransactionRequest::new()
-        .chain_id(chain_id)
-        .from(st.from)
-        .nonce(st.nonce)
-        .value(st.value)
-        .data(st.data.clone())
-        .gas(st.gas_limit)
-        .gas_price(st.gas_price);
+    let tx_type = st.tx_type();
+    let tx = st.build_tx();
 
-    if let Some(to) = st.to {
-        tx = tx.to(to);
-    }
-    let tx: TypedTransaction = tx.into();
+    let wallet = LocalWallet::from_str(&hex::encode(&st.secret_key.0)).unwrap();
 
+    let rlp_unsigned = tx.rlp().to_vec();
     let sig = wallet.sign_transaction_sync(&tx).unwrap();
+    let v = st.normalize_sig_v(sig.v);
+    let rlp_signed = tx.rlp_signed(&sig).to_vec();
+    let tx_hash = keccak256(tx.rlp_signed(&sig));
+    let accounts = st.pre;
 
     (
         st.id,
         TraceConfig {
-            chain_id: U256::one(),
+            chain_id: U256::from(ETH_CHAIN_ID),
             history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,
@@ -171,21 +162,25 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             },
 
             transactions: vec![geth_types::Transaction {
+                tx_type,
                 from: st.from,
                 to: st.to,
                 nonce: U64::from(st.nonce),
                 value: st.value,
                 gas_limit: U64::from(st.gas_limit),
                 gas_price: st.gas_price,
-                gas_fee_cap: U256::zero(),
-                gas_tip_cap: U256::zero(),
+                gas_fee_cap: st.max_fee_per_gas,
+                gas_tip_cap: st.max_priority_fee_per_gas,
                 call_data: st.data,
-                access_list: None,
-                v: sig.v,
+                access_list: st.access_list,
+                v,
                 r: sig.r,
                 s: sig.s,
+                rlp_bytes: rlp_signed,
+                rlp_unsigned_bytes: rlp_unsigned,
+                hash: tx_hash.into(),
             }],
-            accounts: st.pre.into_iter().collect(),
+            accounts,
             ..Default::default()
         },
         st.result,
@@ -324,10 +319,11 @@ pub fn run_test(
         eth_block: eth_block.clone(),
     };
 
-    let mut builder;
+    let builder;
 
     if !circuits_config.super_circuit {
         let circuits_params = FixedCParams {
+            total_chunks: 1,
             max_txs: 1,
             max_withdrawals: 1,
             max_rws: 55000,
@@ -337,18 +333,20 @@ pub fn run_test(
             max_evm_rows: 0,
             max_exp_steps: 5000,
             max_keccak_rows: 0,
+            max_vertical_circuit_rows: 0,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
-        builder = block_data.new_circuit_input_builder();
-        builder
+        builder = block_data
+            .new_circuit_input_builder()
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
         let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder).unwrap();
-
-        CircuitTestBuilder::<1, 1>::new_from_block(block)
+        let chunks: Vec<Chunk<Fr>> =
+            zkevm_circuits::evm_circuit::witness::chunk_convert(&block, &builder).unwrap();
+        CircuitTestBuilder::<1, 1>::new_from_block(block, chunks)
             .run_with_result()
             .map_err(|err| match err {
                 CircuitTestError::VerificationFailed { reasons, .. } => {
@@ -366,6 +364,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let circuits_params = FixedCParams {
+            total_chunks: 1,
             max_txs: 1,
             max_withdrawals: 1,
             max_calldata: 32,
@@ -375,10 +374,14 @@ pub fn run_test(
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_vertical_circuit_rows: 0,
         };
-        let (k, circuit, instance, _builder) =
+        let (k, mut circuits, mut instances, _builder) =
             SuperCircuit::<Fr>::build(geth_data, circuits_params, Fr::from(0x100)).unwrap();
         builder = _builder;
+
+        let circuit = circuits.remove(0);
+        let instance = instances.remove(0);
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover

@@ -8,7 +8,11 @@
 #![deny(missing_docs)]
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
-#![allow(clippy::upper_case_acronyms)] // Too pedantic
+
+// Too pedantic
+#![allow(clippy::upper_case_acronyms)]
+// Clippy is buggy on this one. Remove after https://github.com/rust-lang/rust-clippy/issues/12101 is resolved.
+#![allow(clippy::useless_vec)]
 
 #[macro_use]
 pub mod macros;
@@ -37,7 +41,10 @@ use ethers_core::types;
 pub use ethers_core::{
     abi::ethereum_types::{BigEndianHash, U512},
     types::{
-        transaction::{eip2930::AccessList, response::Transaction},
+        transaction::{
+            eip2930::{AccessList, AccessListItem},
+            response::Transaction,
+        },
         Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
     },
 };
@@ -472,14 +479,14 @@ impl<'de> Deserialize<'de> for GethExecStep {
 }
 
 /// Helper type built to deal with the weird `result` field added between
-/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// [`GethExecTrace`]s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
 pub struct ResultGethExecTraces(pub Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
-/// `GethExecutionTrace`s in `debug_traceBlockByHash` and
+/// [`GethExecTrace`]s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]

@@ -9,7 +9,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::BTreeSet, marker::PhantomData};
+use std::{collections::BTreeSet, marker::PhantomData, ops::Deref};
 use strum::IntoEnumIterator;
 
 /// Helper trait that implements functionality to represent a generic type as
@@ -34,11 +34,66 @@ where
     }
 }
 
+/// Columns of the binary number chip.  This can be instantiated without the associated constraints
+/// of the BinaryNumberChip in order to be used as part of a shared table for unit tests.
+#[derive(Clone, Copy, Debug)]
+pub struct BinaryNumberBits<const N: usize>(
+    /// Must be constrained to be binary for correctness.
+    pub [Column<Advice>; N],
+);
+
+impl<const N: usize> Deref for BinaryNumberBits<N> {
+    type Target = [Column<Advice>; N];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> BinaryNumberBits<N> {
+    /// Construct a new BinaryNumberBits without adding any constraints.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self([0; N].map(|_| meta.advice_column()))
+    }
+
+    /// Assign a value to the binary number bits. A generic type that implements
+    /// the AsBits trait can be provided for assignment.
+    pub fn assign<F: Field, T: AsBits<N>>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: &T,
+    ) -> Result<(), Error> {
+        for (&bit, &column) in value.as_bits().iter().zip(self.iter()) {
+            region.assign_advice(
+                || format!("binary number {:?}", column),
+                column,
+                offset,
+                || Value::known(F::from(bit as u64)),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Returns the expression value of the bits at the given rotation.
+    pub fn value<F: Field>(
+        &self,
+        rotation: Rotation,
+    ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
+        let bits = self.0;
+        move |meta: &mut VirtualCells<'_, F>| {
+            let bits = bits.map(|bit| meta.query_advice(bit, rotation));
+            bits.iter()
+                .fold(0.expr(), |result, bit| bit.clone() + result * 2.expr())
+        }
+    }
+}
+
 /// Config for the binary number chip.
 #[derive(Clone, Copy, Debug)]
 pub struct BinaryNumberConfig<T, const N: usize> {
     /// Must be constrained to be binary for correctness.
-    pub bits: [Column<Advice>; N],
+    pub bits: BinaryNumberBits<N>,
     _marker: PhantomData<T>,
 }
 
@@ -51,12 +106,7 @@ where
         &self,
         rotation: Rotation,
     ) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
-        let bits = self.bits;
-        move |meta: &mut VirtualCells<'_, F>| {
-            let bits = bits.map(|bit| meta.query_advice(bit, rotation));
-            bits.iter()
-                .fold(0.expr(), |result, bit| bit.clone() + result * 2.expr())
-        }
+        self.bits.value(rotation)
     }
 
     /// Return the constant that represents a given value. To be compared with the value expression.
@@ -140,10 +190,10 @@ where
     /// Configure constraints for the binary number chip.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
+        bits: BinaryNumberBits<N>,
         selector: Column<Fixed>,
         value: Option<Column<Advice>>,
     ) -> BinaryNumberConfig<T, N> {
-        let bits = [0; N].map(|_| meta.advice_column());
         bits.map(|bit| {
             meta.create_gate("bit column is 0 or 1", |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
@@ -194,15 +244,7 @@ where
         offset: usize,
         value: &T,
     ) -> Result<(), Error> {
-        for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
-            region.assign_advice(
-                || format!("binary number {:?}", column),
-                column,
-                offset,
-                || Value::known(F::from(bit as u64)),
-            )?;
-        }
-        Ok(())
+        self.config.bits.assign(region, offset, value)
     }
 }
 

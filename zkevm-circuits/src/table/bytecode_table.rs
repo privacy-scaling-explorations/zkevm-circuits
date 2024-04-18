@@ -40,7 +40,7 @@ impl BytecodeTable {
         }
     }
 
-    /// Assign the `BytecodeTable` from a list of bytecodes, followig the same
+    /// Assign the `BytecodeTable` from a list of bytecodes, following the same
     /// table layout that the Bytecode Circuit uses.
     pub fn load<F: Field>(
         &self,

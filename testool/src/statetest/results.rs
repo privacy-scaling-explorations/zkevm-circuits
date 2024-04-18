@@ -392,7 +392,6 @@ impl Results {
         if let Some(path) = &self.cache {
             let mut file = std::fs::OpenOptions::new()
                 .read(true)
-                .write(true)
                 .create(true)
                 .append(true)
                 .open(path)?;
@@ -441,7 +440,6 @@ impl Results {
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)
-                    .write(true)
                     .create(true)
                     .append(true)
                     .open(path)?

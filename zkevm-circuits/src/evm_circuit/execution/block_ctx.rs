@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
     util::{
@@ -66,6 +66,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

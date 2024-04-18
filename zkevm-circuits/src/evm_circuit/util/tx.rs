@@ -81,7 +81,7 @@ impl<F: Field> EndTxHelperGadget<F> {
         gas_used: Expression<F>,
         num_rw: Expression<F>,
     ) -> Self {
-        let is_first_tx = IsEqualGadget::construct(cb, tx_id.expr(), 1.expr());
+        let is_first_tx = cb.is_eq(tx_id.expr(), 1.expr());
 
         // Constrain tx receipt fields
         cb.tx_receipt_lookup(
@@ -143,7 +143,8 @@ impl<F: Field> EndTxHelperGadget<F> {
             });
         });
         cb.condition(
-            cb.next.execution_state_selector([ExecutionState::EndBlock]),
+            cb.next
+                .execution_state_selector([ExecutionState::EndBlock, ExecutionState::Padding]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_offset.expr()),
@@ -240,8 +241,7 @@ impl<F: Field> TxDataGadget<F> {
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas = MulWordByU64Gadget::construct(cb, gas_price.clone(), gas.expr());
 
-        let call_data_word_length =
-            ConstantDivisionGadget::construct(cb, call_data_length.expr() + 31.expr(), 32);
+        let call_data_word_length = cb.div_by_const(call_data_length.expr() + 31.expr(), 32);
 
         let (cost_sum, gas_mul_gas_price_plus_value) = if calculate_total_cost {
             let cost_sum = cb.query_word32();

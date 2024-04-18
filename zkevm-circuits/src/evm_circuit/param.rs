@@ -9,7 +9,7 @@ use halo2_proofs::{
 use std::collections::HashMap;
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 128;
+pub(crate) const STEP_WIDTH: usize = 139;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 19;
 /// The height of the state of a step, used by gates that connect two
@@ -42,7 +42,9 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
-    + EXP_TABLE_LOOKUPS;
+    + EXP_TABLE_LOOKUPS
+    + SIG_TABLE_LOOKUPS
+    + CHUNK_CTX_TABLE_LOOKUPS;
 
 /// Lookups done per row.
 pub const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -54,6 +56,8 @@ pub const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Copy, COPY_TABLE_LOOKUPS),
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
+    (Table::Sig, SIG_TABLE_LOOKUPS),
+    (Table::ChunkCtx, CHUNK_CTX_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
@@ -63,7 +67,7 @@ pub const FIXED_TABLE_LOOKUPS: usize = 8;
 pub const TX_TABLE_LOOKUPS: usize = 4;
 
 /// Rw Table lookups done in EVMCircuit
-pub const RW_TABLE_LOOKUPS: usize = 8;
+pub const RW_TABLE_LOOKUPS: usize = 13;
 
 /// Bytecode Table lookups done in EVMCircuit
 pub const BYTECODE_TABLE_LOOKUPS: usize = 4;
@@ -79,6 +83,12 @@ pub const KECCAK_TABLE_LOOKUPS: usize = 1;
 
 /// Exp Table lookups done in EVMCircuit
 pub const EXP_TABLE_LOOKUPS: usize = 1;
+
+/// Sig Table lookups done in EVMCircuit
+pub const SIG_TABLE_LOOKUPS: usize = 1;
+
+/// chunk_ctx Table lookups done in EVMCircuit
+pub const CHUNK_CTX_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.
@@ -163,7 +173,7 @@ pub(crate) const N_BYTES_TX: usize = N_BYTES_TX_NONCE
     + N_BYTES_TX_CALLDATA_GASCOST
     + N_BYTES_TX_TXSIGNHASH;
 
-pub(crate) const N_BYTES_WITHDRAWAL: usize = N_BYTES_U64 //id 
+pub(crate) const N_BYTES_WITHDRAWAL: usize = N_BYTES_U64 //id
     + N_BYTES_U64 // validator id
     + N_BYTES_ACCOUNT_ADDRESS // address
     + N_BYTES_U64; // amount
@@ -175,7 +185,7 @@ lazy_static::lazy_static! {
     };
     // Step slot height in evm circuit
     // We enable the invalid_tx feature to get invalid tx's ExecutionState height
-    // We garentee the heights of other ExecutionStates remains unchanged in the following test
+    // We guarantee the heights of other ExecutionStates remains unchanged in the following test
     pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map(*INVALID_TX_CONFIG);
 }
 fn get_step_height_map(feature_config: FeatureConfig) -> HashMap<ExecutionState, usize> {
