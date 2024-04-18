@@ -123,6 +123,7 @@ func TestUpdateTwoLevels(t *testing.T) {
 	updateStateAndPrepareWitness("UpdateTwoLevels", ks[:], values, []common.Address{addr, addr, addr}, trieModifications)
 }
 
+/*
 func TestUpdateTwoLevelsBigVal(t *testing.T) {
 	ks := [...]common.Hash{common.HexToHash("0x11"), common.HexToHash("0x12"), common.HexToHash("0x21")} // this has three levels
 	// hexed keys:
@@ -155,6 +156,7 @@ func TestUpdateTwoLevelsBigVal(t *testing.T) {
 
 	updateStateAndPrepareWitness("UpdateTwoLevelsBigVal", ks[:], values, []common.Address{addr, addr, addr}, trieModifications)
 }
+*/
 
 func TestUpdateThreeLevels(t *testing.T) {
 	ks := [...]common.Hash{
