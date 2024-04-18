@@ -11,7 +11,7 @@ use crate::{
             math_gadget::{IsZeroWordGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
             CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr, WordLoHi},
@@ -60,18 +60,18 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = cb.query_word32();
         let e = cb.query_word32();
 
-        // 1.  k1 * n + a_reduced  == a
+        // 1. k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
 
-        // 2.  a_reduced * b + 0 == d * 2^256 + e
+        // 2. a_reduced * b + 0 == d * 2^256 + e
         let mul512_left = MulAddWords512Gadget::construct(cb, [&a_reduced, &b, &d, &e], None);
 
-        // 3.  k2 * n + r == d * 2^256 + e
+        // 3. k2 * n + r == d * 2^256 + e
         let mul512_right = MulAddWords512Gadget::construct(cb, [&k, &n, &d, &e], Some(&r));
 
         // (r < n ) or n == 0
-        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
-        let lt = LtWordGadget::construct(cb, &r.to_word(), &n.to_word());
+        let n_is_zero = cb.is_zero_word(&n);
+        let lt = cb.is_lt_word(&r.to_word(), &n.to_word());
         cb.add_constraint(
             " (1 - (r < n) - (n==0)) ",
             1.expr() - lt.expr() - n_is_zero.expr(),
@@ -112,6 +112,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

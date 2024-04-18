@@ -253,7 +253,7 @@ impl Sponge {
     }
 }
 
-/// Convinient method to get 32 bytes digest
+/// Convenient method to get 32 bytes digest
 pub fn keccak256(msg: &[u8]) -> [u8; 32] {
     let mut keccak = Keccak::default();
     keccak.update(msg);

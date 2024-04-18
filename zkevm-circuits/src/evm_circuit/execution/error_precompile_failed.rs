@@ -14,7 +14,7 @@ use crate::{
         word::{Word32Cell, WordExpr, WordLoHi},
         Expr,
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, OpsIdentity, U256};
@@ -119,6 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

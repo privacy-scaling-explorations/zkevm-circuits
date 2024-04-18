@@ -16,9 +16,9 @@ use crate::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
             },
-            rlc, CachedRegion, Cell,
+            rlc, CachedRegion, Cell, StepRws,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::word::{WordExpr, WordLoHi, WordLoHiCell},
 };
@@ -117,14 +117,16 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_offset, size, sha3_output] =
-            [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
+        let mut rws = StepRws::new(block, step);
+
+        let [memory_offset, size, sha3_output] = [0, 1, 2].map(|_| rws.next().stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, size)?;
@@ -140,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         )?;
 
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
-            .map(|i| block.get_rws(step, i).memory_value())
+            .map(|_| rws.next().memory_value())
             .collect();
 
         let rlc_acc = region

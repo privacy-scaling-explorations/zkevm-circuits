@@ -37,7 +37,7 @@ impl Instrument {
         self.states.push((execution_state, sizes));
     }
 
-    /// Dissasembles the instrumentation data and returns a collection of
+    /// Disassembles the instrumentation data and returns a collection of
     /// `ExecStateReport`s. One for each EVM `ExecutionState`.
     pub fn analyze(&self) -> Vec<ExecStateReport> {
         let mut report_collection = vec![];
@@ -104,6 +104,12 @@ impl Instrument {
                     CellType::Lookup(Table::Exp) => {
                         report.exp_table = data_entry;
                     }
+                    CellType::Lookup(Table::Sig) => {
+                        report.sig_table = data_entry;
+                    }
+                    CellType::Lookup(Table::ChunkCtx) => {
+                        report.chunk_ctx_table = data_entry;
+                    }
                 }
             }
             report_collection.push(report);
@@ -113,7 +119,7 @@ impl Instrument {
 }
 
 /// Struct which contains a Cost/ColumnType report for a particular EVM
-/// `ExecutionStep`.
+/// [`ExecStep`](bus_mapping::circuit_input_builder::ExecStep).
 #[derive(Clone, Debug, Default)]
 pub struct ExecStateReport {
     pub state: ExecutionState,
@@ -131,6 +137,8 @@ pub struct ExecStateReport {
     pub copy_table: StateReportRow,
     pub keccak_table: StateReportRow,
     pub exp_table: StateReportRow,
+    pub sig_table: StateReportRow,
+    pub chunk_ctx_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {

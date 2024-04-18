@@ -14,7 +14,7 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
-    witness::{Block, ExecStep, Transaction},
+    witness::{Block, Chunk, ExecStep, Transaction},
 };
 
 #[derive(Clone, Debug)]
@@ -105,6 +105,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

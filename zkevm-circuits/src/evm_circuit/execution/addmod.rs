@@ -14,7 +14,7 @@ use crate::{
             },
             not, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr, WordLoHi},
@@ -64,12 +64,12 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let n = cb.query_word32();
         let r = cb.query_word32();
 
-        // auxiliar witness
+        // auxiliary witness
         let k = cb.query_word32();
         let a_reduced = cb.query_word32();
         let d = cb.query_word32();
 
-        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
+        let n_is_zero = cb.is_zero_word(&n);
 
         // 1. check k * N + a_reduced == a without overflow
         let muladd_k_n_areduced =
@@ -152,6 +152,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
@@ -161,7 +162,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         // get stack values
         let [mut r, n, b, a] = [3, 2, 1, 0].map(|index| block.get_rws(step, index).stack_value());
 
-        // assing a,b & n stack values
+        // assign a,b & n stack values
         self.a.assign_u256(region, offset, a)?;
         self.b.assign_u256(region, offset, b)?;
         self.n.assign_u256(region, offset, n)?;

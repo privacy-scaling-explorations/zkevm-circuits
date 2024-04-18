@@ -10,10 +10,10 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            math_gadget::{IsZeroGadget, LtGadget},
+            math_gadget::{IsEqualGadget, LtGadget},
             not, or, select, sum, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr},
@@ -27,7 +27,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
-    is_push0: IsZeroGadget<F>,
+    is_push0: IsEqualGadget<F>,
     value: Word32Cell<F>,
     is_pushed: [Cell<F>; 32],
     is_padding: [Cell<F>; 32],
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
+        let is_push0 = cb.is_eq(opcode.expr(), OpcodeId::PUSH0.expr());
 
         let value = cb.query_word32();
         cb.stack_push(value.to_word());
@@ -56,8 +56,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         cb.bytecode_length(cb.curr.state.code_hash.to_word(), code_length.expr());
 
         let num_bytes_needed = opcode.expr() - OpcodeId::PUSH0.expr();
-        let is_out_of_bound =
-            LtGadget::construct(cb, code_length_left.expr(), num_bytes_needed.expr());
+        let is_out_of_bound = cb.is_lt(code_length_left.expr(), num_bytes_needed.expr());
         let num_bytes_padding = select::expr(
             is_out_of_bound.expr(),
             num_bytes_needed.expr() - code_length_left.expr(),
@@ -160,6 +159,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -170,7 +170,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.is_push0.assign(
             region,
             offset,
-            F::from(opcode.as_u64() - OpcodeId::PUSH0.as_u64()),
+            F::from(opcode.as_u64()),
+            OpcodeId::PUSH0.as_u64().into(),
         )?;
 
         let bytecode = block

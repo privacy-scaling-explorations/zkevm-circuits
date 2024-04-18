@@ -10,9 +10,9 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::IsZeroWordGadget,
-            not, select, AccountAddress, CachedRegion, Cell, U64Cell,
+            not, select, AccountAddress, CachedRegion, Cell, StepRws, U64Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let not_exists = cb.is_zero_word(&code_hash);
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_u64();
@@ -117,13 +117,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.get_rws(step, 0).stack_value();
+        let mut rws = StepRws::new(block, step);
+
+        let address = rws.next().stack_value();
         self.address_word.assign_u256(region, offset, address)?;
 
         self.tx_id
@@ -136,16 +139,18 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.get_rws(step, 4).tx_access_list_value_pair();
+        rws.offset_add(3);
+
+        let (_, is_warm) = rws.next().tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.get_rws(step, 5).account_codehash_pair().0;
+        let code_hash = rws.next().account_codehash_pair().0;
         self.code_hash.assign_u256(region, offset, code_hash)?;
         self.not_exists
             .assign(region, offset, WordLoHi::from(code_hash))?;
 
-        let code_size = block.get_rws(step, 6).stack_value().as_u64();
+        let code_size = rws.next().stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 

@@ -2,8 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
-    TransactionContext,
+    CallKind, ChunkContext, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, PrecompileEvent,
+    Transaction, TransactionContext,
 };
 use crate::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError},
@@ -37,6 +37,8 @@ pub struct CircuitInputStateRef<'a> {
     pub block: &'a mut Block,
     /// Block Context
     pub block_ctx: &'a mut BlockContext,
+    /// Chunk Context
+    pub chunk_ctx: &'a mut ChunkContext,
     /// Transaction
     pub tx: &'a mut Transaction,
     /// Transaction Context
@@ -49,11 +51,11 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
-
         Ok(ExecStep::new(
             geth_step,
             call_ctx,
             self.block_ctx.rwc,
+            self.chunk_ctx.rwc,
             call_ctx.reversible_write_counter,
             self.tx_ctx.log_id,
         ))
@@ -65,6 +67,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::InvalidTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -75,6 +78,7 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::BeginTx,
             gas_left: self.tx.gas(),
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             ..Default::default()
         }
     }
@@ -110,6 +114,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 0
             },
             rwc: self.block_ctx.rwc,
+            rwc_inner_chunk: self.chunk_ctx.rwc,
             // For tx without code execution
             reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
                 call_ctx.reversible_write_counter
@@ -121,7 +126,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) into the
+    /// Push an [`Operation`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
     /// reference to the stored operation ([`OperationRef`]) inside the
@@ -131,10 +136,12 @@ impl<'a> CircuitInputStateRef<'a> {
         if let OpEnum::Account(op) = op.clone().into_enum() {
             self.check_update_sdb_account(rw, &op)
         }
-        let op_ref =
-            self.block
-                .container
-                .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
+        let op_ref = self.block.container.insert(Operation::new(
+            self.block_ctx.rwc.inc_pre(),
+            self.chunk_ctx.rwc.inc_pre(),
+            rw,
+            op,
+        ));
         step.bus_mapping_instance.push(op_ref);
         self.check_rw_num_limit()
     }
@@ -142,9 +149,13 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Check whether rws will overflow circuit limit.
     pub fn check_rw_num_limit(&self) -> Result<(), Error> {
         if let Some(max_rws) = self.max_rws {
-            let rwc = self.block_ctx.rwc.0;
+            let rwc = self.chunk_ctx.rwc.0;
             if rwc > max_rws {
-                log::error!("rwc > max_rws, rwc={}, max_rws={}", rwc, max_rws);
+                log::error!(
+                    "chunk inner rwc > max_rws, rwc={}, max_rws={}",
+                    rwc,
+                    max_rws
+                );
                 return Err(Error::RwsNotEnough(max_rws, rwc));
             };
         }
@@ -196,8 +207,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(step, RW::WRITE, op)
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) with reversible to be
-    /// true into the
+    /// Push an [`Operation`] with reversible to be true into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
     /// reference to the stored operation
@@ -211,6 +221,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.check_apply_op(&op.clone().into_enum());
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
+            self.chunk_ctx.rwc.inc_pre(),
             RW::WRITE,
             op,
         ));
@@ -560,13 +571,13 @@ impl<'a> CircuitInputStateRef<'a> {
     /// balance by `value`. If `fee` is existing (not None), also need to push 1
     /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
     #[allow(clippy::too_many_arguments)]
-    pub fn transfer_with_fee(
+    pub fn transfer(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
         receiver_exists: bool,
-        must_create: bool,
+        is_create: bool,
         value: Word,
         fee: Option<Word>,
     ) -> Result<(), Error> {
@@ -609,68 +620,22 @@ impl<'a> CircuitInputStateRef<'a> {
             sender_balance_prev,
             sender_balance
         );
-        // If receiver doesn't exist, create it
-        if !receiver_exists && (!value.is_zero() || must_create) {
+
+        if !value.is_zero() {
             self.push_op_reversible(
                 step,
                 AccountOp {
-                    address: receiver,
-                    field: AccountField::CodeHash,
-                    value: CodeDB::empty_code_hash().to_word(),
-                    value_prev: Word::zero(),
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
                 },
             )?;
         }
-        if value.is_zero() {
-            // Skip transfer if value == 0
-            return Ok(());
-        }
 
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
-                value: sender_balance,
-                value_prev: sender_balance_prev,
-            },
-        )?;
-
-        let (_found, receiver_account) = self.sdb.get_account(&receiver);
-        let receiver_balance_prev = receiver_account.balance;
-        let receiver_balance = receiver_account.balance + value;
-        self.push_op_reversible(
-            step,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
-                value: receiver_balance,
-                value_prev: receiver_balance_prev,
-            },
-        )?;
+        self.transfer_to(step, receiver, receiver_exists, is_create, value, true)?;
 
         Ok(())
-    }
-
-    /// Same functionality with `transfer_with_fee` but with `fee` set zero.
-    pub fn transfer(
-        &mut self,
-        step: &mut ExecStep,
-        sender: Address,
-        receiver: Address,
-        receiver_exists: bool,
-        must_create: bool,
-        value: Word,
-    ) -> Result<(), Error> {
-        self.transfer_with_fee(
-            step,
-            sender,
-            receiver,
-            receiver_exists,
-            must_create,
-            value,
-            None,
-        )
     }
 
     /// Transfer to an address. Create an account if it is not existed before.
@@ -679,12 +644,11 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         receiver: Address,
         receiver_exists: bool,
-        must_create: bool,
+        is_create: bool,
         value: Word,
         reversible: bool,
     ) -> Result<(), Error> {
-        // If receiver doesn't exist, create it
-        if (!receiver_exists && !value.is_zero()) || must_create {
+        if !receiver_exists && (!value.is_zero() || is_create) {
             self.account_write(
                 step,
                 receiver,
@@ -1057,6 +1021,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.check_apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
                     self.block_ctx.rwc.inc_pre(),
+                    self.chunk_ctx.rwc.inc_pre(),
                     RW::WRITE,
                     false,
                     op,
@@ -1225,7 +1190,7 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
         let geth_step = steps
-            .get(0)
+            .first()
             .ok_or(Error::InternalError("invalid index 0"))?;
         let is_revert_or_return_call_success = (geth_step.op == OpcodeId::REVERT
             || geth_step.op == OpcodeId::RETURN)
@@ -1404,6 +1369,11 @@ impl<'a> CircuitInputStateRef<'a> {
         self.block.add_exp_event(event)
     }
 
+    /// Push an event representing auxiliary data for a precompile call to the state.
+    pub fn push_precompile_event(&mut self, event: PrecompileEvent) {
+        self.block.add_precompile_event(event)
+    }
+
     pub(crate) fn get_step_err(
         &self,
         step: &GethExecStep,
@@ -1419,7 +1389,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?;
 
-        if matches!(next_step, None) {
+        if next_step.is_none() {
             // enumerating call scope successful cases
             // case 1: call with normal halt opcode termination
             if matches!(
@@ -1614,7 +1584,6 @@ impl<'a> CircuitInputStateRef<'a> {
                         PrecompileCalls::Sha256
                         | PrecompileCalls::Ripemd160
                         | PrecompileCalls::Blake2F
-                        | PrecompileCalls::ECRecover
                         | PrecompileCalls::Bn128Add
                         | PrecompileCalls::Bn128Mul
                         | PrecompileCalls::Bn128Pairing

@@ -1,7 +1,8 @@
 //! Block-related utility module
 
 use super::{
-    execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent, Withdrawal,
+    execution::ExecState, transaction::Transaction, CopyEvent, ExecStep, ExpEvent, PrecompileEvent,
+    PrecompileEvents, Withdrawal,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
@@ -42,24 +43,14 @@ impl BlockContext {
     }
 }
 
-/// Block-wise execution steps that don't belong to any Transaction.
-#[derive(Debug)]
-pub struct BlockSteps {
-    /// EndBlock step that is repeated after the last transaction and before
-    /// reaching the last EVM row.
-    pub end_block_not_last: ExecStep,
-    /// Last EndBlock step that appears in the last EVM row.
-    pub end_block_last: ExecStep,
-}
-
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// coinbase
     pub coinbase: Address,
@@ -79,14 +70,20 @@ pub struct Block {
     pub container: OperationContainer,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
-    /// Block-wise steps
-    pub block_steps: BlockSteps,
+    /// End block step
+    pub end_block: ExecStep,
+
+    // /// Chunk context
+    // pub chunk_context: ChunkContext,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
-    /// Inputs to the SHA3 opcode
+    /// Inputs to the SHA3 opcode as well as data hashed during the EVM execution like init code
+    /// and address creation inputs.
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
+    /// IO to/from the precompiled contract calls.
+    pub precompile_events: PrecompileEvents,
     /// Original block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
@@ -132,19 +129,14 @@ impl Block {
             prev_state_root,
             container: OperationContainer::new(),
             txs: Vec::new(),
-            block_steps: BlockSteps {
-                end_block_not_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
-                end_block_last: ExecStep {
-                    exec_state: ExecState::EndBlock,
-                    ..ExecStep::default()
-                },
+            end_block: ExecStep {
+                exec_state: ExecState::EndBlock,
+                ..ExecStep::default()
             },
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),
+            precompile_events: PrecompileEvents { events: Vec::new() },
             eth_block: eth_block.clone(),
         })
     }
@@ -190,5 +182,10 @@ impl Block {
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
+    }
+
+    /// Push a precompile event to the block.
+    pub fn add_precompile_event(&mut self, event: PrecompileEvent) {
+        self.precompile_events.events.push(event);
     }
 }

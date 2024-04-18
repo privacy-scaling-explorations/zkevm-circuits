@@ -20,19 +20,24 @@ use self::{
 use crate::{
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, UXTable},
     util::{word::WordLoHi, Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::{self, MptUpdates, Rw, RwMap},
+    witness::{
+        self,
+        rw::{RwFingerprints, ToVec},
+        Chunk, MptUpdates, Rw, RwMap,
+    },
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, Word};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::{BinaryNumberBits, BinaryNumberChip, BinaryNumberConfig},
+    permutation::{PermutationChip, PermutationChipConfig},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Instance,
+        SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
@@ -51,7 +56,8 @@ pub struct StateCircuitConfig<F> {
     // Figure out why you get errors when this is Selector.
     selector: Column<Fixed>,
     // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/407
-    rw_table: RwTable,
+    /// rw table
+    pub rw_table: RwTable,
     sort_keys: SortKeysConfig,
     // Assigned value at the start of the block. For Rw::Account and
     // Rw::AccountStorage rows this is the committed value in the MPT, for
@@ -69,6 +75,13 @@ pub struct StateCircuitConfig<F> {
     lookups: LookupsConfig,
     // External tables
     mpt_table: MptTable,
+
+    /// rw permutation config
+    pub rw_permutation_config: PermutationChipConfig<F>,
+
+    // pi for chunk context continuity
+    pi_chunk_continuity: Column<Instance>,
+
     _marker: PhantomData<F>,
 }
 
@@ -107,7 +120,8 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let lookups = LookupsChip::configure(meta, u8_table, u10_table, u16_table);
 
         let rw_counter = MpiChip::configure(meta, selector, [rw_table.rw_counter], lookups);
-        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
+        let bits = BinaryNumberBits::construct(meta);
+        let tag = BinaryNumberChip::configure(meta, bits, selector, Some(rw_table.tag));
         let id = MpiChip::configure(meta, selector, [rw_table.id], lookups);
 
         let address = MpiChip::configure(meta, selector, [rw_table.address], lookups);
@@ -149,12 +163,20 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let lexicographic_ordering =
             LexicographicOrderingConfig::configure(meta, sort_keys, lookups, power_of_randomness);
 
+        let rw_permutation_config = PermutationChip::configure(
+            meta,
+            <RwTable as LookupTable<F>>::advice_columns(&rw_table),
+        );
+
         // annotate columns
         rw_table.annotate_columns(meta);
         mpt_table.annotate_columns(meta);
         u8_table.annotate_columns(meta);
         u10_table.annotate_columns(meta);
         u16_table.annotate_columns(meta);
+
+        let pi_chunk_continuity = meta.instance_column();
+        meta.enable_equality(pi_chunk_continuity);
 
         let config = Self {
             selector,
@@ -168,7 +190,9 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lookups,
             rw_table,
             mpt_table,
-            _marker: PhantomData::default(),
+            rw_permutation_config,
+            pi_chunk_continuity,
+            _marker: PhantomData,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
@@ -177,9 +201,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             constraint_builder.build(&queries);
             constraint_builder.gate(queries.selector)
         });
-        for (name, lookup) in constraint_builder.lookups() {
-            meta.lookup_any(name, |_| lookup);
-        }
+        constraint_builder.lookups(meta, config.selector);
 
         config
     }
@@ -197,11 +219,14 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
         n_rows: usize, // 0 means dynamically calculated from `rows`.
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
-            |mut region| self.assign_with_region(&mut region, rows, &updates, n_rows),
+            |mut region| {
+                self.assign_with_region(&mut region, rows, &updates, n_rows, prev_chunk_last_rw)
+            },
         )
     }
 
@@ -211,10 +236,12 @@ impl<F: Field> StateCircuitConfig<F> {
         rows: &[Rw],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
+        prev_chunk_last_rw: Option<Rw>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
-        let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
+        let (rows, padding_length) =
+            RwMap::table_assignments_padding(rows, n_rows, prev_chunk_last_rw);
         let rows_len = rows.len();
 
         let mut state_root = updates.old_root();
@@ -227,11 +254,12 @@ impl<F: Field> StateCircuitConfig<F> {
                 log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
             }
 
+            // disable selector on offset 0 since it will be copy constraints by public input
             region.assign_fixed(
                 || "selector",
                 self.selector,
                 offset,
-                || Value::known(F::ONE),
+                || Value::known(if offset == 0 { F::ZERO } else { F::ONE }),
             )?;
 
             tag_chip.assign(region, offset, &row.tag())?;
@@ -398,6 +426,7 @@ impl<F: Field> StateCircuitConfig<F> {
         region.name_column(|| "STATE_mpt_proof_type", self.mpt_proof_type);
         region.name_column(|| "STATE_state_root lo", self.state_root.lo());
         region.name_column(|| "STATE_state_root hi", self.state_root.hi());
+        region.name_column(|| "STATE_pi_chunk_continuity", self.pi_chunk_continuity);
     }
 }
 
@@ -426,28 +455,44 @@ impl SortKeysConfig {
 
 /// State Circuit for proving RwTable is valid
 #[derive(Default, Clone, Debug)]
-pub struct StateCircuit<F> {
+pub struct StateCircuit<F: Field> {
     /// Rw rows
     pub rows: Vec<Rw>,
+    #[cfg(test)]
+    row_padding_and_overrides: Vec<Vec<Value<F>>>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
     #[cfg(test)]
     overrides: HashMap<(dev::AdviceColumn, isize), F>,
+
+    /// permutation challenge
+    permu_alpha: F,
+    permu_gamma: F,
+    rw_fingerprints: RwFingerprints<F>,
+
+    prev_chunk_last_rw: Option<Rw>,
+
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
-    pub fn new(rw_map: RwMap, n_rows: usize) -> Self {
-        let rows = rw_map.table_assignments();
+    pub fn new(chunk: &Chunk<F>) -> Self {
+        let rows = chunk.by_address_rws.table_assignments(false); // address sorted
         let updates = MptUpdates::mock_from(&rows);
         Self {
             rows,
+            #[cfg(test)]
+            row_padding_and_overrides: Default::default(),
             updates,
-            n_rows,
+            n_rows: chunk.fixed_param.max_rws,
             #[cfg(test)]
             overrides: HashMap::new(),
-            _marker: PhantomData::default(),
+            permu_alpha: chunk.permu_alpha,
+            permu_gamma: chunk.permu_gamma,
+            rw_fingerprints: chunk.by_address_rw_fingerprints.clone(),
+            prev_chunk_last_rw: chunk.prev_chunk_last_by_address_rw,
+            _marker: PhantomData,
         }
     }
 }
@@ -455,8 +500,8 @@ impl<F: Field> StateCircuit<F> {
 impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(block.rws.clone(), block.circuits_params.max_rws)
+    fn new_from_block(_block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
+        Self::new(chunk)
     }
 
     fn unusable_rows() -> usize {
@@ -466,10 +511,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(_block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         (
-            block.rws.0.values().flatten().count() + 1,
-            block.circuits_params.max_rws,
+            chunk.by_address_rws.0.values().flatten().count() + 1,
+            chunk.fixed_param.max_rws,
         )
     }
 
@@ -485,21 +530,67 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
-        layouter.assign_region(
+        let (
+            alpha_cell,
+            gamma_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
+        ) = layouter.assign_region(
             || "state circuit",
             |mut region| {
-                config
-                    .rw_table
-                    .load_with_region(&mut region, &self.rows, self.n_rows)?;
+                // TODO optimise RwMap::table_assignments_prepad calls from 3 times -> 1
+                let padded_rows = config.rw_table.load_with_region(
+                    &mut region,
+                    &self.rows,
+                    self.n_rows,
+                    self.prev_chunk_last_rw,
+                )?;
 
-                config.assign_with_region(&mut region, &self.rows, &self.updates, self.n_rows)?;
+                config.assign_with_region(
+                    &mut region,
+                    &self.rows,
+                    &self.updates,
+                    self.n_rows,
+                    self.prev_chunk_last_rw,
+                )?;
+
+                // permu_next_continuous_fingerprint and rows override for negative-test
+                #[allow(unused_assignments, unused_mut)]
+                let rows = if cfg!(test) {
+                    let mut row_padding_and_overridess = None;
+                    // NOTE need wrap in cfg(test) block even already under if cfg!(test) to make
+                    // compiler happy
+                    #[cfg(test)]
+                    {
+                        row_padding_and_overridess = if self.row_padding_and_overrides.is_empty() {
+                            debug_assert!(
+                                self.overrides.is_empty(),
+                                "overrides size > 0 but row_padding_and_overridess = 0"
+                            );
+                            Some(padded_rows.to2dvec())
+                        } else {
+                            Some(self.row_padding_and_overrides.clone())
+                        };
+                    }
+                    row_padding_and_overridess.unwrap()
+                } else {
+                    padded_rows.to2dvec()
+                };
+                let permutation_cells = config.rw_permutation_config.assign(
+                    &mut region,
+                    Value::known(self.permu_alpha),
+                    Value::known(self.permu_gamma),
+                    Value::known(self.rw_fingerprints.prev_mul_acc),
+                    &rows,
+                    "state_circuit",
+                )?;
                 #[cfg(test)]
                 {
-                    let first_non_padding_index = if self.rows.len() < self.n_rows {
-                        RwMap::padding_len(self.rows.len(), self.n_rows)
-                    } else {
-                        1 // at least 1 StartOp padding in idx 0, so idx 1 is first non-padding row
-                    };
+                    // we already handle rw_table override for negative test
+                    // below is to support override value other than rw_table
+                    let first_non_padding_index = 1;
 
                     for ((column, row_offset), &f) in &self.overrides {
                         let advice_column = column.value(config);
@@ -516,14 +607,35 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     }
                 }
 
-                Ok(())
+                Ok(permutation_cells)
             },
-        )
+        )?;
+        // constrain permutation challenges
+        [
+            alpha_cell,
+            gamma_cell,
+            row_fingerprints_prev_cell,
+            row_fingerprints_next_cell,
+            acc_fingerprints_prev_cell,
+            acc_fingerprints_next_cell,
+        ]
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, cell)| {
+            layouter.constrain_instance(cell.cell(), config.pi_chunk_continuity, i)
+        })?;
+        Ok(())
     }
 
-    /// powers of randomness for instance columns
     fn instance(&self) -> Vec<Vec<F>> {
-        vec![]
+        vec![vec![
+            self.permu_alpha,
+            self.permu_gamma,
+            self.rw_fingerprints.prev_ending_row,
+            self.rw_fingerprints.ending_row,
+            self.rw_fingerprints.prev_mul_acc,
+            self.rw_fingerprints.mul_acc,
+        ]]
     }
 }
 

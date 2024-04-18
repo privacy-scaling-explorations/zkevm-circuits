@@ -100,8 +100,8 @@ impl<F: Field> ModExtensionGadget<F> {
             (parent_data[1].hash.lo().expr(), parent_data[1].hash.hi().expr(), parent_data[1].drifted_parent_hash.lo().expr(), parent_data[1].drifted_parent_hash.hi().expr())
             }};
 
-            let parent_data_lo = vec![lo_s, lo_c];
-            let parent_data_hi = vec![hi_s, hi_c];
+            let parent_data_lo = [lo_s, lo_c];
+            let parent_data_hi = [hi_s, hi_c];
             let (
                 parent_data_rlc,
                 key_rlc_before,
@@ -139,7 +139,7 @@ impl<F: Field> ModExtensionGadget<F> {
             for is_s in [true, false] {
                 config.is_key_part_odd[is_s.idx()] = cb.query_cell();
 
-                let items = vec![
+                let items = [
                     key_items[is_s.idx()].clone(),
                     key_nibbles[is_s.idx()].clone(),
                 ];

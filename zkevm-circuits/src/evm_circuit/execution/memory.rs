@@ -13,7 +13,7 @@ use crate::{
             memory_gadget::MemoryExpansionGadget,
             not, CachedRegion, MemoryAddress,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     util::{
         word::{Word32Cell, WordExpr},
@@ -46,9 +46,9 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         let value = cb.query_word32();
 
         // Check if this is an MLOAD
-        let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
+        let is_mload = cb.is_eq(opcode.expr(), OpcodeId::MLOAD.expr());
         // Check if this is an MSTORE8
-        let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
+        let is_mstore8 = cb.is_eq(opcode.expr(), OpcodeId::MSTORE8.expr());
         // This is an MSTORE/MSTORE8
         let is_store = not::expr(is_mload.expr());
         // This is an MSTORE/MLOAD
@@ -119,6 +119,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,

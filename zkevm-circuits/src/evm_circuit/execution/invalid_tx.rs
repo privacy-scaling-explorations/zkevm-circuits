@@ -13,6 +13,7 @@ use crate::{
     },
     table::AccountFieldTag,
     util::word::{Word32Cell, WordExpr, WordLoHi},
+    witness::Chunk,
 };
 use eth_types::{Field, ToScalar};
 use gadgets::util::{not, or, Expr, Scalar};
@@ -47,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
             AccountFieldTag::Nonce,
             WordLoHi::from_lo_unchecked(account_nonce.expr()),
         );
-        let is_nonce_match = IsEqualGadget::construct(cb, account_nonce.expr(), tx.nonce.expr());
+        let is_nonce_match = cb.is_eq(account_nonce.expr(), tx.nonce.expr());
 
         // Check if the gas limit is larger or equal to the intrinsic gas cost
         let insufficient_gas_limit =
@@ -60,8 +61,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
             AccountFieldTag::Balance,
             balance.to_word(),
         );
-        let insufficient_balance =
-            LtWordGadget::construct(cb, &balance.to_word(), &tx.total_cost().to_word());
+        let insufficient_balance = cb.is_lt_word(&balance.to_word(), &tx.total_cost().to_word());
 
         // At least one of the invalid conditions needs to be true
         let invalid_tx = or::expr([
@@ -96,6 +96,7 @@ impl<F: Field> ExecutionGadget<F> for InvalidTxGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         _call: &Call,
         step: &ExecStep,

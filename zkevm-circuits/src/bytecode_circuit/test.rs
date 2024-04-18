@@ -194,7 +194,7 @@ fn bytecode_invalid_is_code() {
             })
             .verify(false);
     }
-    // Mark the 4rd byte as data (is code)
+    // Mark the 4th byte as data (is code)
     {
         BytecodeCircuit::<Fr>::from_bytes(bytecodes.clone(), k)
             .mut_rows(|rows| {

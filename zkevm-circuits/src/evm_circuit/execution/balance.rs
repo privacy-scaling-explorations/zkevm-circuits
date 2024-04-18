@@ -11,7 +11,7 @@ use crate::{
             math_gadget::IsZeroWordGadget,
             not, select, AccountAddress, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.to_word(),
         );
-        let not_exists = IsZeroWordGadget::construct(cb, &code_hash);
+        let not_exists = cb.is_zero_word(&code_hash);
         let exists = not::expr(not_exists.expr());
         let balance = cb.query_word32();
         cb.condition(exists.expr(), |cb| {
@@ -111,6 +111,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         tx: &Transaction,
         call: &Call,
         step: &ExecStep,

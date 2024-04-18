@@ -34,7 +34,7 @@ use crate::{
     table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable, WdTable},
     tx_circuit::TX_LEN,
     util::{word::WordLoHi, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self, Chunk},
 };
 use gadgets::{
     is_zero::IsZeroChip,
@@ -402,8 +402,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let default_calldata_row_constraint4 = tx_id_is_zero_config.expr() * gas_cost.expr();
 
             // if tx_id != 0 then
-            //    1. tx_id_next == tx_id: idx_next == idx + 1, gas_cost_next == gas_cost +
-            //       gas_next, is_final == false;
+            //    1. tx_id_next == tx_id: idx_next == idx + 1, gas_cost_next == gas_cost + gas_next,
+            //       is_final == false;
             //    2. tx_id_next == tx_id + 1 + x (where x is in [0, 2^16)): idx_next == 0,
             //       gas_cost_next == gas_next, is_final == true;
             //    3. tx_id_next == 0: is_final == true, idx_next == 0, gas_cost_next == 0;
@@ -1460,25 +1460,25 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         6
     }
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
+    fn new_from_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> Self {
         let public_data = public_data_convert(block);
         PiCircuit::new(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_withdrawals,
-            block.circuits_params.max_calldata,
+            chunk.fixed_param.max_txs,
+            chunk.fixed_param.max_withdrawals,
+            chunk.fixed_param.max_calldata,
             public_data,
         )
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+    fn min_num_rows_block(block: &witness::Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
             Self::Config::circuit_len_all(block.txs.len(), block.withdrawals().len(), calldata_len),
             Self::Config::circuit_len_all(
-                block.circuits_params.max_txs,
-                block.circuits_params.max_withdrawals,
-                block.circuits_params.max_calldata,
+                chunk.fixed_param.max_txs,
+                chunk.fixed_param.max_withdrawals,
+                chunk.fixed_param.max_calldata,
             ),
         )
     }

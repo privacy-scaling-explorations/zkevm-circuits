@@ -1518,7 +1518,7 @@ impl<F: Field> MainRLPGadget<F> {
                 ensure_minimal_rlp: cb.query_cell(),
                 keccak_r: Some(cb.keccak_r.expr()),
             };
-            let all_bytes = vec![vec![config.rlp_byte.clone()], config.bytes.clone()].concat();
+            let all_bytes = [vec![config.rlp_byte.clone()], config.bytes.clone()].concat();
 
             // Decode the RLP item
             config.rlp =

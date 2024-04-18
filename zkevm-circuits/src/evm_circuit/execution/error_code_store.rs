@@ -10,7 +10,7 @@ use crate::{
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::{word::WordExpr, Expr},
@@ -72,8 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         );
 
         // constrain code size > MAXCODESIZE
-        let max_code_size_exceed =
-            LtGadget::construct(cb, MAXCODESIZE.expr(), memory_address.length());
+        let max_code_size_exceed = cb.is_lt(MAXCODESIZE.expr(), memory_address.length());
 
         // check must be one of CodeStoreOutOfGas or MaxCodeSizeExceeded
         cb.require_in_set(
@@ -100,6 +99,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,

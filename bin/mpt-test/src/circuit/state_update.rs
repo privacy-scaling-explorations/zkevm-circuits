@@ -57,13 +57,13 @@ pub struct StateUpdateCircuitConfig<F: Field> {
     /// The MPT table, where the state updates are stored
     pub pi_mpt: MptTable,
 
-    /// Intance column, used to check public inputs
+    /// Instance column, used to check public inputs
     pub instance: Column<Instance>,
 
     /// ONE if the first row, ZERO otherwise
     pub is_first: Column<Fixed>,
 
-    /// ONE if row is paddding, ZERO otherwise
+    /// ONE if row is padding, ZERO otherwise
     pub is_padding: IsZeroConfig<F>,
 
     /// ONE is the last used row, ZERO otherwise
@@ -465,7 +465,7 @@ impl<F: Field> Circuit<F> for StateUpdateCircuit<F> {
                                 ).unwrap()
                             );
 
-                    // at beggining, set the old root and number of proofs
+                    // at beginning, set the old root and number of proofs
 
                     if offset == 0 {
                         pi.push(Some(old_root_lo));

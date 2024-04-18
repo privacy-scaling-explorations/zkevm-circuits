@@ -3,28 +3,28 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
+            common_gadget::RwTablePaddingGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::IsEqualGadget,
             not, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, Chunk, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::{word::WordLoHi, Expr},
 };
 use eth_types::{Field, OpsIdentity};
-use gadgets::util::select;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {
     total_txs: Cell<F>,
     total_txs_is_max_txs: IsEqualGadget<F>,
-    is_empty_block: IsZeroGadget<F>,
-    max_rws: Cell<F>,
+    is_empty_block: IsEqualGadget<F>,
     max_txs: Cell<F>,
+    rw_table_padding_gadget: RwTablePaddingGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
@@ -34,19 +34,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let max_txs = cb.query_copy_cell();
-        let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
-        let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
+        let total_txs_is_max_txs = cb.is_eq(total_txs.expr(), max_txs.expr());
         // Note that rw_counter starts at 1
-        let is_empty_block =
-            IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
-
-        let total_rws_before_padding = cb.curr.state.rw_counter.clone().expr() - 1.expr()
-            + select::expr(
-                is_empty_block.expr(),
-                0.expr(),
-                1.expr(), // If the block is not empty, we will do 1 call_context lookup below
-            );
+        let is_empty_block = cb.is_eq(cb.curr.state.rw_counter.clone().expr(), 1.expr());
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -83,11 +74,16 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             // meaningful txs in the tx_table is total_tx.
         });
 
+        let total_inner_rws_before_padding = cb.curr.state.inner_rw_counter.clone().expr()
+            - 1.expr() // start from 1
+            + cb.rw_counter_offset();
         // 3. Verify rw_counter counts to the same number of meaningful rows in
         // rw_table to ensure there is no malicious insertion.
         // Verify that there are at most total_rws meaningful entries in the rw_table
-        cb.rw_table_start_lookup(1.expr());
-        cb.rw_table_start_lookup(max_rws.expr() - total_rws_before_padding.expr());
+        // - startop only exist in first chunk
+
+        let rw_table_padding_gadget =
+            RwTablePaddingGadget::construct(cb, total_inner_rws_before_padding);
         // Since every lookup done in the EVM circuit must succeed and uses
         // a unique rw_counter, we know that at least there are
         // total_rws meaningful entries in the rw_table.
@@ -109,10 +105,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
         Self {
             max_txs,
-            max_rws,
             total_txs,
             total_txs_is_max_txs,
             is_empty_block,
+            rw_table_padding_gadget,
         }
     }
 
@@ -121,28 +117,39 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        chunk: &Chunk<F>,
         _: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_empty_block
-            .assign(region, offset, F::from(u64::from(step.rwc) - 1))?;
-        let max_rws = F::from(block.circuits_params.max_rws as u64);
-        let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
+            .assign(region, offset, F::from(u64::from(step.rwc)), F::ONE)?;
+
+        let inner_rws_before_padding =
+            step.rwc_inner_chunk.0 as u64 - 1 + if u64::from(step.rwc) > 1 { 1 } else { 0 };
+        self.rw_table_padding_gadget.assign_exec_step(
+            region,
+            offset,
+            block,
+            chunk,
+            inner_rws_before_padding,
+            step,
+        )?;
 
         let total_txs = F::from(block.txs.len() as u64);
-        let max_txs = F::from(block.circuits_params.max_txs as u64);
+        let max_txs = F::from(chunk.fixed_param.max_txs as u64);
         self.total_txs
             .assign(region, offset, Value::known(total_txs))?;
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
-        // When rw_indices is not empty, we're at the last row (at a fixed offset),
-        // where we need to access the max_rws and max_txs constant.
+        // When rw_indices is not empty, means current endblock is non-padding step, we're at the
+        // last row (at a fixed offset), where we need to access max_txs
+        // constant.
         if step.rw_indices_len() != 0 {
-            region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }
+
         Ok(())
     }
 }
@@ -165,23 +172,17 @@ mod test {
 
         // finish required tests using this witness block
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
-            .block_modifier(Box::new(move |block| {
-                block.circuits_params.max_evm_rows = evm_circuit_pad_to
+            .block_modifier(Box::new(move |_block, chunk| {
+                chunk
+                    .iter_mut()
+                    .for_each(|chunk| chunk.fixed_param.max_evm_rows = evm_circuit_pad_to);
             }))
             .run();
     }
 
-    // Test where the EVM circuit contains an exact number of rows corresponding to
-    // the trace steps + 1 EndBlock
+    // Test steps + 1 EndBlock without padding
     #[test]
-    fn end_block_exact() {
+    fn end_block_no_padding() {
         test_circuit(0);
-    }
-
-    // Test where the EVM circuit has a fixed size and contains several padding
-    // EndBlocks at the end after the trace steps
-    #[test]
-    fn end_block_padding() {
-        test_circuit(50);
     }
 }

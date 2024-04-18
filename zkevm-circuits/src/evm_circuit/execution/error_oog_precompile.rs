@@ -11,7 +11,7 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use bus_mapping::precompile::PrecompileCalls;
 use eth_types::{evm_types::GasCost, Field, ToScalar};
@@ -63,11 +63,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         });
 
         // calculate required gas for precompile
-        let precompiles_required_gas = vec![
-            // (
-            //     addr_bits.value_equals(PrecompileCalls::ECRecover),
-            //     GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
-            // ),
+        let precompiles_required_gas = [
+            (
+                addr_bits.value_equals(PrecompileCalls::Ecrecover),
+                GasCost::PRECOMPILE_ECRECOVER_BASE.expr(),
+            ),
             // addr_bits.value_equals(PrecompileCalls::Sha256),
             // addr_bits.value_equals(PrecompileCalls::Ripemd160),
             // addr_bits.value_equals(PrecompileCalls::Blake2F),
@@ -114,8 +114,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         );
 
         // gas_left < required_gas
-        let insufficient_gas =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), required_gas.expr());
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), required_gas.expr());
         cb.require_equal("gas_left < required_gas", insufficient_gas.expr(), 1.expr());
 
         let restore_context = RestoreContextGadget::construct2(
@@ -146,6 +145,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -182,6 +182,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
         // required_gas
         let precompile_call: PrecompileCalls = precompile_addr.to_fixed_bytes()[19].into();
         let required_gas = match precompile_call {
+            PrecompileCalls::Ecrecover => precompile_call.base_gas_cost(),
             // PrecompileCalls::Bn128Pairing => {
             //     precompile_call.base_gas_cost()
             //         + n_pairs * GasCost::PRECOMPILE_BN256PAIRING_PER_PAIR
@@ -190,8 +191,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGPrecompileGadget<F> {
                 let n_words = (call.call_data_length + 31) / 32;
                 precompile_call.base_gas_cost() + n_words * GasCost::PRECOMPILE_IDENTITY_PER_WORD
             }
-            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul | PrecompileCalls::ECRecover =>
-            // {     precompile_call.base_gas_cost()
+            // PrecompileCalls::Bn128Add | PrecompileCalls::Bn128Mul => {
+            //     precompile_call.base_gas_cost()
             // }
             _ => unreachable!(),
         };

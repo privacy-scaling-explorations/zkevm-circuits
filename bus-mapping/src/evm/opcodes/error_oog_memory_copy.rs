@@ -8,8 +8,7 @@ use crate::{
 use eth_types::{evm_types::OpcodeId, GethExecStep, ToAddress};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the
-/// [`OogError::MemoryCopy`](crate::error::OogError::MemoryCopy).
+/// corresponding to the [`OogError::MemoryCopy`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OOGMemoryCopy;
 

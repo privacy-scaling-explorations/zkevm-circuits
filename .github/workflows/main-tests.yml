@@ -46,19 +46,9 @@ jobs:
         with:
           override: false
       - name: Setup golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
-          go-version: ~1.19
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version: ~1.21
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -79,7 +69,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
+          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks -- --test-threads 24
       - name: Run testool internal tests
         uses: actions-rs/cargo@v1
         with:
@@ -104,19 +94,9 @@ jobs:
         with:
           override: false
       - name: Setup golang
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
-          go-version: ~1.19
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version: ~1.21
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -155,16 +135,10 @@ jobs:
           override: false
       - name: Add target
         run: rustup target add x86_64-unknown-linux-gnu
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
+      - name: Setup golang
+        uses: actions/setup-go@v4
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version: ~1.21
       - name: Cargo cache
         uses: actions/cache@v3
         with:

@@ -8,12 +8,12 @@ use crate::{
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::MemoryExpandedAddressGadget,
-            or, CachedRegion, Cell,
+            or, CachedRegion, Cell, StepRws,
         },
     },
     table::CallContextFieldTag,
     util::Expr,
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, Call, Chunk, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, U256};
@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), is_call.expr());
 
         // Check if the amount of gas available is less than the amount of gas required
-        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        let insufficient_gas = cb.is_lt(cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
             "Either Memory address is overflow or gas left is less than cost",
@@ -119,6 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
+        _chunk: &Chunk<F>,
         _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
@@ -126,26 +127,30 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let opcode = step.opcode().unwrap();
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
-        let [tx_id, is_static] =
-            [0, 1].map(|index| block.get_rws(step, index).call_context_value());
-        let [gas, callee_address] = [2, 3].map(|index| block.get_rws(step, index).stack_value());
+
+        let mut rws = StepRws::new(block, step);
+
+        let tx_id = rws.next().call_context_value();
+        let is_static = rws.next().call_context_value();
+        let gas = rws.next().stack_value();
+        let callee_address = rws.next().stack_value();
+
         let value = if is_call_or_callcode == 1 {
-            block.get_rws(step, 4).stack_value()
+            rws.next().stack_value()
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length] =
-            [4, 5, 6, 7].map(|i| block.get_rws(step, is_call_or_callcode + i).stack_value());
 
-        let callee_code_hash = block
-            .get_rws(step, 9 + is_call_or_callcode)
-            .account_codehash_pair()
-            .0;
+        let cd_offset = rws.next().stack_value();
+        let cd_length = rws.next().stack_value();
+        let rd_offset = rws.next().stack_value();
+        let rd_length = rws.next().stack_value();
+
+        rws.offset_add(1);
+
+        let callee_code_hash = rws.next().account_codehash_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
-
-        let (is_warm, is_warm_prev) = block
-            .get_rws(step, 10 + is_call_or_callcode)
-            .tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = rws.next().tx_access_list_value_pair();
 
         let memory_expansion_gas_cost = self.call.assign(
             region,

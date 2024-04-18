@@ -11,7 +11,7 @@ use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
-    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    binary_number::BinaryNumberBits,
     util::{split_u256, split_u256_limb64},
 };
 use halo2_proofs::{
@@ -27,6 +27,8 @@ use strum_macros::{EnumCount, EnumIter};
 pub(crate) mod block_table;
 /// bytecode table
 pub(crate) mod bytecode_table;
+/// chunk context table
+pub(crate) mod chunk_ctx_table;
 /// copy Table
 pub(crate) mod copy_table;
 /// exp(exponentiation) table
@@ -37,6 +39,8 @@ pub(crate) mod keccak_table;
 pub mod mpt_table;
 /// rw table
 pub(crate) mod rw_table;
+/// signature table
+pub(crate) mod sig_table;
 /// tx table
 pub(crate) mod tx_table;
 /// ux table
@@ -44,19 +48,19 @@ pub(crate) mod ux_table;
 /// withdrawal table
 pub(crate) mod wd_table;
 
-pub(crate) use block_table::{BlockContextFieldTag, BlockTable};
-pub(crate) use bytecode_table::{BytecodeFieldTag, BytecodeTable};
-pub(crate) use copy_table::CopyTable;
-pub(crate) use exp_table::ExpTable;
+pub use block_table::{BlockContextFieldTag, BlockTable};
+pub use bytecode_table::{BytecodeFieldTag, BytecodeTable};
+pub use chunk_ctx_table::ChunkCtxTable;
+pub use copy_table::CopyTable;
+pub use exp_table::ExpTable;
 pub use keccak_table::KeccakTable;
-pub(crate) use ux_table::UXTable;
+pub use ux_table::UXTable;
 
 pub use mpt_table::{MPTProofType, MptTable};
-pub(crate) use rw_table::RwTable;
-pub(crate) use tx_table::{
-    TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
-};
-pub(crate) use wd_table::WdTable;
+pub use rw_table::RwTable;
+pub use sig_table::SigTable;
+pub use tx_table::{TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable};
+pub use wd_table::WdTable;
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {
@@ -189,3 +193,29 @@ pub enum CallContextFieldTag {
     ReversibleWriteCounter,
 }
 impl_expr!(CallContextFieldTag);
+
+/// Tag for an StepState in RwTable
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StepStateFieldTag {
+    /// caller id field
+    CallID = 1,
+    /// is_root field
+    IsRoot,
+    /// is_create field
+    IsCreate,
+    /// code_hash field
+    CodeHash,
+    /// program_counter field
+    ProgramCounter,
+    /// stack_pointer field
+    StackPointer,
+    /// gas_left field
+    GasLeft,
+    /// memory_word_size field
+    MemoryWordSize,
+    /// reversible_write_counter field
+    ReversibleWriteCounter,
+    /// log_id field
+    LogID,
+}
+impl_expr!(StepStateFieldTag);

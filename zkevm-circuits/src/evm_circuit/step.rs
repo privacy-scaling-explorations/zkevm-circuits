@@ -29,14 +29,14 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::{fmt::Display, iter};
+use std::{fmt::Display, iter, marker::ConstParamTy};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 impl From<PrecompileCalls> for ExecutionState {
     fn from(value: PrecompileCalls) -> Self {
         match value {
-            PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+            PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
             PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
             PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
             PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
@@ -50,7 +50,7 @@ impl From<PrecompileCalls> for ExecutionState {
 }
 
 #[allow(non_camel_case_types, missing_docs)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter, ConstParamTy)]
 /// All the possible execution states that the computation of EVM can arrive.
 /// Some states are shared by multiple opcodes.
 pub enum ExecutionState {
@@ -58,6 +58,9 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
+    Padding,
+    BeginChunk,
+    EndChunk,
     InvalidTx,
     // Opcode successful cases
     STOP,
@@ -158,7 +161,7 @@ pub enum ExecutionState {
     ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
     // Precompiles
-    PrecompileEcRecover,
+    PrecompileEcrecover,
     PrecompileSha256,
     PrecompileRipemd160,
     PrecompileIdentity,
@@ -330,7 +333,7 @@ impl From<&ExecStep> for ExecutionState {
                 }
             }
             ExecState::Precompile(precompile) => match precompile {
-                PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+                PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
                 PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
                 PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
                 PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
@@ -342,7 +345,10 @@ impl From<&ExecStep> for ExecutionState {
             },
             ExecState::BeginTx => ExecutionState::BeginTx,
             ExecState::EndTx => ExecutionState::EndTx,
+            ExecState::Padding => ExecutionState::Padding,
             ExecState::EndBlock => ExecutionState::EndBlock,
+            ExecState::BeginChunk => ExecutionState::BeginChunk,
+            ExecState::EndChunk => ExecutionState::EndChunk,
             ExecState::InvalidTx => ExecutionState::InvalidTx,
         }
     }
@@ -370,7 +376,7 @@ impl ExecutionState {
     pub(crate) fn is_precompiled(&self) -> bool {
         matches!(
             self,
-            Self::PrecompileEcRecover
+            Self::PrecompileEcrecover
                 | Self::PrecompileSha256
                 | Self::PrecompileRipemd160
                 | Self::PrecompileIdentity
@@ -384,7 +390,7 @@ impl ExecutionState {
 
     pub(crate) fn precompile_base_gas_cost(&self) -> u64 {
         (match self {
-            Self::PrecompileEcRecover => PrecompileCalls::ECRecover,
+            Self::PrecompileEcrecover => PrecompileCalls::Ecrecover,
             Self::PrecompileSha256 => PrecompileCalls::Sha256,
             Self::PrecompileRipemd160 => PrecompileCalls::Ripemd160,
             Self::PrecompileIdentity => PrecompileCalls::Identity,
@@ -596,7 +602,7 @@ impl ExecutionState {
         .collect()
     }
 
-    /// Get the state hight
+    /// Get the state height
     pub fn get_step_height_option(&self) -> Option<usize> {
         EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
     }
@@ -738,6 +744,8 @@ pub(crate) struct StepState<F> {
     pub(crate) execution_state: DynamicSelectorHalf<F>,
     /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
+    /// The Read/Write counter accumulated in current chunk
+    pub(crate) inner_rw_counter: Cell<F>,
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
@@ -792,6 +800,7 @@ impl<F: Field> Step<F> {
                     ExecutionState::amount(),
                 ),
                 rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
+                inner_rw_counter: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 call_id: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(meta, CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(meta, CellType::StoragePhase1),
@@ -836,6 +845,11 @@ impl<F: Field> Step<F> {
         self.state
             .rw_counter
             .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
+        self.state.inner_rw_counter.assign(
+            region,
+            offset,
+            Value::known(F::from(step.rwc_inner_chunk.into())),
+        )?;
         self.state
             .call_id
             .assign(region, offset, Value::known(F::from(call.call_id as u64)))?;
