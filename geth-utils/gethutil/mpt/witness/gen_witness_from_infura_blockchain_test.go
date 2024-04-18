@@ -1716,7 +1716,6 @@ func TestImplicitlyCreateAccountWithCodeHash(t *testing.T) {
 	prepareWitness("ImplicitlyCreateAccountWithCodeHash", trieModifications, statedb)
 }
 
-/*
 func TestAccountAddPlaceholderBranch(t *testing.T) {
 	blockNum := 13284469
 	blockNumberParent := big.NewInt(int64(blockNum))
@@ -1738,7 +1737,6 @@ func TestAccountAddPlaceholderBranch(t *testing.T) {
 
 	prepareWitness("AccountAddPlaceholderBranch", trieModifications, statedb)
 }
-*/
 
 func TestAccountDeletePlaceholderBranch(t *testing.T) {
 	blockNum := 13284469
