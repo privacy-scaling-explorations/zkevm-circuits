@@ -453,13 +453,21 @@ impl<F: Field> SubCircuit<F> for SuperCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &Block<F>, chunk: &Chunk<F>) -> (usize, usize) {
         let evm = EvmCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows evm: {:?}", evm);
         let state = StateCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows state: {:?}", state);
         let bytecode = BytecodeCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows bytecode: {:?}", bytecode);
         let copy = CopyCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows copy: {:?}", copy);
         let keccak = KeccakCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows keccak: {:?}", keccak);
         let tx = TxCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows tx: {:?}", tx);
         let exp = ExpCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows exp: {:?}", exp);
         let pi = PiCircuit::min_num_rows_block(block, chunk);
+        log::info!("min_rows pi: {:?}", pi);
 
         let rows: Vec<(usize, usize)> = vec![evm, state, bytecode, copy, keccak, tx, exp, pi];
         let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =

@@ -86,6 +86,27 @@ where
     call.tx
 }
 
+fn erc20_multi_transfer<M>(
+    prov: Arc<M>,
+    contract_address: Address,
+    contract_abi: &abi::Contract,
+    to: Address,
+    amount: U256,
+    times: U256,
+) -> TypedTransaction
+where
+    M: Middleware,
+{
+    let contract = Contract::new(contract_address, contract_abi.clone(), prov);
+    let call: ContractCall<M, _> = contract
+        .method::<_, bool>("multi_transfer", (to, amount, times))
+        .expect("cannot construct ERC20 transfer call");
+    // Set gas to avoid `eth_estimateGas` call
+    let call = call.legacy();
+    let call = call.gas(500_000);
+    call.tx
+}
+
 async fn send_confirm_tx<M>(prov: &Arc<M>, tx: TypedTransaction) -> TransactionReceipt
 where
     M: Middleware,
@@ -344,6 +365,53 @@ async fn main() {
         block_num.as_u64(),
     );
 
+    // OpenZeppelin ERC20 multiple transfers in a single block (some successful,
+    // some unsuccessful) with 4 tx.
+    // - wallet0 -> wallet1 (ok)
+    // - wallet2 -> wallet3 (ko)
+    // - wallet1 -> wallet0 (ok)
+    // - wallet3 -> wallet2 (ko)
+    info!("Doing OpenZeppelin ERC20 multiple tx of multi_transfer...");
+    cli.miner_stop().await.expect("cannot stop miner");
+    let mut tx_hashes = Vec::new();
+    for (i, (from_i, to_i)) in [(0, 1), (2, 3), (1, 0), (3, 2)].iter().enumerate() {
+        let amount = U256::from(0x8000000000000 / (i + 1));
+        let prov_wallet = &wallets[*from_i];
+        let tx = erc20_multi_transfer(
+            prov_wallet.clone(),
+            contract_address,
+            contract_abi,
+            wallets[*to_i].address(),
+            amount,
+            U256::from(28),
+        );
+
+        let pending_tx = prov_wallet
+            .send_transaction(tx, None)
+            .await
+            .expect("cannot send ERC20 multi_transfer call");
+        let tx_hash = *pending_tx; // Deref for PendingTransaction returns TxHash
+        tx_hashes.push(tx_hash);
+    }
+    cli.miner_start().await.expect("cannot start miner");
+    for (i, tx_hash) in tx_hashes.iter().enumerate() {
+        let pending_tx = PendingTransaction::new(*tx_hash, wallets[i].inner());
+        let receipt = pending_tx.confirmations(0usize).await.unwrap().unwrap();
+        let expected_status = if i % 2 == 0 { 1u64 } else { 0u64 };
+        assert_eq!(
+            receipt.status,
+            Some(U64::from(expected_status)),
+            "failed tx hash: {:?}, receipt: {:#?}",
+            tx_hash,
+            receipt
+        );
+    }
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert(
+        "Multiple ERC20 OpenZeppelin multi_transfer".to_string(),
+        block_num.as_u64(),
+    );
+
     // Create Transactions optimized for circuit benchmarks
     //
     // MLOAD (EVM)
@@ -377,6 +445,40 @@ async fn main() {
         .unwrap();
     blocks.insert(
         "SDIV".to_string(),
+        tx_receipt.block_number.unwrap().as_u64(),
+    );
+
+    // // EXTCODESIZE (KECCAK)
+    // info!("Sending Tx optimized for maximum EXTCODESIZE opcode calls up to 300k gas");
+    // cli.miner_start().await.expect("cannot start miner");
+    // let bench_tx = benchmarks_instance.check_ext_code_size(Len(32400));
+    // let tx_call = bench_tx
+    //     .send()
+    //     .await
+    //     .expect("Could not confirm transaction");
+    // let tx_receipt = tx_call
+    //     .await
+    //     .expect("failed to fetch the transaction receipt")
+    //     .unwrap();
+    // blocks.insert(
+    //     "EXTCODESIZE".to_string(),
+    //     tx_receipt.block_number.unwrap().as_u64(),
+    // );
+
+    // KECCAK256 (KECCAK)
+    info!("Sending Tx optimized for maximum KECCAK256 opcode calls up to 500k gas");
+    cli.miner_start().await.expect("cannot start miner");
+    let bench_tx = benchmarks_instance.check_keccak_256(Len(2200));
+    let tx_call = bench_tx
+        .send()
+        .await
+        .expect("Could not confirm transaction");
+    let tx_receipt = tx_call
+        .await
+        .expect("failed to fetch the transaction receipt")
+        .unwrap();
+    blocks.insert(
+        "KECCAK256".to_string(),
         tx_receipt.block_number.unwrap().as_u64(),
     );
 

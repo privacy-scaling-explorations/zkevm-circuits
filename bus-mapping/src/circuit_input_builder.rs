@@ -884,9 +884,14 @@ impl<C: CircuitsParams> CircuitInputBuilder<C> {
         end_block_rws + end_chunk_rws + 1
     }
 
-    fn compute_param(&self, eth_block: &EthBlock) -> FixedCParams {
+    /// Compute fixed parameters based on dynamic block
+    pub fn compute_param(&self, eth_block: &EthBlock) -> FixedCParams {
         let max_txs = eth_block.transactions.len();
-        let max_withdrawals = eth_block.withdrawals.as_ref().unwrap().len();
+        let max_withdrawals = eth_block
+            .withdrawals
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or_default();
         let max_bytecode = self.code_db.num_rows_required_for_bytecode_table();
 
         let max_calldata = eth_block

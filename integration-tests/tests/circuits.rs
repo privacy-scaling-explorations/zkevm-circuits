@@ -126,3 +126,11 @@ unroll_tests!(
         "Multiple ERC20 OpenZeppelin transfers"
     )
 );
+
+#[tokio::test]
+async fn test_bench_info() {
+    log_init();
+
+    let mut test = SUPER_CIRCUIT_TEST.lock().await;
+    test.test_block_info().await;
+}

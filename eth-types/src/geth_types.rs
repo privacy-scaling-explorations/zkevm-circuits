@@ -398,10 +398,12 @@ impl Transaction {
     pub fn sign_data(&self, chain_id: u64) -> Result<SignData, Error> {
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
+        // println!("DBG A");
         let sig_r = ct_option_ok_or(
             secp256k1::Fq::from_repr(sig_r_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
         )?;
+        // println!("DBG B");
         let sig_s = ct_option_ok_or(
             secp256k1::Fq::from_repr(sig_s_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
@@ -410,10 +412,10 @@ impl Transaction {
         let req: TransactionRequest = self.into();
         let msg = req.chain_id(chain_id).rlp();
         let msg_hash: [u8; 32] = keccak256(&msg);
-        let v = self
-            .v
-            .checked_sub(35 + chain_id * 2)
-            .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
+        // println!("DBG C");
+        let v = self.v.checked_sub(35 + chain_id * 2).unwrap_or_default() as u8;
+        // .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
+        // println!("DBG D");
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());

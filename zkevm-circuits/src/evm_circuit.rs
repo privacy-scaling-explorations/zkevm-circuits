@@ -259,14 +259,24 @@ impl<F: Field> EvmCircuit<F> {
     /// Compute the minimum number of rows required to process the block
     fn get_min_num_rows_required(block: &Block<F>, chunk: &Chunk<F>) -> usize {
         let mut num_rows = 0;
+        let mut i = 0;
         for transaction in &block.txs {
+            let mut j = 0;
+            // println!("DBG tx {i}");
             for step in transaction.steps() {
                 if chunk.chunk_context.initial_rwc <= step.rwc.0
                     || step.rwc.0 < chunk.chunk_context.end_rwc
                 {
-                    num_rows += step.execution_state().get_step_height();
+                    let exec_state = step.execution_state();
+                    num_rows += exec_state.get_step_height();
+                    // println!(
+                    //     "DBG step {j} {exec_state} (+ {}) ({num_rows})",
+                    //     exec_state.get_step_height()
+                    // );
                 }
+                j += 1;
             }
+            i += 1;
         }
 
         // It must have one row for EndBlock/EndChunk and at least one unused one
@@ -295,6 +305,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
             .iter()
             .map(|tag| tag.build::<F>().count())
             .sum();
+        log::info!("evm_fixed_table_rows = {num_rows_required_for_fixed_table}");
+        log::info!("evm_exec_rows = {num_rows_required_for_execution_steps}");
         (
             std::cmp::max(
                 num_rows_required_for_execution_steps,

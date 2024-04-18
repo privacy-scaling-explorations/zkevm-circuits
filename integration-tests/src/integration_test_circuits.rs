@@ -443,6 +443,48 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         }
     }
 
+    /// Info
+    pub async fn test_block_info(&mut self) {
+        use zkevm_circuits::{evm_circuit::EvmCircuit, keccak_circuit::KeccakCircuit};
+
+        let block_tag = std::env::var("BLOCK_TAG").unwrap();
+        let block_num = *GEN_DATA.blocks.get(&block_tag).unwrap();
+
+        log::info!(
+            "test {} circuit, block: #{} - {}",
+            self.name,
+            block_num,
+            block_tag,
+        );
+
+        let cli = get_client();
+        let mut params = CIRCUITS_PARAMS;
+        params.max_rws = 2_999_999;
+        // params.max_keccak_rows = 0;
+        let cli = BuilderClient::new(cli, params).await.unwrap();
+        let (eth_block, _geth_trace, _history_hashes, _prev_state_root) =
+            cli.get_block(block_num).await.unwrap();
+
+        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+        log::info!("fixed params: {:#?}", builder.circuits_params);
+        let mut dyn_params = builder.compute_param(&eth_block);
+
+        let mut block: Block<Fr> = block_convert(&builder).unwrap();
+        let mut chunk = chunk_convert(&block, &builder).unwrap().remove(0);
+
+        chunk.fixed_param.max_evm_rows = 0;
+        chunk.fixed_param.max_keccak_rows = 0;
+        let min_rows_evm = EvmCircuit::min_num_rows_block(&block, &chunk);
+        dyn_params.max_evm_rows = min_rows_evm.0;
+        let min_rows_keccack = KeccakCircuit::min_num_rows_block(&block, &chunk);
+        dyn_params.max_keccak_rows = min_rows_keccack.0;
+        log::info!("dyn params: {:#?}", dyn_params);
+
+        let (min_rows, fixed_min_rows) = SuperCircuit::min_num_rows_block(&block, &chunk);
+        log::info!("min_rows = {}", min_rows);
+        log::info!("fixed_min_rows = {}", fixed_min_rows);
+    }
+
     /// Run integration test at a block identified by a tag.
     pub async fn test_at_block_tag(&mut self, block_tag: &str, root: bool, actual: bool) {
         let block_num = *GEN_DATA.blocks.get(block_tag).unwrap();
