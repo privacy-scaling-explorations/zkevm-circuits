@@ -483,7 +483,7 @@ func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyI
 	return prepareStorageLeafNode(leaf, leaf, nil, storage_key, key, false, true, true, false, false)
 }
 
-func setKeyValue(row, keyRlp []byte, keyLen, offset byte, valueIsZero, isPlaceholder bool) ([]byte, []byte) {
+func setKeyValue(row, keyRlp []byte, keyLen, offset byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte) {
 	var valueRlp []byte
 	value := make([]byte, valueLen)
 
@@ -507,15 +507,13 @@ func setKeyValue(row, keyRlp []byte, keyLen, offset byte, valueIsZero, isPlaceho
 		}
 	}
 
-	return keyRlp, valueRlp
+	return value, keyRlp, valueRlp
 }
 
 func prepareTxLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
 	var keyRlp []byte
-	var valueRlp []byte
 	var keyRlpLen byte
 	key := make([]byte, valueLen)
-	value := make([]byte, valueLen)
 
 	keyLen := byte(0)
 	offset := byte(1)
@@ -528,17 +526,15 @@ func prepareTxLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []b
 	keyLen = byte(2)
 	offset = byte(0)
 
-	keyRlp, valueRlp = setKeyValue(row, keyRlp, keyLen, offset, valueIsZero, isPlaceholder)
+	value, keyRlp, valueRlp := setKeyValue(row, keyRlp, keyLen, offset, valueIsZero, isPlaceholder)
 
 	return key, value, keyRlp, valueRlp
 }
 
 func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
 	var keyRlp []byte
-	var valueRlp []byte
 	var keyRlpLen byte
 	key := make([]byte, valueLen)
-	value := make([]byte, valueLen)
 
 	keyLen := byte(0)
 	offset := byte(1)
@@ -591,7 +587,7 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 		}
 	}
 
-	keyRlp, valueRlp = setKeyValue(row, keyRlp, keyLen, offset, valueIsZero, isPlaceholder)
+	value, keyRlp, valueRlp := setKeyValue(row, keyRlp, keyLen, offset, valueIsZero, isPlaceholder)
 
 	return key, value, keyRlp, valueRlp
 }
