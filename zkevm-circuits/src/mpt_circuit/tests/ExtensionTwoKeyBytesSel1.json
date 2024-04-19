@@ -27,6 +27,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -83,6 +84,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -139,6 +141,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -195,6 +198,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -251,6 +255,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -307,6 +312,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -363,6 +369,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -419,6 +426,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -533,6 +541,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -589,6 +598,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -645,6 +655,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "e4"
             },
@@ -681,7 +692,7 @@
             "80000000000000000000000000000000000000000000000000000000000000000000",
             "82009500000000000000000000000000000000000000000000000000000000000000",
             "a072fd968512c09c13f1a233d2180197103007b12a3c3122e6fef24f84a55a4bf900",
-            "00000000000000000000000000000000000000000000000000000000000000000000",
+            "00000500000000000000000000000000000000000000000000000000000000000000",
             "a039465750dcc5c9fec4e81df0689efadfafac2c7b7eff7e6c0fa0b9efaecd928200"
         ],
         "keccak_data": [
