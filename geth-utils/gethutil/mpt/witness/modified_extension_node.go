@@ -56,19 +56,6 @@ func equipLeafWithModExtensionNode(
 		longExtNodeKey[j] = longNibbles[j-byte(keyIndex)]
 	}
 
-	k := trie.HexToKeybytes(longExtNodeKey)
-	ky := common.BytesToHash(k)
-	var proof [][]byte
-	var err error
-	if !isTxProof {
-		if isAccountProof {
-			proof, _, _, _, _, err = statedb.GetProof(addr)
-		} else {
-			proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
-		}
-		check(err)
-	}
-
 	// There is no short extension node when `len(longNibbles) - numberOfNibbles = 1`, in this case there
 	// is simply a branch instead.
 	// stack trie is always a short ext node.
@@ -79,6 +66,19 @@ func equipLeafWithModExtensionNode(
 	var extValuesC [][]byte
 
 	if !shortExtNodeIsBranch {
+		k := trie.HexToKeybytes(longExtNodeKey)
+		ky := common.BytesToHash(k)
+		var proof [][]byte
+		var err error
+		if !isTxProof {
+			if isAccountProof {
+				proof, _, _, _, _, err = statedb.GetProof(addr)
+			} else {
+				proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
+			}
+		}
+		check(err)
+
 		if len2 > len1 {
 			isItBranch := isBranch(proof[len(proof)-1])
 
