@@ -7,8 +7,6 @@ use std::{
     time::Duration,
 };
 
-
-
 use eth_types::{Field, ToScalar};
 
 use ethers::{
