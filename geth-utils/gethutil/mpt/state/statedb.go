@@ -458,8 +458,27 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 		if len(ap) > 0 {
 			ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
 
+			fmt.Println("=========== SetStateObjectIfExists ==================")
+			for i := 0; i < len(ap); i++ {
+				fmt.Println(ap[i])
+				fmt.Println("")
+			}
+
+			fmt.Println("===------=====")
+			fmt.Println(ret)	
+
 			data := new(Account)
 			keyLen := ret[2] - 128
+
+			if int(3 + keyLen + 2) > len(ret) {
+				// Not account leaf, it's extension node
+				fmt.Println("")
+				fmt.Println("")
+				fmt.Println("extension node")
+				fmt.Println("")
+				return
+			}
+
 			accData := ret[3+keyLen+2:]
 
 			if err := rlp.DecodeBytes(accData, data); err != nil {
