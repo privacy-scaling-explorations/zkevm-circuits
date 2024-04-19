@@ -656,28 +656,16 @@ func isBranch(proofEl []byte) bool {
 }
 
 func printProof(ps [][]byte, t, idx []byte) {
-
-	enable := byte(150)
 	fmt.Print(" [")
-	for i, p := range ps {
+	for i, _ := range ps {
 		if t[i] == ExtNode {
 			fmt.Print("EXT - ")
-			if idx[0] >= enable {
-				fmt.Print(" (", p, ") - ")
-			}
 		} else if t[i] == BranchNode {
 			fmt.Print("BRANCH - ")
-			// fmt.Print(" (", p, ") - ")
 		} else if t[i] == LeafNode {
 			fmt.Print("LEAF - ")
-			if idx[0] >= enable {
-				fmt.Print(" (", p, ") - ")
-			}
 		} else if t[i] == HashedNode {
 			fmt.Print("HASHED - ")
-			// elems, _, _ := rlp.SplitList(p)
-			// c, _ := rlp.CountValues(elems)
-			// fmt.Print(c, " (", p, ") - ")
 		} else {
 			fmt.Print("NOT SUPPORT NOW!!")
 		}
@@ -687,8 +675,6 @@ func printProof(ps [][]byte, t, idx []byte) {
 }
 
 func (st *StackTrie) UpdateAndGetProof(db ethdb.KeyValueReader, indexBuf, value []byte) (StackProof, error) {
-	// fmt.Println(" ====", indexBuf, "-->", KeybytesToHex(indexBuf))
-
 	proofS, nibblesS, typesS, err := st.GetProof(db, indexBuf)
 	if err != nil {
 		return StackProof{}, err
@@ -719,7 +705,6 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	// order is correct.
 	var indexBuf []byte
 	for i := 1; i < list.Len() && i <= 0x7f; i++ {
-		fmt.Print(i)
 		indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(i))
 		value := types.EncodeForDerive(list, i, valueBuf)
 		proof, err := st.UpdateAndGetProof(db, indexBuf, value)
@@ -732,7 +717,6 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	// special case when index is 0
 	// rlp.AppendUint64() encodes index 0 to [128]
 	if list.Len() > 0 {
-		fmt.Print("0")
 		indexBuf = rlp.AppendUint64(indexBuf[:0], 0)
 		value := types.EncodeForDerive(list, 0, valueBuf)
 		proof, err := st.UpdateAndGetProof(db, indexBuf, value)
@@ -743,7 +727,6 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 	}
 
 	for i := 0x80; i < list.Len(); i++ {
-		fmt.Print(i)
 		indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(i))
 		value := types.EncodeForDerive(list, i, valueBuf)
 		proof, err := st.UpdateAndGetProof(db, indexBuf, value)
@@ -752,14 +735,12 @@ func (st *StackTrie) UpdateAndGetProofs(db ethdb.KeyValueReader, list types.Deri
 		}
 		proofs = append(proofs, proof)
 	}
-	// fmt.Println("* ROOT", root)
 
 	return proofs, nil
 }
 
 func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, [][]byte, []uint8, error) {
 	k := KeybytesToHex(key)
-	// fmt.Println(" k", k)
 	if st.nodeType == EmptyNode {
 		return [][]byte{}, nil, []uint8{EmptyNode}, nil
 	}
@@ -783,10 +764,8 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 	c := st
 
 	for i := 0; i < len(k); i++ {
-		// fmt.Print(" ", k[i], "/", c.nodeType, " | ")
 		proofType = append(proofType, c.nodeType)
 		if c.nodeType == ExtNode {
-			// fmt.Print(c.key, " ")
 			i += len(c.key) - 1
 			nodes = append(nodes, c)
 			c = c.children[0]
@@ -804,17 +783,6 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 			if error != nil {
 				panic(error)
 			}
-
-			// if c_rlp[0] > 192 && c_rlp[0] < 248 {
-			// 	numNibbles := c_rlp[0] - 225
-			// 	var nibble = make([]byte, numNibbles)
-			// 	for i := 0; i < int(numNibbles); i++ {
-			// 		nibble[i] = c_rlp[i+1] - 16
-			// 	}
-			// 	// fmt.Println(" HASHED Ext nibble:", nibble, c_rlp)
-			// }
-
-			// fmt.Println(" c_rlp:", c_rlp)
 			proof = append(proof, c_rlp)
 			nibbles = append(nibbles, c.key)
 			branchChild := st.getNodeFromBranchRLP(c_rlp, int(k[i]))
@@ -860,17 +828,6 @@ func (st *StackTrie) GetProof(db ethdb.KeyValueReader, key []byte) ([][]byte, []
 				if rlp_flag < 192 || rlp_flag >= 248 {
 					panic("should not happen!")
 				}
-
-				// 192 ~ 247 is a short list
-				// if it's an ext node, it contains 1.)nibbles and 2.) 32bytes hashed value
-				// 2.) 32 bytes long data plus rlp flag, it becomes 33 bytes long data
-				// 192 + 33 = 225, and the left bytes are for nibbles.
-				// numNibbles := raw_rlp[0] - 225
-				// var nibble = make([]byte, numNibbles)
-				// for i := 0; i < int(numNibbles); i++ {
-				// 	nibble[i] = raw_rlp[i+1] - 16
-				// }
-				// fmt.Println(" Ext nibble:", numNibbles, node.key)
 				nibbles = append(nibbles, node.key)
 			} else {
 				nibbles = append(nibbles, []byte{})

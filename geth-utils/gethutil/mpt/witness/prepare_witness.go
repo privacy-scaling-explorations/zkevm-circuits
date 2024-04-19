@@ -338,8 +338,6 @@ func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []No
 	// padding k to 32 bytes
 	kk := make([]byte, 32-len(k))
 	k = append(k, kk...)
-	fmt.Println("== txIdx", txIdx)
-	// fmt.Println(" k", k)
 
 	proofS := proof.GetProofS()
 	proofC := proof.GetProofC()
@@ -396,7 +394,6 @@ func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []No
 	var numberOfNibbles byte
 	isExtension := false
 	mismatchedIdx := -1
-	fmt.Println("upto", upTo, additionalBranch, proofTypeS)
 	for i := 0; i < upTo; i++ {
 		if proofTypeS[i] != trie.BranchNode {
 			// This is for the case of extension modified node due to the order of the types mismatched.
@@ -483,7 +480,7 @@ func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []No
 			}
 
 		} else {
-			fmt.Println("MODIFIED EXT CASE!!")
+			fmt.Println("MODIFIED EXT CASE!! NOT WORKING NOW")
 			leafNode = prepareTxLeafAndPlaceholderNode(txIdx, proofC[len2-1], k, true)
 
 			// When a proof element is a modified extension node (new extension node appears at the position
