@@ -477,7 +477,7 @@ func GenerateWitness(txIdx uint, key, value []byte, proof *trie.StackProof) []No
 		if mismatchedIdx == -1 {
 			// Add a tx leaf after branch placeholder
 			if lastProofTypeS == trie.LeafNode {
-				leafNode = prepareTxLeafNode(txIdx, proofS[len1-1], proofC[len2-1], k, nil, isBranch(proofS[len1-1]), false, false)
+				leafNode = prepareTxLeafNode(txIdx, proofS[len1-1], proofC[len2-1], k, nil, proofTypeS[len1-1] != trie.BranchNode, false, false)
 			} else {
 				leafNode = prepareTxLeafAndPlaceholderNode(txIdx, proofC[len2-1], k, false)
 			}
