@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use ethers::core::utils;
+
 
 use eth_types::{Field, ToScalar};
 

@@ -1,5 +1,5 @@
 use eth_types::{Field, OpsIdentity, U256};
-use gadgets::util::{pow, xor, Scalar};
+use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression, VirtualCells},

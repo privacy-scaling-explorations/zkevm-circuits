@@ -615,6 +615,7 @@ impl<F: Field> ParentData<F> {
         parent_data
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn store<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
         memory: &mut MB,
@@ -1454,14 +1455,12 @@ impl<F: Field> WrongExtNodeGadget<F> {
             .0;
 
         let mut mult = key_data.mult;
-        if !key_data.is_odd {
-            if key_data.num_nibbles > 1 {
-                let iters = (key_data.num_nibbles - 1 - 1) / 2; // -1 because of the branch nibble, -1 because of being odd
-                mult = F::one();
+        if !key_data.is_odd && key_data.num_nibbles > 1 {
+            let iters = (key_data.num_nibbles - 1 - 1) / 2; // -1 because of the branch nibble, -1 because of being odd
+            mult = F::one();
 
-                for _ in 0..iters {
-                    mult = mult * region.key_r;
-                }
+            for _ in 0..iters {
+                mult *= region.key_r;
             }
         }
         let _ = self.mult_without_branch_nibble.assign(region, offset, mult);
