@@ -261,7 +261,6 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			}
 			fmt.Println("")
 
-
 			aNode := aNeighbourNode2
 			aIsLastLeaf := aIsLastLeaf1
 			aIsNeighbourNodeHashed := aIsNeighbourNodeHashed2

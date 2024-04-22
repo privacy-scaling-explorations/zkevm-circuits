@@ -460,7 +460,7 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 			data := new(Account)
 			keyLen := ret[2] - 128
 
-			if int(3 + keyLen + 2) > len(ret) {
+			if int(3+keyLen+2) > len(ret) {
 				// Not account leaf, it's extension node
 				return
 			}
