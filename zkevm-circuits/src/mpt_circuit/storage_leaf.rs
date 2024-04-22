@@ -685,7 +685,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &storage.mod_list_rlp_bytes[1],
             ];
             self.mod_extension
-                .assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
+                .assign(region, offset, rlp_values, mod_list_rlp_bytes, false)?;
         }
 
         let mut new_value = value_word[false.idx()];

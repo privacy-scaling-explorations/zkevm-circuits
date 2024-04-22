@@ -5,9 +5,7 @@ use halo2_proofs::plonk::{Error, VirtualCells};
 use super::{
     helpers::{
         ext_key_rlc_calc_value, KeyData, ListKeyGadget, ListKeyWitness, MPTConstraintBuilder,
-    },
-    rlp_gadgets::RLPItemWitness,
-    MPTContext,
+    }, rlp_gadgets::RLPItemWitness, witness_row::AccountRowType, MPTContext
 };
 use crate::{
     circuit,
@@ -271,23 +269,41 @@ impl<F: Field> ModExtensionGadget<F> {
         offset: usize,
         rlp_values: &[RLPItemWitness],
         list_rlp_bytes: [&[u8]; 2],
+        is_account: bool,
     ) -> Result<(), Error> {
-        let key_items = [
+        let mut key_items = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
-        ];
+        ]; 
 
         let mut rlp_key = vec![ListKeyWitness::default(); 2];
         let mut key_rlc = vec![];
 
-        let items_s = [
+        let mut items_s = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::LongExtNodeNibbles as usize].clone(),
         ];
-        let items_c = [
+        let mut items_c = [
             rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeNibbles as usize].clone(),
         ];
+
+        if is_account {
+            key_items = [
+                rlp_values[AccountRowType::LongExtNodeKey as usize].clone(),
+                rlp_values[AccountRowType::ShortExtNodeKey as usize].clone(),
+            ];
+
+            items_s = [
+                rlp_values[AccountRowType::LongExtNodeKey as usize].clone(),
+                rlp_values[AccountRowType::LongExtNodeNibbles as usize].clone(),
+            ];
+            items_c = [
+                rlp_values[AccountRowType::ShortExtNodeKey as usize].clone(),
+                rlp_values[AccountRowType::ShortExtNodeNibbles as usize].clone(),
+            ];
+        }
+
         let items = vec![items_s, items_c];
 
         for is_s in [true, false] {
@@ -311,12 +327,6 @@ impl<F: Field> ModExtensionGadget<F> {
                         println!("{:?}", r.bytes);
                         println!("");
                     }
-                    /*
-                    println!("{:?}", key_items[0]);
-                    println!("");
-                    println!("{:?}", key_items[1]);
-                    println!("");
-                    */
                 }
                 assert!(first_key_byte == 0);
             }
