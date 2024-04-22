@@ -275,6 +275,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     ctx.clone(),
                     parent_data,
                     key_data,
+                    false,
                 );
             }};
 
@@ -685,7 +686,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 &storage.mod_list_rlp_bytes[1],
             ];
             self.mod_extension
-                .assign(region, offset, rlp_values, mod_list_rlp_bytes, false)?;
+                .assign(region, offset, rlp_values, mod_list_rlp_bytes)?;
         }
 
         let mut new_value = value_word[false.idx()];

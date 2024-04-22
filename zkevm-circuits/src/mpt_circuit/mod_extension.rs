@@ -34,6 +34,7 @@ pub(crate) struct ModExtensionGadget<F> {
     is_short_branch: IsEqualGadget<F>,
     is_key_part_odd: [Cell<F>; 2], // Whether the number of nibbles is odd or not.
     mult_key: Cell<F>,
+    is_account: bool,
 }
 
 impl<F: Field> ModExtensionGadget<F> {
@@ -43,21 +44,39 @@ impl<F: Field> ModExtensionGadget<F> {
         ctx: MPTContext<F>,
         parent_data: &mut [ParentData<F>; 2],
         key_data: &mut [KeyData<F>; 2],
+        is_account: bool,
     ) -> Self {
         let mut config = ModExtensionGadget::default();
+        config.is_account = is_account;
+
+        let mut long_ext_node_key = StorageRowType::LongExtNodeKey as usize;
+        let mut short_ext_node_key = StorageRowType::ShortExtNodeKey as usize;
+        let mut long_ext_node_nibbles = StorageRowType::LongExtNodeNibbles as usize;
+        let mut short_ext_node_nibbles = StorageRowType::ShortExtNodeNibbles as usize;
+        let mut long_ext_node_value = StorageRowType::LongExtNodeValue as usize;
+        let mut short_ext_node_value = StorageRowType::ShortExtNodeValue as usize;
+
+        if is_account {
+            long_ext_node_key = AccountRowType::LongExtNodeKey as usize;
+            short_ext_node_key = AccountRowType::ShortExtNodeKey as usize;
+            long_ext_node_nibbles = AccountRowType::LongExtNodeNibbles as usize;
+            short_ext_node_nibbles = AccountRowType::ShortExtNodeNibbles as usize;
+            long_ext_node_value = AccountRowType::LongExtNodeValue as usize;
+            short_ext_node_value = AccountRowType::ShortExtNodeValue as usize;
+        }
 
         circuit!([meta, cb], {
             let key_items = [
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::LongExtNodeKey as usize,
+                    long_ext_node_key,
                     RlpItemType::Key,
                 ),
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::ShortExtNodeKey as usize,
+                    short_ext_node_key,
                     RlpItemType::Key,
                 ),
             ];
@@ -65,13 +84,13 @@ impl<F: Field> ModExtensionGadget<F> {
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::LongExtNodeNibbles as usize,
+                    long_ext_node_nibbles,
                     RlpItemType::Nibbles,
                 ),
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::ShortExtNodeNibbles as usize,
+                    short_ext_node_nibbles,
                     RlpItemType::Nibbles,
                 ),
             ];
@@ -79,13 +98,13 @@ impl<F: Field> ModExtensionGadget<F> {
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::LongExtNodeValue as usize,
+                    long_ext_node_value,
                     RlpItemType::Value,
                 ),
                 ctx.rlp_item(
                     meta,
                     cb,
-                    StorageRowType::ShortExtNodeValue as usize,
+                    short_ext_node_value,
                     RlpItemType::Value,
                 ),
             ];
@@ -269,7 +288,6 @@ impl<F: Field> ModExtensionGadget<F> {
         offset: usize,
         rlp_values: &[RLPItemWitness],
         list_rlp_bytes: [&[u8]; 2],
-        is_account: bool,
     ) -> Result<(), Error> {
         let mut key_items = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
@@ -288,7 +306,7 @@ impl<F: Field> ModExtensionGadget<F> {
             rlp_values[StorageRowType::ShortExtNodeNibbles as usize].clone(),
         ];
 
-        if is_account {
+        if self.is_account {
             key_items = [
                 rlp_values[AccountRowType::LongExtNodeKey as usize].clone(),
                 rlp_values[AccountRowType::ShortExtNodeKey as usize].clone(),
