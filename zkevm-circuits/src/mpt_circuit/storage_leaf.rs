@@ -275,6 +275,7 @@ impl<F: Field> StorageLeafConfig<F> {
                     ctx.clone(),
                     parent_data,
                     key_data,
+                    false,
                 );
             }};
 

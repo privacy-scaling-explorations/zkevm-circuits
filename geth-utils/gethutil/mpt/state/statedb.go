@@ -457,9 +457,14 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 		ap := oracle.PrefetchAccount(s.Db.BlockNumber, addr, nil)
 		if len(ap) > 0 {
 			ret, _ := hex.DecodeString(ap[len(ap)-1][2:])
-
 			data := new(Account)
 			keyLen := ret[2] - 128
+
+			if int(3+keyLen+2) > len(ret) {
+				// Not account leaf, it's extension node
+				return
+			}
+
 			accData := ret[3+keyLen+2:]
 
 			if err := rlp.DecodeBytes(accData, data); err != nil {

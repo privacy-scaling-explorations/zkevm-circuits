@@ -1,6 +1,7 @@
 package witness
 
 import (
+	"fmt"
 	"math/big"
 
 	"main/gethutil/mpt/oracle"
@@ -226,6 +227,40 @@ func obtainTwoProofsAndConvertToWitness(trieModifications []TrieModification, st
 			storageProof1, neighbourNode2, extNibbles2, isLastLeaf2, isNeighbourNodeHashed2, err := statedb.GetStorageProof(addr, tMod.Key)
 			check(err)
 
+			fmt.Println("==== ??? ===== ?????????????????????????")
+			fmt.Println(tMod.Type)
+			fmt.Println(tMod.Value)
+
+			fmt.Println("")
+			fmt.Println("account proof 1")
+			for i := 0; i < len(accountProof); i++ {
+				fmt.Println(accountProof[i])
+				fmt.Println("")
+			}
+
+			fmt.Println("")
+			fmt.Println("storage proof 1")
+			for i := 0; i < len(storageProof); i++ {
+				fmt.Println(storageProof[i])
+				fmt.Println("")
+			}
+			fmt.Println("")
+
+			fmt.Println("")
+			fmt.Println("account proof 2")
+			for i := 0; i < len(accountProof1); i++ {
+				fmt.Println(accountProof1[i])
+				fmt.Println("")
+			}
+
+			fmt.Println("")
+			fmt.Println("storage proof 2")
+			for i := 0; i < len(storageProof1); i++ {
+				fmt.Println(storageProof1[i])
+				fmt.Println("")
+			}
+			fmt.Println("")
+
 			aNode := aNeighbourNode2
 			aIsLastLeaf := aIsLastLeaf1
 			aIsNeighbourNodeHashed := aIsNeighbourNodeHashed2
@@ -440,6 +475,29 @@ func convertProofToWitness(statedb *state.StateDB, addr common.Address, addrh []
 				extensionNibblesS, extensionNibblesC,
 				leafRow0, key,
 				keyIndex, isShorterProofLastLeaf)
+
+			if isModifiedExtNode {
+				fmt.Println("===========================================")
+				fmt.Println("")
+				fmt.Println(isAccountProof)
+				fmt.Println(nonExistingAccountProof)
+				fmt.Println(nonExistingStorageProof)
+
+				fmt.Println("")
+				fmt.Println("isModExtNode proof 1")
+				for i := 0; i < len(proof1); i++ {
+					fmt.Println(proof1[i])
+					fmt.Println("")
+				}
+
+				fmt.Println("")
+				fmt.Println("isModExtNode proof 2")
+				for i := 0; i < len(proof2); i++ {
+					fmt.Println(proof2[i])
+					fmt.Println("")
+				}
+				fmt.Println("")
+			}
 
 			nodes = append(nodes, bNode)
 

@@ -359,6 +359,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     ctx.clone(),
                     parent_data,
                     key_data,
+                    true,
                 );
             }};
 
