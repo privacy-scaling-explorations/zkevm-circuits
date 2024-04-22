@@ -371,6 +371,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             tx_type.expr(),
             tx_gas.expr(),
+            &tx_gas_price,
             tx_l1_fee.tx_l1_fee_word(),
             &tx_value,
             transfer_with_gas_fee.sender_balance_prev(),
