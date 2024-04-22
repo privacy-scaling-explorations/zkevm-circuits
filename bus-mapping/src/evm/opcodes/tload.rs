@@ -45,8 +45,7 @@ impl Opcode for Tload {
         state.stack_read(&mut exec_step, stack_position, key)?;
 
         // Transient Storage read
-        let (_, value) = state.sdb.get_transient_storage(&contract_addr, &key);
-        let value = *value;
+        let (_, &value) = state.sdb.get_transient_storage(&contract_addr, &key);
 
         state.push_op(
             &mut exec_step,

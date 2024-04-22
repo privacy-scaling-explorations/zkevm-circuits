@@ -300,13 +300,6 @@ func ToTxData(message core.Message, ChainID *big.Int) types.TxData {
 			BlobHashes: message.BlobHashes,
 			BlobFeeCap: uint256.MustFromBig((*big.Int)(message.BlobGasFeeCap)),
 		}
-		// if message.Blobs != nil {
-		// 	data.(*types.BlobTx).Sidecar = &types.BlobTxSidecar{
-		// 		Blobs:       message.Blobs,
-		// 		Commitments: message.Commitments,
-		// 		Proofs:      message.Proofs,
-		// 	}
-		// }
 
 	case message.GasFeeCap != nil:
 		al := types.AccessList{}
