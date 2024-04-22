@@ -255,15 +255,22 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		stateDB.SetTxContext(tx.Hash(), i)
 
 		_, err = core.ApplyTransactionWithEVM(&message, &chainConfig, new(core.GasPool).AddGas(message.GasLimit), stateDB, blockCtx.BlockNumber, common.Hash{}, &tx, &usedGas, evm)
-		if err != nil {
-			return nil, fmt.Errorf("tracing failed: %w", err)
-		}
-		raw, _ = tracer.GetResult()
-
 		var result ExecutionResult
-		err = json.Unmarshal(raw, &result)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			result = ExecutionResult{
+				Gas:         0,
+				Failed:      true,
+				Invalid:     true,
+				ReturnValue: fmt.Sprintf("%v", err),
+				StructLogs:  []StructLogRes{},
+			}
+		} else {
+			raw, _ = tracer.GetResult()
+
+			err = json.Unmarshal(raw, &result)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
 		}
 
 		executionResults[i] = &result
