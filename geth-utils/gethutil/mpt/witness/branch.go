@@ -153,7 +153,7 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 // getNibbles returns the nibbles of the leaf or extension node.
 func getNibbles(leafKeyRow []byte) []byte {
 	var nibbles []byte
-	if leafKeyRow[0] != 248 {
+	if leafKeyRow[0] < 248 {
 		var keyLen int
 		if leafKeyRow[1] > 128 {
 			keyLen = int(leafKeyRow[1] - 128)
@@ -175,7 +175,7 @@ func getNibbles(leafKeyRow []byte) []byte {
 			keyLen = 1
 			nibbles = append(nibbles, leafKeyRow[1]-16)
 		}
-	} else {
+	} else if leafKeyRow[0] == 248 {
 		keyLen := int(leafKeyRow[2] - 128)
 		if (leafKeyRow[3] != 32) && (leafKeyRow[3] != 0) { // second term is for extension node
 			if leafKeyRow[3] < 32 { // extension node
@@ -191,6 +191,8 @@ func getNibbles(leafKeyRow []byte) []byte {
 			nibbles = append(nibbles, n1)
 			nibbles = append(nibbles, n2)
 		}
+	} else {
+		panic("Not supported yet.")
 	}
 
 	return nibbles

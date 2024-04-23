@@ -2378,6 +2378,13 @@ func TestStorageWrongExtensionNode(t *testing.T) {
 }
 
 func TestStorageWrongExtensionNode1(t *testing.T) {
+	// This test slightly differs from TestStorageWrongExtensionNode in key3 - 
+	// TestStorageWrongExtensionNode:
+	// key3 := common.HexToHash("0x1277000000000000000000000000000000000000000000000000000000000000")
+	// TestStorageWrongExtensionNode1:
+	// key3 := common.HexToHash("0x01277000000000000000000000000000000000000000000000000000000000000")
+	// This is to test different scenarios in the computation of the nibbles RLC in the circuit.
+
 	blockNum := 0
 	blockNumberParent := big.NewInt(int64(blockNum))
 	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)

@@ -122,7 +122,7 @@ func getStorageRootCodeHashValue(leaf []byte, storageStart int) ([]byte, []byte)
 	return storageRootValue, codeHashValue
 }
 
-func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, constructedLeaf, neighbourNode, addressNibbles []byte, isPlaceholder, isSModExtension, isCModExtension bool) Node {
+func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, neighbourNode, addressNibbles []byte, isPlaceholder, isSModExtension, isCModExtension bool) Node {
 	// For non existing account proof there are two cases:
 	// 1. A leaf is returned that is not at the required address (wrong leaf).
 	// 2. A branch is returned as the last element of getProof and
@@ -176,10 +176,6 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, con
 
 	wrongLeaf := leafC
 	wrongLen := keyLenC
-	if constructedLeaf != nil {
-		wrongLeaf = constructedLeaf
-		wrongLen = int(constructedLeaf[2]) - 128
-	}
 
 	offset := 0
 	nibblesNum := (wrongLen - 1) * 2
@@ -334,7 +330,7 @@ func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, pr
 
 		// When generating a proof that account doesn't exist, the length of both proofs is the same (doesn't reach
 		// this code).
-		return prepareAccountLeafNode(addr, addrh, leafS, leafC, nil, nil, key, false, isSModExtension, isCModExtension)
+		return prepareAccountLeafNode(addr, addrh, leafS, leafC, nil, key, false, isSModExtension, isCModExtension)
 	} else {
 		var leaf []byte
 		isSPlaceholder := false
@@ -348,7 +344,7 @@ func prepareLeafAndPlaceholderNode(addr common.Address, addrh []byte, proof1, pr
 			isSPlaceholder = true
 		}
 
-		return prepareStorageLeafNode(leaf, leaf, nil, nil, storage_key, key, false, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension)
+		return prepareStorageLeafNode(leaf, leaf, nil, storage_key, key, false, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension)
 	}
 }
 
@@ -394,7 +390,7 @@ func prepareAccountLeafPlaceholderNode(addr common.Address, addrh, key []byte, k
 		leaf[4+i] = remainingNibbles[2*i+offset]*16 + remainingNibbles[2*i+1+offset]
 	}
 
-	node := prepareAccountLeafNode(addr, addrh, leaf, leaf, nil, nil, key, true, false, false)
+	node := prepareAccountLeafNode(addr, addrh, leaf, leaf, nil, key, true, false, false)
 
 	node.Account.ValueRlpBytes[0][0] = 184
 	node.Account.ValueRlpBytes[0][1] = 70
@@ -423,7 +419,7 @@ func prepareStorageLeafPlaceholderNode(storage_key common.Hash, key []byte, keyI
 	keyLen := getLeafKeyLen(keyIndex)
 	leaf[0] = 192 + 1 + byte(keyLen) + 1
 
-	return prepareStorageLeafNode(leaf, leaf, nil, nil, storage_key, key, false, true, true, false, false)
+	return prepareStorageLeafNode(leaf, leaf, nil, storage_key, key, false, true, true, false, false)
 }
 
 func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte, []byte, []byte, []byte) {
@@ -509,7 +505,7 @@ func prepareStorageLeafInfo(row []byte, valueIsZero, isPlaceholder bool) ([]byte
 	return key, value, keyRlp, valueRlp
 }
 
-func prepareStorageLeafNode(leafS, leafC, constructedLeaf, neighbourNode []byte, storage_key common.Hash, key []byte, nonExistingStorageProof, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension bool) Node {
+func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key common.Hash, key []byte, nonExistingStorageProof, isSPlaceholder, isCPlaceholder, isSModExtension, isCModExtension bool) Node {
 	var rows [][]byte
 
 	keyS, valueS, listRlpBytes1, valueRlpBytes1 := prepareStorageLeafInfo(leafS, false, isSPlaceholder)
@@ -540,11 +536,7 @@ func prepareStorageLeafNode(leafS, leafC, constructedLeaf, neighbourNode []byte,
 	var nonExistingStorageRow []byte
 	var wrongRlpBytes []byte
 	if nonExistingStorageProof {
-		if constructedLeaf != nil {
-			wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(constructedLeaf, key)
-		} else {
-			wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key)
-		}
+		wrongRlpBytes, nonExistingStorageRow = prepareNonExistingStorageRow(leafC, key)
 	} else {
 		nonExistingStorageRow = prepareEmptyNonExistingStorageRow()
 	}
@@ -584,12 +576,8 @@ func equipLeafWithWrongExtension(leafNode Node, keyMiddle, keyAfter, nibblesMidd
 	l := len(leafNode.Values)
 	leafNode.Values[l-modifiedExtensionNodeRowLen] = keyMiddle
 	startNibblePos := 2 // we don't need any nibbles for case keyLen = 1
-	if len(keyMiddle) > 1 {
-		if len(nibblesMiddle)%2 == 0 {
-			startNibblePos = 1
-		} else {
-			startNibblePos = 2
-		}
+	if len(keyMiddle) > 1 && len(nibblesMiddle)%2 == 0 {
+		startNibblePos = 1
 	}
 	ind := 0
 	for j := startNibblePos; j < len(nibblesMiddle); j += 2 {
@@ -599,12 +587,8 @@ func equipLeafWithWrongExtension(leafNode Node, keyMiddle, keyAfter, nibblesMidd
 
 	leafNode.Values[l-modifiedExtensionNodeRowLen+3] = keyAfter
 	startNibblePos = 2 // we don't need any nibbles for case keyLen = 1
-	if len(keyAfter) > 1 {
-		if len(nibblesAfter)%2 == 0 {
-			startNibblePos = 1
-		} else {
-			startNibblePos = 2
-		}
+	if len(keyAfter) > 1 && len(nibblesAfter)%2 == 0 {
+		startNibblePos = 1
 	}
 	ind = 0
 	for j := startNibblePos; j < len(nibblesAfter); j += 2 {
