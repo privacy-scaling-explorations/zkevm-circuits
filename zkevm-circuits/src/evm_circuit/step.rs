@@ -119,6 +119,8 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
+    TLOAD,
+    TSTORE,
     /// PUSH0, PUSH1, PUSH2, ..., PUSH32
     PUSH,
     /// DUP1, DUP2, ..., DUP16
@@ -309,6 +311,8 @@ impl From<&ExecStep> for ExecutionState {
                     OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::TLOAD => ExecutionState::TLOAD,
+                    OpcodeId::TSTORE => ExecutionState::TSTORE,
                     OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,
@@ -506,6 +510,8 @@ impl ExecutionState {
             Self::MSIZE => vec![OpcodeId::MSIZE],
             Self::GAS => vec![OpcodeId::GAS],
             Self::JUMPDEST => vec![OpcodeId::JUMPDEST],
+            Self::TLOAD => vec![OpcodeId::TLOAD],
+            Self::TSTORE => vec![OpcodeId::TSTORE],
             Self::PUSH => vec![
                 OpcodeId::PUSH0,
                 OpcodeId::PUSH1,

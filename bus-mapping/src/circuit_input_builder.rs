@@ -460,6 +460,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             // Generate EndTx step
             let end_tx_step =
                 gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
+            self.sdb.clear_transient_storage();
             tx.steps_mut().push(end_tx_step.clone());
             (end_tx_step, last_call)
         } else if self.feature_config.invalid_tx {

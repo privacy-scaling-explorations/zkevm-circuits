@@ -1,6 +1,7 @@
 package gethutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -9,10 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
@@ -137,12 +140,12 @@ func toBigInt(value *hexutil.Big) *big.Int {
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
-		ChainID:                       toBigInt(config.ChainID),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  big.NewInt(0),
-		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(0),
-		EIP150Hash:                    common.Hash{},
+		ChainID:        toBigInt(config.ChainID),
+		HomesteadBlock: big.NewInt(0),
+		DAOForkBlock:   big.NewInt(0),
+		DAOForkSupport: true,
+		EIP150Block:    big.NewInt(0),
+		// EIP150Hash:                    common.Hash{},
 		EIP155Block:                   big.NewInt(0),
 		EIP158Block:                   big.NewInt(0),
 		ByzantiumBlock:                big.NewInt(0),
@@ -153,6 +156,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
 		ShanghaiTime:                  newUint64(0),
+		CancunTime:                    newUint64(0),
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
 	}
@@ -226,7 +230,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		stateDB.SetNonce(address, uint64(account.Nonce))
 		stateDB.SetCode(address, account.Code)
 		if account.Balance != nil {
-			stateDB.SetBalance(address, toBigInt(account.Balance))
+			stateDB.SetBalance(address, uint256.MustFromBig(toBigInt(account.Balance)), tracing.BalanceChangeUnspecified)
 		}
 		for key, value := range account.Storage {
 			stateDB.SetState(address, key, value)
@@ -234,15 +238,26 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	}
 	stateDB.Finalise(true)
 
+	var (
+		err     error
+		usedGas uint64
+		raw     json.RawMessage
+		tx      types.Transaction
+	)
+
 	// Run the transactions with tracing enabled.
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
-		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, vm.TxContext{GasPrice: big.NewInt(0)}, stateDB, &chainConfig, vm.Config{Tracer: tracer.Hooks(), NoBaseFee: true})
 
-		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
+		tx = *types.NewTx(ToTxData(message, chainConfig.ChainID))
+		stateDB.SetTxContext(tx.Hash(), i)
+
+		_, err = core.ApplyTransactionWithEVM(&message, &chainConfig, new(core.GasPool).AddGas(message.GasLimit), stateDB, blockCtx.BlockNumber, common.Hash{}, &tx, &usedGas, evm)
+		var result ExecutionResult
 		if err != nil {
-			executionResults[i] = &ExecutionResult{
+			result = ExecutionResult{
 				Gas:         0,
 				Failed:      true,
 				Invalid:     true,
@@ -250,17 +265,80 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 				StructLogs:  []StructLogRes{},
 			}
 		} else {
-			stateDB.Finalise(true)
+			raw, _ = tracer.GetResult()
 
-			executionResults[i] = &ExecutionResult{
-				Gas:         result.UsedGas,
-				Failed:      result.Failed(),
-				Invalid:     false,
-				ReturnValue: fmt.Sprintf("%x", result.ReturnData),
-				StructLogs:  FormatLogs(tracer.StructLogs()),
+			err = json.Unmarshal(raw, &result)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 			}
 		}
+
+		executionResults[i] = &result
 	}
 
 	return executionResults, nil
+}
+
+func ToTxData(message core.Message, ChainID *big.Int) types.TxData {
+	var data types.TxData
+	switch {
+	case message.BlobHashes != nil:
+		al := types.AccessList{}
+		if message.AccessList != nil {
+			al = message.AccessList
+		}
+		data = &types.BlobTx{
+			To:         *message.To,
+			ChainID:    uint256.MustFromBig((*big.Int)(ChainID)),
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasFeeCap:  uint256.MustFromBig((*big.Int)(message.GasFeeCap)),
+			GasTipCap:  uint256.MustFromBig((*big.Int)(message.GasTipCap)),
+			Value:      uint256.MustFromBig((*big.Int)(message.Value)),
+			Data:       message.Data,
+			AccessList: al,
+			BlobHashes: message.BlobHashes,
+			BlobFeeCap: uint256.MustFromBig((*big.Int)(message.BlobGasFeeCap)),
+		}
+
+	case message.GasFeeCap != nil:
+		al := types.AccessList{}
+		if message.AccessList != nil {
+			al = message.AccessList
+		}
+		data = &types.DynamicFeeTx{
+			To:         message.To,
+			ChainID:    (*big.Int)(ChainID),
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasFeeCap:  message.GasFeeCap,
+			GasTipCap:  message.GasTipCap,
+			Value:      message.Value,
+			Data:       message.Data,
+			AccessList: al,
+		}
+
+	case message.AccessList != nil:
+		data = &types.AccessListTx{
+			To:         message.To,
+			ChainID:    ChainID,
+			Nonce:      message.Nonce,
+			Gas:        message.GasLimit,
+			GasPrice:   message.GasPrice,
+			Value:      message.Value,
+			Data:       message.Data,
+			AccessList: message.AccessList,
+		}
+
+	default:
+		data = &types.LegacyTx{
+			To:       message.To,
+			Nonce:    message.Nonce,
+			Gas:      message.GasLimit,
+			GasPrice: message.GasPrice,
+			Value:    message.Value,
+			Data:     message.Data,
+		}
+	}
+	return data
 }

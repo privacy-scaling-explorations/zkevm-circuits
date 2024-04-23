@@ -266,7 +266,7 @@ func PrefetchBlock(blockNumber *big.Int, startBlock bool, hasher types.TrieHashe
 		panic("block transition isn't correct")
 	}
 	inputs[1] = blockHeader.TxHash
-	inputs[2] = blockHeader.Coinbase.Hash()
+	inputs[2] = common.BytesToHash(blockHeader.Coinbase[:])
 	inputs[3] = blockHeader.UncleHash
 	inputs[4] = common.BigToHash(big.NewInt(int64(blockHeader.GasLimit)))
 	inputs[5] = common.BigToHash(big.NewInt(int64(blockHeader.Time)))

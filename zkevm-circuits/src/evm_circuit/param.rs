@@ -9,7 +9,7 @@ use halo2_proofs::{
 use std::collections::HashMap;
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 139;
+pub(crate) const STEP_WIDTH: usize = 140;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 19;
 /// The height of the state of a step, used by gates that connect two

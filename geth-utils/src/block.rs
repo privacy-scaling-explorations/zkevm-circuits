@@ -25,7 +25,9 @@ pub fn trace(config: &str) -> Result<String, Error> {
 
     // Return the trace
     match result.is_empty() || result.starts_with("Failed") {
-        true => Err(Error::TracingError(result)),
+        true => Ok(format!(
+            "[\n{{\n\"gas\": 0,\n\"failed\": true,\n\"invalid\": true,\n\"returnValue\": \"{result}\",\n\"structLogs\": []\n}}\n]"
+        )),
         false => Ok(result),
     }
 }
