@@ -448,7 +448,7 @@ pub enum CircuitTestError {
     /// Something wrong in the block_convert
     #[error("CannotConvertBlock({0})")]
     CannotConvertBlock(String),
-    /// Something worng in the chunk_convert
+    /// Something wrong in the chunk_convert
     #[error("SanityCheckChunks({0})")]
     SanityCheckChunks(String),
     /// Problem constructing MockProver
