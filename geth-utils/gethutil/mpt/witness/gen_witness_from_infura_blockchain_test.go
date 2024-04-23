@@ -2378,7 +2378,7 @@ func TestStorageWrongExtensionNode(t *testing.T) {
 }
 
 func TestStorageWrongExtensionNode1(t *testing.T) {
-	// This test slightly differs from TestStorageWrongExtensionNode in key3 - 
+	// This test slightly differs from TestStorageWrongExtensionNode in key3 -
 	// TestStorageWrongExtensionNode:
 	// key3 := common.HexToHash("0x1277000000000000000000000000000000000000000000000000000000000000")
 	// TestStorageWrongExtensionNode1:
