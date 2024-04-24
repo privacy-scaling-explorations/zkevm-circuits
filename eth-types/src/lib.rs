@@ -843,6 +843,15 @@ impl GethCallTrace {
         if self.is_precheck_failed() {
             return call_is_success;
         }
+        if self.error.as_deref() == Some(GethExecError::InsufficientBalance.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::Depth.error()) {
+            return call_is_success;
+        }
+        if self.error.as_deref() == Some(GethExecError::NonceUintOverflow.error()) {
+            return call_is_success;
+        }
         call_is_success.push(self.error.is_none());
         for call in &self.calls {
             call_is_success = call.gen_call_is_success(call_is_success);
