@@ -5,7 +5,10 @@ use halo2_proofs::plonk::{Error, VirtualCells};
 use super::{
     helpers::{
         ext_key_rlc_calc_value, KeyData, ListKeyGadget, ListKeyWitness, MPTConstraintBuilder,
-    }, rlp_gadgets::RLPItemWitness, witness_row::AccountRowType, MPTContext
+    },
+    rlp_gadgets::RLPItemWitness,
+    witness_row::AccountRowType,
+    MPTContext,
 };
 use crate::{
     circuit,
@@ -67,46 +70,16 @@ impl<F: Field> ModExtensionGadget<F> {
 
         circuit!([meta, cb], {
             let key_items = [
-                ctx.rlp_item(
-                    meta,
-                    cb,
-                    long_ext_node_key,
-                    RlpItemType::Key,
-                ),
-                ctx.rlp_item(
-                    meta,
-                    cb,
-                    short_ext_node_key,
-                    RlpItemType::Key,
-                ),
+                ctx.rlp_item(meta, cb, long_ext_node_key, RlpItemType::Key),
+                ctx.rlp_item(meta, cb, short_ext_node_key, RlpItemType::Key),
             ];
             let key_nibbles = [
-                ctx.rlp_item(
-                    meta,
-                    cb,
-                    long_ext_node_nibbles,
-                    RlpItemType::Nibbles,
-                ),
-                ctx.rlp_item(
-                    meta,
-                    cb,
-                    short_ext_node_nibbles,
-                    RlpItemType::Nibbles,
-                ),
+                ctx.rlp_item(meta, cb, long_ext_node_nibbles, RlpItemType::Nibbles),
+                ctx.rlp_item(meta, cb, short_ext_node_nibbles, RlpItemType::Nibbles),
             ];
             let rlp_value = [
-                ctx.rlp_item(
-                    meta,
-                    cb,
-                    long_ext_node_value,
-                    RlpItemType::Value,
-                ),
-                ctx.rlp_item(
-                    meta,
-                    cb,
-                    short_ext_node_value,
-                    RlpItemType::Value,
-                ),
+                ctx.rlp_item(meta, cb, long_ext_node_value, RlpItemType::Value),
+                ctx.rlp_item(meta, cb, short_ext_node_value, RlpItemType::Value),
             ];
 
             let is_insert = parent_data[0].is_placeholder.expr(); // insert or delete
@@ -292,7 +265,7 @@ impl<F: Field> ModExtensionGadget<F> {
         let mut key_items = [
             rlp_values[StorageRowType::LongExtNodeKey as usize].clone(),
             rlp_values[StorageRowType::ShortExtNodeKey as usize].clone(),
-        ]; 
+        ];
 
         let mut rlp_key = vec![ListKeyWitness::default(); 2];
         let mut key_rlc = vec![];
