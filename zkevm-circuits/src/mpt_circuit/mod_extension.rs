@@ -339,13 +339,6 @@ impl<F: Field> ModExtensionGadget<F> {
             if is_key_part_odd {
                 assert!(first_key_byte < 0b10_0000);
             } else {
-                if first_key_byte != 0 {
-                    println!("");
-                    for r in rlp_values {
-                        println!("{:?}", r.bytes);
-                        println!("");
-                    }
-                }
                 assert!(first_key_byte == 0);
             }
 
