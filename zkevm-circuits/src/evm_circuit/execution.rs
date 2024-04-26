@@ -1176,7 +1176,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(chunk_txs.iter().flat_map(|tx| {
                         tx.steps()
                             .iter()
-                            // chunk_txs is just a super set of execstep. To filter targetting
+                            // chunk_txs is just a super set of execstep. To filter targeting
                             // execstep we need to further filter by [initial_rwc, end_rwc)
                             .filter(|step| {
                                 step.rwc.0 >= chunk.chunk_context.initial_rwc
