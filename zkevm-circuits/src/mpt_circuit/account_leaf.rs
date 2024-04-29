@@ -716,6 +716,7 @@ impl<F: Field> AccountLeafConfig<F> {
             main_data.proof_type,
             true,
             address_item.word().compress_f(),
+            F::ZERO,
             main_data.new_root,
             main_data.old_root,
         )?;

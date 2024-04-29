@@ -686,6 +686,7 @@ pub(crate) struct MainData<F> {
     pub(crate) proof_type: Cell<F>,
     pub(crate) is_below_account: Cell<F>,
     pub(crate) address: Cell<F>,
+    pub(crate) transaction_index: Cell<F>,
     pub(crate) new_root: WordLoHiCell<F>,
     pub(crate) old_root: WordLoHiCell<F>,
 }
@@ -695,6 +696,7 @@ pub(crate) struct MainDataWitness<F> {
     pub(crate) proof_type: usize,
     pub(crate) is_below_account: bool,
     pub(crate) address: F,
+    pub(crate) transaction_index: F,
     pub(crate) new_root: WordLoHi<F>,
     pub(crate) old_root: WordLoHi<F>,
 }
@@ -709,6 +711,7 @@ impl<F: Field> MainData<F> {
             proof_type: cb.query_cell(),
             is_below_account: cb.query_cell(),
             address: cb.query_cell(),
+            transaction_index: cb.query_cell(),
             new_root: cb.query_word_unchecked(),
             old_root: cb.query_word_unchecked(),
         };
@@ -720,6 +723,7 @@ impl<F: Field> MainData<F> {
                     main_data.proof_type.expr(),
                     main_data.is_below_account.expr(),
                     main_data.address.expr(),
+                    main_data.transaction_index.expr(),
                     main_data.new_root.lo().expr(),
                     main_data.new_root.hi().expr(),
                     main_data.old_root.lo().expr(),
@@ -746,6 +750,7 @@ impl<F: Field> MainData<F> {
         proof_type: usize,
         is_below_account: bool,
         address: F,
+        transaction_index: F,
         new_root: WordLoHi<F>,
         old_root: WordLoHi<F>,
     ) -> Result<(), Error> {
@@ -753,6 +758,7 @@ impl<F: Field> MainData<F> {
             proof_type.scalar(),
             is_below_account.scalar(),
             address,
+            transaction_index,
             new_root.lo(),
             new_root.hi(),
             old_root.lo(),
@@ -775,17 +781,19 @@ impl<F: Field> MainData<F> {
         self.proof_type.assign(region, offset, values[0])?;
         self.is_below_account.assign(region, offset, values[1])?;
         self.address.assign(region, offset, values[2])?;
-        self.new_root.lo().assign(region, offset, values[3])?;
-        self.new_root.hi().assign(region, offset, values[4])?;
-        self.old_root.lo().assign(region, offset, values[5])?;
-        self.old_root.hi().assign(region, offset, values[6])?;
+        self.transaction_index.assign(region, offset, values[3])?;
+        self.new_root.lo().assign(region, offset, values[4])?;
+        self.new_root.hi().assign(region, offset, values[5])?;
+        self.old_root.lo().assign(region, offset, values[6])?;
+        self.old_root.hi().assign(region, offset, values[7])?;
 
         Ok(MainDataWitness {
             proof_type: values[0].get_lower_32() as usize,
             is_below_account: values[1] == 1.scalar(),
             address: values[2],
-            new_root: WordLoHi::new([values[3], values[4]]),
-            old_root: WordLoHi::new([values[5], values[6]]),
+            transaction_index: values[3],
+            new_root: WordLoHi::new([values[4], values[5]]),
+            old_root: WordLoHi::new([values[6], values[7]]),
         })
     }
 }

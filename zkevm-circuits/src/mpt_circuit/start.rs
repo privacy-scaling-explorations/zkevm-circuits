@@ -107,7 +107,8 @@ impl<F: Field> StartConfig<F> {
             &mut memory[main_memory()],
             start.proof_type as usize,
             false,
-            0.scalar(),
+            F::ZERO,
+            F::ZERO,
             root[true.idx()],
             root[false.idx()],
         )?;
