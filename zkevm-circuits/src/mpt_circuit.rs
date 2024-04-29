@@ -23,6 +23,7 @@ mod param;
 mod rlp_gadgets;
 mod start;
 mod storage_leaf;
+mod transaction_leaf;
 /// MPT witness row
 pub mod witness_row;
 
@@ -31,6 +32,7 @@ use self::{
     helpers::RLPItemView,
     param::RLP_UNIT_NUM_BYTES,
     rlp_gadgets::decode_rlp,
+    transaction_leaf::TransactionLeafConfig,
     witness_row::{
         AccountRowType, ExtensionBranchRowType, Node, StartRowType, StorageRowType,
         NODE_RLP_TYPES_ACCOUNT, NODE_RLP_TYPES_BRANCH, NODE_RLP_TYPES_START,
@@ -48,6 +50,7 @@ use crate::{
         helpers::{MPTConstraintBuilder, MainRLPGadget, MptCellType, MptTableType},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
+        witness_row::{TransactionRowType, NODE_RLP_TYPES_TRANSACTION},
     },
     table::{KeccakTable, MPTProofType, MptTable},
     util::Challenges,
@@ -64,6 +67,7 @@ pub(crate) enum MPTRegion {
     Branch,
     Account,
     Storage,
+    Transaction,
     Count,
 }
 
@@ -74,11 +78,13 @@ pub struct StateMachineConfig<F> {
     is_branch: Column<Advice>,
     is_account: Column<Advice>,
     is_storage: Column<Advice>,
+    is_transaction: Column<Advice>,
 
     start_config: StartConfig<F>,
     branch_config: ExtensionBranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
+    transaction_config: TransactionLeafConfig<F>,
 }
 
 impl<F: Field> StateMachineConfig<F> {
@@ -89,10 +95,12 @@ impl<F: Field> StateMachineConfig<F> {
             is_branch: meta.advice_column(),
             is_account: meta.advice_column(),
             is_storage: meta.advice_column(),
+            is_transaction: meta.advice_column(),
             start_config: StartConfig::default(),
             branch_config: ExtensionBranchConfig::default(),
             storage_config: StorageLeafConfig::default(),
             account_config: AccountLeafConfig::default(),
+            transaction_config: TransactionLeafConfig::default(),
         }
     }
 
@@ -103,6 +111,7 @@ impl<F: Field> StateMachineConfig<F> {
             self.is_branch,
             self.is_account,
             self.is_storage,
+            self.is_transaction,
         ]
     }
 
@@ -339,10 +348,17 @@ impl<F: Field> MPTConfig<F> {
                             ctx.memory.build_constraints(&mut cb.base, f!(q_first));
                             cb.base.pop_region();
                         },
+                        a!(state_machine.is_transaction) => {
+                            state_machine.step_constraints(meta, &mut cb, TransactionRowType::Count as usize);
+                            cb.base.push_region(MPTRegion::Transaction as usize, TransactionRowType::Count as usize);
+                            state_machine.transaction_config = TransactionLeafConfig::configure(meta, &mut cb, &mut ctx);
+                            ctx.memory.build_constraints(&mut cb.base, f!(q_first));
+                            cb.base.pop_region();
+                        },
                         _ => ctx.memory.build_constraints(&mut cb.base, f!(q_first)),
                     )};
                     // Only account and storage rows can have lookups, disable lookups on all other rows
-                    ifx! {not!(a!(state_machine.is_account) + a!(state_machine.is_storage)) => {
+                    ifx! {not!(a!(state_machine.is_account) + a!(state_machine.is_storage) + a!(state_machine.is_transaction)) => {
                         require!(a!(ctx.mpt_table.proof_type) => MPTProofType::Disabled.expr());
                     }}
                 }}
@@ -413,6 +429,8 @@ impl<F: Field> MPTConfig<F> {
                         NODE_RLP_TYPES_ACCOUNT.to_vec()
                     } else if node.storage.is_some() {
                         NODE_RLP_TYPES_STORAGE.to_vec()
+                    } else if node.transaction.is_some(){
+                        NODE_RLP_TYPES_TRANSACTION.to_vec()
                     } else {
                         unreachable!()
                     };
@@ -477,6 +495,20 @@ impl<F: Field> MPTConfig<F> {
                         cached_region.push_region(offset, MPTRegion::Storage as usize);
                         assign!(cached_region, (self.state_machine.is_storage, offset) => "is_storage", true.scalar())?;
                         self.state_machine.storage_config.assign(
+                            &mut cached_region,
+                            self,
+                            &mut memory,
+                            offset,
+                            node,
+                            &rlp_values,
+                        )?;
+                        cached_region.pop_region();
+                    }
+                    else if node.transaction.is_some() {
+                        //println!("{}: transaction", offset);
+                        cached_region.push_region(offset, MPTRegion::Transaction as usize);
+                        assign!(cached_region, (self.state_machine.is_transaction, offset) => "is_transaction", true.scalar())?;
+                        self.state_machine.transaction_config.assign(
                             &mut cached_region,
                             self,
                             &mut memory,

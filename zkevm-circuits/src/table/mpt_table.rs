@@ -26,6 +26,8 @@ pub enum MPTProofType {
     StorageChanged,
     /// Storage does not exist
     StorageDoesNotExist,
+    /// Transaction updated
+    TransactionUpdated,
 }
 impl_expr!(MPTProofType);
 
@@ -47,6 +49,8 @@ pub struct MptTable {
     pub address: Column<Advice>,
     /// Storage address
     pub storage_key: WordLoHi<Column<Advice>>,
+    /// Transaction index
+    pub transaction_index: Column<Advice>,
     /// Proof type
     pub proof_type: Column<Advice>,
     /// New MPT root
@@ -65,6 +69,7 @@ impl<F: Field> LookupTable<F> for MptTable {
             self.address,
             self.storage_key.lo(),
             self.storage_key.hi(),
+            self.transaction_index,
             self.proof_type,
             self.new_root.lo(),
             self.new_root.hi(),
@@ -85,6 +90,7 @@ impl<F: Field> LookupTable<F> for MptTable {
             String::from("address"),
             String::from("storage_key_lo"),
             String::from("storage_key_hi"),
+            String::from("transaction_index"),
             String::from("proof_type"),
             String::from("new_root_lo"),
             String::from("new_root_hi"),
@@ -104,6 +110,7 @@ impl MptTable {
         Self {
             address: meta.advice_column(),
             storage_key: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
+            transaction_index: meta.advice_column(),
             proof_type: meta.advice_column(),
             new_root: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
             old_root: WordLoHi::new([meta.advice_column(), meta.advice_column()]),
@@ -118,6 +125,7 @@ impl MptTable {
         meta: &mut VirtualCells<'_, F>,
         cb: &mut ConstraintBuilder<F, C>,
         address: Expression<F>,
+        transaction_index: Expression<F>,
         proof_type: Expression<F>,
         storage_key: WordLoHi<Expression<F>>,
         new_root: WordLoHi<Expression<F>>,
@@ -128,6 +136,7 @@ impl MptTable {
         circuit!([meta, cb], {
             require!(a!(self.address) => address);
             require!([a!(self.storage_key.lo()), a!(self.storage_key.hi())] => storage_key);
+            require!(a!(self.transaction_index) => transaction_index);
             require!(a!(self.proof_type) => proof_type);
             require!([a!(self.new_root.lo()), a!(self.new_root.hi())] => new_root);
             require!([a!(self.old_root.lo()), a!(self.old_root.hi())] => old_root);

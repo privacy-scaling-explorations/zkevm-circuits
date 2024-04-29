@@ -466,6 +466,7 @@ impl<F: Field> AccountLeafConfig<F> {
                         meta,
                         &mut cb.base,
                         address.clone(),
+                        false.expr(),
                         proof_type.clone(),
                         WordLoHi::zero(),
                         config.main_data.new_root.expr(),
@@ -480,6 +481,7 @@ impl<F: Field> AccountLeafConfig<F> {
                         meta,
                         &mut cb.base,
                         address.clone(),
+                        false.expr(),
                         proof_type.clone(),
                         WordLoHi::zero(),
                         config.main_data.new_root.expr(),
@@ -490,14 +492,15 @@ impl<F: Field> AccountLeafConfig<F> {
                 }};
             } elsex {
                 // When the value is set to 0, the leaf is deleted, and if there were only two leaves in the branch,
-                // the neighbour leaf moves one level up and replaces the branch. When the lookup is executed with
+                // the neighbor leaf moves one level up and replaces the branch. When the lookup is executed with
                 // the new value set to 0, the lookup fails (without the code below), because the leaf that is returned
-                // is the neighbour node that moved up (because the branch and the old leaf doesn’t exist anymore),
+                // is the neighbor node that moved up (because the branch and the old leaf doesn’t exist anymore),
                 // but this leaf doesn’t have the zero value.
                 ctx.mpt_table.constrain(
                     meta,
                     &mut cb.base,
                     address,
+                    false.expr(),
                     proof_type,
                     WordLoHi::zero(),
                     config.main_data.new_root.expr(),
@@ -759,6 +762,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     &account.address.iter().cloned().rev().collect::<Vec<_>>(),
                 )),
                 storage_key: WordLoHi::zero().into_value(),
+                transaction_index: Value::known(F::ZERO),
                 proof_type: Value::known(proof_type.scalar()),
                 new_root: main_data.new_root.into_value(),
                 old_root: main_data.old_root.into_value(),
