@@ -198,7 +198,7 @@ mod test {
                 accs[0]
                     .address(MOCK_ACCOUNTS[0])
                     .balance(Word::from(10u64.pow(19)))
-                    .code(bytecode)
+                    .code(bytecode);
                 accs[1]
                     .address(MOCK_ACCOUNTS[1])
                     .balance(Word::from(10u64.pow(19)));
