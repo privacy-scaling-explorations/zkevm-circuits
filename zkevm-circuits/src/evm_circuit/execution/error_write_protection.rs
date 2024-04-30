@@ -43,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let value = cb.query_word_unchecked();
         let is_value_zero = cb.is_zero_word(&value);
 
-        // require_in_set method will spilit into more low degree expressions if exceed
+        // require_in_set method will split into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes
         // checking.
         cb.require_in_set(
@@ -52,6 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             vec![
                 OpcodeId::CALL.expr(),
                 OpcodeId::SSTORE.expr(),
+                OpcodeId::TSTORE.expr(),
                 OpcodeId::CREATE.expr(),
                 OpcodeId::CREATE2.expr(),
                 OpcodeId::SELFDESTRUCT.expr(),
