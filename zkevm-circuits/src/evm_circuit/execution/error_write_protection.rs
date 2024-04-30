@@ -43,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let value = cb.query_word_unchecked();
         let is_value_zero = cb.is_zero_word(&value);
 
-        // require_in_set method will spilit into more low degree expressions if exceed
+        // require_in_set method will split into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes
         // checking.
         cb.require_in_set(
@@ -52,6 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             vec![
                 OpcodeId::CALL.expr(),
                 OpcodeId::SSTORE.expr(),
+                OpcodeId::TSTORE.expr(),
                 OpcodeId::CREATE.expr(),
                 OpcodeId::CREATE2.expr(),
                 OpcodeId::SELFDESTRUCT.expr(),
@@ -155,16 +156,26 @@ mod test {
         Account::mock_code_balance(code)
     }
 
+    #[derive(Copy, Clone, Debug)]
+    enum FailureReason {
+        Sstore,
+        TStore,
+        CallWithValue,
+    }
+
     #[test]
     fn test_write_protection() {
-        // test sstore with write protection error
-        test_internal_write_protection(false);
-        // test call with write protection error
-        test_internal_write_protection(true);
+        for reason in [
+            FailureReason::Sstore,
+            FailureReason::CallWithValue,
+            FailureReason::TStore,
+        ] {
+            test_internal_write_protection(reason)
+        }
     }
 
     // ErrorWriteProtection error happen in internal call
-    fn test_internal_write_protection(is_call: bool) {
+    fn test_internal_write_protection(reason: FailureReason) {
         let mut caller_bytecode = bytecode! {
             PUSH1(0)
             PUSH1(0)
@@ -185,26 +196,36 @@ mod test {
             PUSH1(0x02)
         };
 
-        if is_call {
-            callee_bytecode.append(&bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-                PUSH1(10)
-                PUSH1(200)  // non zero value
-                PUSH20(Address::repeat_byte(0xff).to_word())
-                PUSH2(10000)  // gas
-                //this call got error: ErrorWriteProtection
-                CALL
-                RETURN
-                STOP
-            });
-        } else {
-            callee_bytecode.append(&bytecode! {
-                // this SSTORE got error: ErrorWriteProtection
-                SSTORE
-                STOP
-            });
-        }
+        match reason {
+            FailureReason::CallWithValue => {
+                callee_bytecode.append(&bytecode! {
+                    PUSH1(0)
+                    PUSH1(0)
+                    PUSH1(10)
+                    PUSH1(200)  // non zero value
+                    PUSH20(Address::repeat_byte(0xff).to_word())
+                    PUSH2(10000)  // gas
+                    //this call got error: ErrorWriteProtection
+                    CALL
+                    RETURN
+                    STOP
+                });
+            }
+            FailureReason::Sstore => {
+                callee_bytecode.append(&bytecode! {
+                    // this SSTORE got error: ErrorWriteProtection
+                    SSTORE
+                    STOP
+                });
+            }
+            FailureReason::TStore => {
+                callee_bytecode.append(&bytecode! {
+                    // this TSTORE got error: ErrorWriteProtection
+                    TSTORE
+                    STOP
+                });
+            }
+        };
 
         test_ok(
             Account::mock_100_ether(caller_bytecode),
