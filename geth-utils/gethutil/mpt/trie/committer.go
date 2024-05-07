@@ -39,7 +39,7 @@ type leaf struct {
 
 // committer is a type used for the trie Commit operation. A committer has some
 // internal preallocated temp space, and also a callback that is invoked when
-// leaves are committed. The leafs are passed through the `leafCh`,  to allow
+// leaves are committed. The leaves are passed through the `leafCh`,  to allow
 // some level of parallelism.
 // By 'some level' of parallelism, it's still the case that all leaves will be
 // processed sequentially - onleaf will never be called in parallel or out of order.
@@ -243,7 +243,7 @@ func (c *committer) makeHashNode(data []byte) HashNode {
 
 // estimateSize estimates the size of an rlp-encoded node, without actually
 // rlp-encoding it (zero allocs). This method has been experimentally tried, and with a trie
-// with 1000 leafs, the only errors above 1% are on small shortnodes, where this
+// with 1000 leaves, the only errors above 1% are on small shortnodes, where this
 // method overestimates by 2 or 3 bytes (e.g. 37 instead of 35)
 func estimateSize(n Node) int {
 	switch n := n.(type) {
