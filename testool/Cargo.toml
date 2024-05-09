@@ -34,6 +34,7 @@ rand_chacha = "0.3"
 rand = "0.8"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v0.3.0" }
 urlencoding = "2.1.2"
+sha3 = "0.10"
 
 
 [features]
