@@ -4199,6 +4199,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha3 0.10.8",
  "strum 0.24.1",
  "strum_macros 0.24.3",
  "thiserror",
