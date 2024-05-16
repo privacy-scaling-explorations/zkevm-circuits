@@ -104,7 +104,7 @@ impl<T: Clone + Copy> SuperCircuitInstance<T> {
     }
 }
 
-/// UserChallange
+/// UserChallenge
 #[derive(Clone)]
 pub struct UserChallenge {
     /// column_indexes

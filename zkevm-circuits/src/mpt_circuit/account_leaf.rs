@@ -409,7 +409,7 @@ impl<F: Field> AccountLeafConfig<F> {
             } elsex {
                 ifx! {and::expr(&[not!(config.parent_data[true.idx()].is_placeholder), not!(config.parent_data[false.idx()].is_placeholder)]) => {
                     // Check that there is only one modification, except when the account is being deleted or
-                    // the parent branch is a placeholder (meaning the account leafs in S are C are different).
+                    // the parent branch is a placeholder (meaning the account leaves in S are C are different).
                     // Nonce needs to remain the same when not modifying the nonce
                     ifx!{not!(config.is_nonce_mod) => {
                         require!(nonce[false.idx()] => nonce[true.idx()]);

@@ -1,0 +1,9 @@
+[default.extend-words]
+groth = "groth"
+pn = "pn"
+struc = "struc"
+ba = "ba"
+advices = "advices"
+
+[files]
+extend-exclude = ["integration-tests/contracts"]

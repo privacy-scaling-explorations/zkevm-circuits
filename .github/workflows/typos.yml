@@ -1,0 +1,20 @@
+name: Typo Check
+
+on:
+  merge_group:
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+
+jobs:
+  typos:
+    name: Spell Check with Typos
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use typos with config file
+        uses: crate-ci/typos@v1.21.0
+        with:
+          config: config/typos.toml
