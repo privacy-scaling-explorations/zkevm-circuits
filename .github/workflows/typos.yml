@@ -17,4 +17,4 @@ jobs:
       - name: Use typos with config file
         uses: crate-ci/typos@v1.21.0
         with:
-          config: config/typos.toml
+          config: .github/workflows/config/typos.toml
