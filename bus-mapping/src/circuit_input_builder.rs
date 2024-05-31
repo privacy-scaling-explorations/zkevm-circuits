@@ -814,7 +814,7 @@ impl CircuitInputBuilder<FixedCParams> {
         );
         assert!(
             self.chunks.len() == self.chunk_ctx.idx + 1,
-            "number of chunks {} mis-match with chunk_ctx id {}",
+            "number of chunks {} miss-match with chunk_ctx id {}",
             self.chunks.len(),
             self.chunk_ctx.idx + 1,
         );
@@ -975,7 +975,7 @@ impl CircuitInputBuilder<DynamicCParams> {
     }
 
     /// Handle a block by handling each transaction to generate all the
-    /// associated operations. Dry run the block to determind the target
+    /// associated operations. Dry run the block to determined the target
     /// [`FixedCParams`] from to total number of chunks.
     pub fn handle_block(
         self,
