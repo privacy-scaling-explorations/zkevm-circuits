@@ -10,6 +10,13 @@ path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 0
 max_steps = 100000
 
+[[suite]]
+id="EIP1153"
+path = "tests/src/GeneralStateTestsFiller/Cancun/stEIP1153-transientStorage/*"
+max_gas = 500000
+max_steps = 1000
+ignore_tests = []
+
 [[skip_paths]]
 desc = "unimplemented"
 paths = [
