@@ -797,7 +797,7 @@ mod test {
     }
 
     #[test]
-    fn test_buffer_reader_gadget_completness() {
+    fn test_buffer_reader_gadget_completeness() {
         // buffer len = data len
         try_test!(
             BufferReaderGadgetTestContainer<Fr, 2, 10>,

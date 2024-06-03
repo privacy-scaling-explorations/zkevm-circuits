@@ -60,7 +60,7 @@ type LeafCallback func(paths [][]byte, hexpath []byte, leaf []byte, parent commo
 type Trie struct {
 	db   *Database
 	root Node
-	// Keep track of the number leafs which have been inserted since the last
+	// Keep track of the number leaves which have been inserted since the last
 	// hashing operation. This number will not directly map to the number of
 	// actually unhashed nodes
 	unhashed int

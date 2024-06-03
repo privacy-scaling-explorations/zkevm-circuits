@@ -27,7 +27,7 @@ pub enum StateTestError {
     NonceMismatch { expected: u64, found: u64 },
     #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
-    #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
+    #[error("StorageMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
     StorageMismatch {
         slot: U256,
         expected: U256,

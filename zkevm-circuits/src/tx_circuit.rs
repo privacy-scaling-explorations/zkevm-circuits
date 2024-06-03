@@ -337,7 +337,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
-        let sign_datas: Vec<SignData> = self
+        let sign_data: Vec<SignData> = self
             .txs
             .iter()
             .map(|tx| {
@@ -351,7 +351,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         config.load_aux_tables(layouter)?;
         let assigned_sig_verifs =
             self.sign_verify
-                .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+                .assign(&config.sign_verify, layouter, &sign_data, challenges)?;
         self.assign_tx_table(config, layouter, assigned_sig_verifs)?;
         Ok(())
     }

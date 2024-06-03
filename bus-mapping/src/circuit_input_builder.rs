@@ -148,7 +148,7 @@ pub trait CircuitsParams: Debug + Copy {
     fn total_chunks(&self) -> usize;
     /// Set total number of chunks
     fn set_total_chunk(&mut self, total_chunks: usize);
-    /// Return the maximun Rw
+    /// Return the maximum Rw
     fn max_rws(&self) -> Option<usize>;
 }
 
@@ -211,7 +211,7 @@ impl Default for FixedCParams {
 /// [`eth_types::GethExecTrace`] to build the circuit input associated with
 /// each transaction, and the bus-mapping operations associated with each
 /// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`]. 3. If `Rw`s
-/// generated during Transactions exceed the `max_rws` threshold, seperate witness
+/// generated during Transactions exceed the `max_rws` threshold, separate witness
 /// into multiple chunks.
 ///
 /// The generated bus-mapping operations are:
@@ -366,7 +366,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
             return Ok(false);
         };
 
-        // Optain the first op of the next GethExecStep, for fixed case also lookahead
+        // Obtain the first op of the next GethExecStep, for fixed case also lookahead
         let (mut cib, mut tx, mut tx_ctx) = (self.clone(), tx, tx_ctx);
         let mut cib_ref = cib.state_ref(&mut tx, &mut tx_ctx);
         let mut next_ops = if let Some((i, step)) = next_geth_step {
@@ -397,8 +397,8 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
     /// `self.block.container`, and each step stores the
     /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
     /// generated operations.
-    /// When dynamic builder handles Tx with is_chuncked = false, we don't chunk
-    /// When fixed builder handles Tx with is_chuncked = true, we chunk
+    /// When dynamic builder handles Tx with is_chunked = false, we don't chunk
+    /// When fixed builder handles Tx with is_chunked = true, we chunk
     fn handle_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,
@@ -475,7 +475,7 @@ impl<'a, C: CircuitsParams> CircuitInputBuilder<C> {
                 self.check_and_chunk(geth_trace, tx.clone(), tx_ctx.clone(), None, None)?;
             if is_chunk {
                 // TODO we dont support chunk after invalid_tx
-                // becasuse begin_chunk will constraints what next step execution state.
+                // because begin_chunk will constraints what next step execution state.
                 // And for next step either begin_tx or invalid_tx will both failed because
                 // begin_tx/invalid_tx define new execution state.
                 unimplemented!("dont support invalid_tx with multiple chunks")
@@ -814,7 +814,7 @@ impl CircuitInputBuilder<FixedCParams> {
         );
         assert!(
             self.chunks.len() == self.chunk_ctx.idx + 1,
-            "number of chunks {} mis-match with chunk_ctx id {}",
+            "number of chunks {} miss-match with chunk_ctx id {}",
             self.chunks.len(),
             self.chunk_ctx.idx + 1,
         );
@@ -975,7 +975,7 @@ impl CircuitInputBuilder<DynamicCParams> {
     }
 
     /// Handle a block by handling each transaction to generate all the
-    /// associated operations. Dry run the block to determind the target
+    /// associated operations. Dry run the block to determined the target
     /// [`FixedCParams`] from to total number of chunks.
     pub fn handle_block(
         self,
@@ -1054,7 +1054,7 @@ pub fn keccak_inputs_tx_circuit(
     chain_id: u64,
 ) -> Result<Vec<Vec<u8>>, Error> {
     let mut inputs = Vec::new();
-    let sign_datas: Vec<SignData> = txs
+    let sign_data: Vec<SignData> = txs
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
@@ -1068,7 +1068,7 @@ pub fn keccak_inputs_tx_circuit(
         .map(|(_, tx)| tx.sign_data(chain_id))
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
-    let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
+    let sign_verify_inputs = keccak_inputs_sign_verify(&sign_data);
     inputs.extend_from_slice(&sign_verify_inputs);
     // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
     // hash inputs.

@@ -465,7 +465,7 @@ func TestAddBranchTwoLevels(t *testing.T) {
 	// Test for case when branch is added in the second level. So, instead of having only
 	// branch1 with some nodes and then one of this nodes is replaced with a branch (that's
 	// the case of TestAddBranch), we have here branch1 and then inside it another
-	// branch: branch2. Inside brach2 we have a node which gets replaced by a branch.
+	// branch: branch2. Inside branch2 we have a node which gets replaced by a branch.
 	// This is to test cases when the key contains odd number of nibbles as well as
 	// even number of nibbles.
 
