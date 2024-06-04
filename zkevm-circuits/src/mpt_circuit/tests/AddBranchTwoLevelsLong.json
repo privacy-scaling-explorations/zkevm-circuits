@@ -7,6 +7,7 @@
         "extension_branch": null,
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a033418e7356992d602e4bd07cd007a3106bb04ecdaef08a6899f1829fb796ffac00",
@@ -26,6 +27,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -40,6 +42,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a01cf1f44f7350639b8eb1ab158e4eaaa1a097540201d9f89cb9e340f305708eba00",
@@ -81,6 +84,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -95,6 +99,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a02eab757f68eeeec253e94e09ca88c2948cfd6196e4a114e10d3a90de3963fe2000",
@@ -136,6 +141,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -150,6 +156,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0863f1e86b9ec886ed895c81d96440bf9dc2c818e681b8d6e28d5ef016558499500",
@@ -191,6 +198,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -205,6 +213,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a04f847323342e5f60020273a22cbf9ca2c0a5526b8cd3fe8a22c0c3395fa1578200",
@@ -246,6 +255,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -260,6 +270,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0ae7f80a5938a14339d4913da2517756f7c4ef8401aad88976c51455d9fa59d0500",
@@ -301,6 +312,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -315,6 +327,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a058fab189fbfdab1faa6c910276f034f880b1d693b870b21d52112e4593a5893800",
@@ -356,6 +369,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -370,6 +384,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0a7d39ba0c9fb4ccad82c86d0f3a9c21f886a847fff1ee79aa4faed47f707476c00",
@@ -411,6 +426,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -425,6 +441,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0ae4ffa0ecc2fe67fa29ef442baf5588192f5607e7307effa193b5e5391e2629700",
@@ -484,6 +501,7 @@
             ]
         },
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "9d2008ff81924c9451610ec78f20dc456fcbe2fb46e635e730785a61369900000000",
@@ -523,6 +541,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -537,6 +556,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0e2be5445cb381bf6c98d9cc94982029f79cd04a6169398461d3b9d5ee1a05ef000",
@@ -578,6 +598,7 @@
                 false,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -592,6 +613,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0b6686c056543443fb69051015ec48405e9f6dda91a584ee0d00e7354ab2a987300",
@@ -633,6 +655,7 @@
                 true,
                 false
             ],
+            "is_last_level_and_wrong_ext_case": false,
             "extension": {
                 "list_rlp_bytes": "00000000000000000000000000000000000000000000000000000000000000000000"
             },
@@ -647,6 +670,7 @@
         },
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a03ce2c317ee8621df460267fc97cbd58f4b3b78ee905856f53599f9e6aa0ae08d00",
@@ -702,6 +726,7 @@
                 "00000000000000000000000000000000000000000000000000000000000000000000"
             ]
         },
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a020eb7511d002ba4a0c86ee677f25f01ba4f52adabca2099711395ab1befab43d00",
@@ -732,6 +757,7 @@
         "extension_branch": null,
         "account": null,
         "storage": null,
+        "transaction": null,
         "mod_extension": null,
         "values": [
             "a0000000000000000000000000000000000000000000000000000000000000000000",

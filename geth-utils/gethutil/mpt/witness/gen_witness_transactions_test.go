@@ -98,16 +98,24 @@ func transactionsStackTrieInsertionTemplate(t *testing.T, n int) {
 	rlp_last_tx, _ := txs[n-1].MarshalBinary()
 	last_proofC := proofs[len(proofs)-1].GetProofC()
 
+	tx_len := len(txs)
+	proof_len := len(proofs)
+
 	// Proof of the first tx is appended at the end of the proofs if len(tx) < 0x80
 	// That's why we minus 2 here.
-	if len(txs) > 1 && len(txs) < 256 {
-		last_proofC = proofs[len(proofs)-2].GetProofC()
+	if tx_len > 1 && tx_len < 128 {
+		last_proofC = proofs[proof_len-2].GetProofC()
 	}
 	last_leaf_proof := last_proofC[len(last_proofC)-1]
 
+	if tx_len != proof_len {
+		fmt.Println("Expected to have", tx_len, ", but only got", proof_len)
+		t.Fail()
+	}
+
 	if !bytes.Equal(last_leaf_proof, rlp_last_tx) {
-		fmt.Println("- last_tx ", rlp_last_tx)
-		fmt.Println("- last_proof ", last_leaf_proof)
+		fmt.Println("- last_tx\n  ", rlp_last_tx)
+		fmt.Println("- last_proof\n  ", last_leaf_proof)
 		t.Fail()
 	}
 }
@@ -150,6 +158,12 @@ func TestStackTrieInsertion_33Txs(t *testing.T) {
 	transactionsStackTrieInsertionTemplate(t, 33)
 }
 
+func TestStackTrieInsertion_129Txs(t *testing.T) {
+	// The first tx (index 0) is inserted into position 8 of the branch of the first layer
+	// Th 129th tx is the neighbor of the first tx
+	transactionsStackTrieInsertionTemplate(t, 129)
+}
+
 func TestStackTrieInsertion_ManyTxs(t *testing.T) {
 	// Just randomly picking a large number.
 	// The cap of block gas limit is 30M, the minimum gas cost of a tx is 21k
@@ -174,7 +188,7 @@ func batchedTransactionsStackTrieProofTemplate(n int) {
 	var indexBuf []byte
 	indexBuf = rlp.AppendUint64(indexBuf[:0], uint64(1))
 
-	proofS, err := stackTrie.GetProof(db, indexBuf)
+	proofS, _, _, err := stackTrie.GetProof(db, indexBuf)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -211,4 +225,177 @@ func TestBatchedTxsProof_33Txs(t *testing.T) {
 }
 func TestBatchedTxsProof_ManyTxs(t *testing.T) {
 	batchedTransactionsStackTrieProofTemplate(2000)
+}
+
+//
+// Generate witness and store to json files
+//
+
+// witnessGenerationTemplate obtains the GetProof proof before and after the modification for each
+// of the modification. It then converts the two proofs into an MPT circuit witness for each of
+// the modifications.
+func witnessGenerationTemplate(testName string, list types.DerivableList, loopAll bool) []Node {
+	db := rawdb.NewMemoryDatabase()
+	stackTrie := trie.NewStackTrie(db)
+	proofs, _ := stackTrie.UpdateAndGetProofs(db, list)
+	root, _ := stackTrie.Commit()
+
+	var nodes []Node
+	var genWitness = func(idx int, proof *trie.StackProof) {
+		var key []byte
+		var subNodes []Node
+		subNodes = append(subNodes, GetStartNode(testName, common.Hash{}, root, 0))
+		var node []Node
+		if (idx <= 0x80 && len(proofs) == idx) || idx == 128 {
+			key := rlp.AppendUint64(key[:0], uint64(0))
+			node = GenerateWitness(uint(0), key, key, proof)
+		} else {
+			key := rlp.AppendUint64(key[:0], uint64(idx))
+			node = GenerateWitness(uint(idx), key, key, proof)
+		}
+		subNodes = append(subNodes, node...)
+		subNodes = append(subNodes, GetEndNode())
+
+		nodes = append(nodes, subNodes...)
+		verifyNodeNumber(subNodes, *proof)
+	}
+
+	if loopAll {
+		for i, proof := range proofs {
+			genWitness(i+1, &proof)
+		}
+	} else {
+		i := len(proofs) - 1
+		if len(proofs) <= 128 {
+			// When the number of txs is less than 128, the last proof is the proof of tx0
+			// and we want the last proof (not the proof of tx0).
+			// That's why we minus 2 here
+			i = len(proofs) - 2
+			genWitness(i+1, &proofs[i])
+		} else {
+			genWitness(i, &proofs[i])
+		}
+	}
+	return nodes
+}
+
+// A quick and naive way to verify nodes number, might not be accurate
+func verifyNodeNumber(nodes []Node, proof trie.StackProof) {
+	// start and end nodes
+	nodeNum := len(nodes) - 2
+
+	proofS := proof.GetProofS()
+	proofC := proof.GetProofC()
+	len1 := len(proofS)
+	len2 := len(proofC)
+	maxLen := max(len1, len2)
+	minLen := min(len1, len2)
+
+	typesS := proof.GetTypeS()
+	typesC := proof.GetTypeC()
+	var cntExtS, cntExtC int
+	for _, t := range typesS {
+		if t == trie.ExtNode {
+			cntExtS++
+		}
+	}
+	for _, t := range typesC {
+		if t == trie.ExtNode {
+			cntExtC++
+		}
+	}
+	maxExtCnt := max(cntExtS, cntExtC)
+
+	// Most of cases
+	if maxLen == minLen+1 {
+		// ext. node won't have a node, it shares with a branch
+		if nodeNum != maxLen-maxExtCnt {
+			fmt.Println("WARNING: node number not matched: nodeNum != maxLen")
+		}
+	} else if maxLen == minLen {
+		typeS := proof.GetTypeS()
+		typeC := proof.GetTypeC()
+
+		// [EXT - BRANCH] -> [BRANCH - LEAF]
+		if typeS[0] != typeC[0] {
+			if nodeNum == maxLen+1 {
+				fmt.Println("WARNING: node number not matched: typeS[0] != typeC[0] && nodeNum == maxLen+1")
+			}
+		} else {
+			if nodeNum != maxLen {
+				fmt.Println("WARNING: node number not matched: nodeNum != maxLen")
+			}
+		}
+	} else if maxLen > minLen+1 {
+		// usually it happens when a new ext. node created
+		// [BRANCH - BRANCH - LEAF] -> [BRANCH - BRANCH - EXT - BRANCH - LEAF]
+		if nodeNum == maxLen+1 {
+			fmt.Println("WARNING: node number not matched: typeS[0] != typeC[0] && nodeNum == maxLen+1")
+		}
+	} else {
+		fmt.Println("WARNING: WHERE AM I??")
+	}
+}
+
+func TestTransactionsModExtNodes(t *testing.T) {
+	t.Skip("Not working now.")
+	// randomly pick 5 mod-ext nodes
+	txs := makeTransactions(2000)
+	var nodes []Node
+	nodes = witnessGenerationTemplate("TransactionModeExt_16", types.Transactions(txs[:16]), false)
+	nodes = append(nodes, witnessGenerationTemplate("TransactionModeExt_144", types.Transactions(txs[:145]), false)...)
+	nodes = append(nodes, witnessGenerationTemplate("TransactionModeExt_512", types.Transactions(txs[:513]), false)...)
+	nodes = append(nodes, witnessGenerationTemplate("TransactionModeExt_1552", types.Transactions(txs[:1553]), false)...)
+	nodes = append(nodes, witnessGenerationTemplate("TransactionModeExt_1808", types.Transactions(txs[:1809]), false)...)
+
+	StoreNodes("TransactionsModExtNodes", nodes)
+}
+
+func TestTransactionsNum256(t *testing.T) {
+	txs := makeTransactions(256)
+	nodes := witnessGenerationTemplate("TransactionsNum256", types.Transactions(txs), true)
+	StoreNodes("TransactionsNum256", nodes)
+}
+
+func TestSingleTransactionNum1(t *testing.T) {
+	// A. [] --> [LEAF]
+	txs := makeTransactions(1)
+	nodes := witnessGenerationTemplate("SingleTransactionNum1", types.Transactions(txs), true)
+	StoreNodes("SingleTransactionNum1", nodes)
+}
+
+func TestSingleTransactionNum3(t *testing.T) {
+	// B. [LEAF] --> [EXT - BRANCH - LEAF]
+	txs := makeTransactions(3)
+	nodes := witnessGenerationTemplate("SingleTransactionNum3", types.Transactions(txs), false)
+	StoreNodes("SingleTransactionNum3", nodes)
+}
+
+func TestSingleTransactionNormal(t *testing.T) {
+	// C. [EXT - BRANCH] --> [EXT - BRANCH - LEAF]
+	txs := makeTransactions(5)
+	nodes := witnessGenerationTemplate("SingleTransactionNormal", types.Transactions(txs), false)
+	StoreNodes("SingleTransactionNormal", nodes)
+}
+
+func TestSingleTransactionNormal2(t *testing.T) {
+	// C. [EXT - BRANCH] --> [EXT - BRANCH - LEAF]
+	// randomly pick a large number of tx
+	txs := makeTransactions(1500)
+	nodes := witnessGenerationTemplate("SingleTransactionNormal", types.Transactions(txs), false)
+	StoreNodes("SingleTransactionNormal", nodes)
+}
+
+func TestSingleTransactionEndLeaf(t *testing.T) {
+	// D. [BRANCH - BRANCH] --> [BRANCH - BRANCH - LEAF]
+	txs := makeTransactions(129)
+	nodes := witnessGenerationTemplate("SingleTransactionEndLeaf", types.Transactions(txs), false)
+	StoreNodes("SingleTransactionEndLeaf", nodes)
+}
+
+func TestSingleTransactionNewExtBraLeaf(t *testing.T) {
+	// E. [BRANCH - BRANCH - LEAF] --> [BRANCH - BRANCH - EXT - BRANCH - LEAF]
+	txs := makeTransactions(130)
+	nodes := witnessGenerationTemplate("SingleTransactionNewExtBraLeaf", types.Transactions(txs), false)
+	StoreNodes("SingleTransactionNewExtBraLeaf", nodes)
 }

@@ -922,3 +922,21 @@ func TestExtNodeDeletedExtShortIsBranchFirstLevel(t *testing.T) {
 
 	ExtNodeDeleted(key1, key2, key3, "ExtNodeDeletedExtShortIsBranchFirstLevel")
 }
+
+func TestSimulateStackTrieUnder128Txs(t *testing.T) {
+	t.Skip("For stack trie witness check only")
+	SkipIfNoGeth(t)
+	// The trie is empty before we add key1, key2, key3.
+	key1 := common.HexToHash("0x2345610000000000000000000000000000000000000000000000000000000000")
+	// After inserting key1, there is only one leaf in the trie.
+
+	key2 := common.HexToHash("0x2345630000000000000000000000000000000000000000000000000000000000")
+	// After inserting key2, we have an extension node E in the trie with the following nibbles: 2 3 4 5 6.
+	// The branch of the extension node has two leaves - key1 at position 1 and key2 at position 3.
+
+	key3 := common.HexToHash("0x2345800000000000000000000000000000000000000000000000000000000000")
+	// After inserting key3, we have an extension node E1 with nibbles: 2 3 4 5.
+	// The branch of E1 has two nodes: the branch at position 6 and the leaf at position 8.
+
+	ExtNodeInserted(key1, key2, key3, "ExtNodeInsertedExtShortIsBranchSecondLevel")
+}
