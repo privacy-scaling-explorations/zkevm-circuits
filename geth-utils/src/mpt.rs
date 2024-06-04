@@ -19,6 +19,7 @@ pub enum ProofType {
     StorageChanged = 6,
     StorageDoesNotExist = 7,
     AccountCreate = 8,
+    TransactionUpdate = 9,
 }
 
 #[derive(Default, Debug, Clone)]

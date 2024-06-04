@@ -29,6 +29,7 @@ impl MptUpdate {
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),
+            Key::Transaction { .. } => MPTProofType::TransactionUpdated,
         };
         F::from(proof_type as u64)
     }
@@ -46,6 +47,7 @@ pub struct MptUpdates {
 pub struct MptUpdateRow<F: Clone> {
     pub(crate) address: F,
     pub(crate) storage_key: WordLoHi<F>,
+    pub(crate) transaction_index: F,
     pub(crate) proof_type: F,
     pub(crate) new_root: WordLoHi<F>,
     pub(crate) old_root: WordLoHi<F>,
@@ -102,6 +104,7 @@ impl MptUpdates {
                 MptUpdateRow {
                     address: Value::known(update.key.address().to_scalar().unwrap()),
                     storage_key: WordLoHi::<F>::from(update.key.storage_key()).into_value(),
+                    transaction_index: Value::known(F::from(update.key.transaction_index())),
                     proof_type: Value::known(update.proof_type()),
                     new_root: WordLoHi::<F>::from(new_root).into_value(),
                     old_root: WordLoHi::<F>::from(old_root).into_value(),
@@ -134,6 +137,10 @@ enum Key {
         storage_key: Word,
         exists: bool,
     },
+    Transaction {
+        tx_id: u64,
+        address: Address,
+    },
 }
 
 impl Key {
@@ -164,6 +171,7 @@ impl Key {
                     storage_key,
                     exists: false,
                 },
+                Key::Transaction { .. } => self,
             }
         } else {
             self
@@ -171,13 +179,22 @@ impl Key {
     }
     fn address(&self) -> Address {
         match self {
-            Self::Account { address, .. } | Self::AccountStorage { address, .. } => *address,
+            Self::Account { address, .. }
+            | Self::AccountStorage { address, .. }
+            | Self::Transaction { address, .. } => *address,
         }
     }
     fn storage_key(&self) -> Word {
         match self {
             Self::Account { .. } => Word::zero(),
             Self::AccountStorage { storage_key, .. } => *storage_key,
+            Self::Transaction { .. } => Word::zero(),
+        }
+    }
+    fn transaction_index(&self) -> u64 {
+        match self {
+            Self::Transaction { tx_id, .. } => *tx_id,
+            Self::Account { .. } | Self::AccountStorage { .. } => 0,
         }
     }
 }
@@ -185,11 +202,12 @@ impl Key {
 impl<F: Clone> MptUpdateRow<F> {
     /// The individual values of the row, in the column order used by the
     /// MptTable
-    pub fn values(&self) -> [F; 12] {
+    pub fn values(&self) -> [F; 13] {
         [
             self.address.clone(),
             self.storage_key.lo(),
             self.storage_key.hi(),
+            self.transaction_index.clone(),
             self.proof_type.clone(),
             self.new_root.lo(),
             self.new_root.hi(),

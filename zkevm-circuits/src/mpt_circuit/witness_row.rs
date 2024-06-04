@@ -49,6 +49,20 @@ pub(crate) enum AccountRowType {
     Key,                 // hashed account address
     Count,
 }
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum TransactionRowType {
+    KeyS,
+    ValueS,
+    KeyC,
+    ValueC,
+    Drifted,
+    ExtNodeKey,
+    ExtNodeNibbles,
+    ExtNodeValue,
+    Index, // transaction index
+    Key,   // encoded transaction index
+    Count,
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum ExtensionBranchRowType {
@@ -201,6 +215,27 @@ pub struct StorageNode {
     /// RLP bytes denoting the length of the RLP of the long and short modified extension node.
     pub(crate) mod_list_rlp_bytes: [Hex; 2],
 }
+/// MPT transaction stack trie
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TransactionNode {
+    /// Transaction indexes
+    pub index: usize,
+    /// Encoded transaction index
+    pub key: Hex,
+    /// RLP bytes denoting the length of the whole tx leaf stream.
+    pub list_rlp_bytes: [Hex; 2],
+    /// RLP bytes denoting the length of the value stream.
+    pub value_rlp_bytes: [Hex; 2],
+    /// RLP bytes denoting the length of the RLP stream of the drifted leaf (neighbor leaf).
+    /// This is only needed in the case when a new branch is created which replaces the existing
+    /// leaf in the trie and this leaf drifts down into newly created branch.
+    pub drifted_rlp_bytes: Hex,
+    /// Denotes whether the extension node nibbles have been modified in either `S` or `C` proof.
+    /// In these special cases, an additional extension node is inserted (deleted).
+    pub(crate) is_mod_extension: [bool; 2],
+    /// RLP bytes denoting the length of the RLP of the long and short modified extension node.
+    pub(crate) mod_list_rlp_bytes: [Hex; 2],
+}
 
 /// MPT node
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -213,6 +248,8 @@ pub struct Node {
     pub account: Option<AccountNode>,
     /// A storage leaf node.
     pub storage: Option<StorageNode>,
+    /// An transaction leaf node.
+    pub transaction: Option<TransactionNode>,
     /// RLP substreams of the node (for example for account leaf it contains substreams for key,
     /// nonce, balance, storage, codehash, drifted key, wrong key...)
     pub values: Vec<Hex>,
@@ -288,5 +325,19 @@ pub const NODE_RLP_TYPES_STORAGE: [RlpItemType; StorageRowType::Count as usize] 
     RlpItemType::Nibbles,
     RlpItemType::Value,
     RlpItemType::Hash,
+    RlpItemType::Hash,
+];
+
+/// RLP types transaction
+pub const NODE_RLP_TYPES_TRANSACTION: [RlpItemType; TransactionRowType::Count as usize] = [
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Value,
+    RlpItemType::Key,
+    RlpItemType::Key,
+    RlpItemType::Nibbles,
+    RlpItemType::Value,
+    RlpItemType::Value,
     RlpItemType::Hash,
 ];

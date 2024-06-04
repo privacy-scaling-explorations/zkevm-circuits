@@ -8,4 +8,5 @@ pub mod mod_extension;
 pub mod mpt;
 pub mod param;
 pub mod storage_leaf;
+pub mod transaction_leaf;
 pub mod witness_row;
