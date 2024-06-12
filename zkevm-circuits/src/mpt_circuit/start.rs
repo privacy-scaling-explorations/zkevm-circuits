@@ -67,6 +67,8 @@ impl<F: Field> StartConfig<F> {
                     0.expr(),
                     true.expr(),
                     false.expr(),
+                    false.expr(),
+                    false.expr(),
                     root[is_s.idx()].clone(),
                 );
                 KeyData::store_defaults(cb, &mut ctx.memory[key_memory(is_s)]);
@@ -120,6 +122,8 @@ impl<F: Field> StartConfig<F> {
                 root[is_s.idx()],
                 0.scalar(),
                 true,
+                false,
+                false,
                 false,
                 root[is_s.idx()],
             )?;

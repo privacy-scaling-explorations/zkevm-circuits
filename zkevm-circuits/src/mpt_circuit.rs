@@ -253,7 +253,7 @@ impl<F: Field> MPTConfig<F> {
 
         let mut state_cm = CellManager::new(50, 0);
         state_cm.add_columns(meta, &mut cb.base, MptCellType::StoragePhase1, 0, false, 20);
-        state_cm.add_columns(meta, &mut cb.base, MptCellType::StoragePhase2, 1, false, 6);
+        state_cm.add_columns(meta, &mut cb.base, MptCellType::StoragePhase2, 1, false, 8);
         state_cm.add_columns(meta, &mut cb.base, MptCellType::StoragePhase3, 2, false, 5);
         state_cm.add_columns(meta, &mut cb.base, lu(MptTableType::Byte), 0, false, 4);
         state_cm.add_columns(meta, &mut cb.base, lu(MptTableType::Fixed), 2, false, 3);

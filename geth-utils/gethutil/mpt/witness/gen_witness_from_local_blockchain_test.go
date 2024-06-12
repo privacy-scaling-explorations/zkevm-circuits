@@ -922,3 +922,96 @@ func TestExtNodeDeletedExtShortIsBranchFirstLevel(t *testing.T) {
 
 	ExtNodeDeleted(key1, key2, key3, "ExtNodeDeletedExtShortIsBranchFirstLevel")
 }
+
+func TestExtensionIntoBranch(t *testing.T) {
+	SkipIfNoGeth(t)
+	oracle.NodeUrl = oracle.LocalUrl
+
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0x50efbf12580138bc623c95757286df4e24eb81c9")
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	statedb.CreateAccount(addr)
+
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+
+	val0 := common.BigToHash(big.NewInt(int64(1)))
+	key0 := common.HexToHash("0x1200000000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key0, val0)
+
+	key00 := common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000")
+	statedb.SetState(addr, key00, val0)
+	// After insertion of key0 and key00, we have a branch B with two leaves - at position 1 and 0.
+
+	key1 := common.HexToHash("0x1234561000000000000000000000000000000000000000000000000000000000")
+
+	// make the value long to have a hashed branch
+	v1 := common.FromHex("0xbbefaa12580138bc263c95757826df4e24eb81c9aaaaaaaaaaaaaaaaaaaaaaaa")
+	val1 := common.BytesToHash(v1)
+	statedb.SetState(addr, key1, val1)
+	// After insertion of key1, we have a branch B with a leaf at position 0
+	// and an extension node E1 at position 1 (with one nibble: 2)
+	// The underlying branch B1 of E1 has two leaves - at position 0 and 3.
+
+	key2 := common.HexToHash("0x1434563000000000000000000000000000000000000000000000000000000000")
+	// After inserting key2, we have a branch B with two nodes - a leaf at position 0 and branch B1
+	// at position 1. At position 1 we have a branch B2 at position 2 (used to be E1's nibble)
+	// and a leaf at position 4 (newly added leaf).
+	// Branch B2 has two leaves - at position 0 and 3.
+
+	v1 = common.FromHex("0xbb")
+	val := common.BytesToHash(v1)
+	trieMod := TrieModification{
+		Type:    StorageChanged,
+		Key:     key2,
+		Value:   val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("ExtensionIntoBranch", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}
+
+func TestAccountWrongExtensionNode(t *testing.T) {
+	SkipIfNoGeth(t)
+	oracle.NodeUrl = oracle.LocalUrl
+
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+
+	statedb.DisableLoadingRemoteAccounts()
+
+	oracle.AccountPreventHashingInSecureTrie = true // to store the unchanged address
+
+	addr1 := common.HexToAddress("0x0023000000000000000000000000000000000000")
+	addr2 := common.HexToAddress("0x0023100000000000000000000000000000000000")
+	addr4 := common.HexToAddress("0x0023200000000000000000000000000000000000")
+
+	statedb.CreateAccount(addr1)
+	statedb.CreateAccount(addr2)
+	statedb.CreateAccount(addr4)
+	statedb.IntermediateRoot(false)
+
+	// Returns extension node
+	addr3 := common.HexToAddress("0x0018100000000000000000000000000000000000")
+
+	trieMod := TrieModification{
+		Type:    AccountDoesNotExist,
+		Address: addr3,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("AccountWrongExtensionNode", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}

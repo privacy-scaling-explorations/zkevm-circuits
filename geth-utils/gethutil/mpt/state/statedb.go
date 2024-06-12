@@ -297,7 +297,12 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 
 // GetProof returns the Merkle proof for a given account.
 func (s *StateDB) GetProof(addr common.Address) ([][]byte, []byte, [][]byte, bool, bool, error) {
-	return s.GetProofByHash(crypto.Keccak256Hash(addr.Bytes()))
+	newAddr := crypto.Keccak256Hash(addr.Bytes())
+	if oracle.AccountPreventHashingInSecureTrie {
+		bytes := append(addr.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		newAddr = common.BytesToHash(bytes)
+	}
+	return s.GetProofByHash(newAddr)
 }
 
 // GetProofByHash returns the Merkle proof for a given account.
@@ -310,7 +315,13 @@ func (s *StateDB) GetProofByHash(addrHash common.Hash) ([][]byte, []byte, [][]by
 // GetStorageProof returns the Merkle proof for given storage slot.
 func (s *StateDB) GetStorageProof(a common.Address, key common.Hash) ([][]byte, []byte, [][]byte, bool, bool, error) {
 	var proof proofList
-	trie := s.StorageTrie(a)
+	newAddr := a
+	if oracle.AccountPreventHashingInSecureTrie {
+		bytes := append(a.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		newAddr = common.BytesToAddress(bytes)
+	}
+
+	trie := s.StorageTrie(newAddr)
 	if trie == nil {
 		return proof, nil, nil, false, false, errors.New("storage trie for requested address does not exist")
 	}
@@ -456,7 +467,7 @@ func (s *StateDB) SetStateObjectIfExists(addr common.Address) {
 			}
 
 			/*
-				When an account that does not exist is tried to be fetched by PrefetchAccount and when the some other account
+				When an account that does not exist is being fetched by PrefetchAccount and when some other account
 				exist at the overlapping address (the beginning of it), this (wrong) account is obtained by PrefetchAccount
 				and needs to be ignored.
 			*/
@@ -530,8 +541,15 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 	if err != nil {
 		panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
 	}
-	if err = s.trie.TryUpdateAlwaysHash(addr[:], data); err != nil {
-		s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
+
+	if !oracle.AccountPreventHashingInSecureTrie {
+		if err = s.trie.TryUpdateAlwaysHash(addr[:], data); err != nil {
+			s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
+		}
+	} else {
+		if err = s.trie.TryUpdate(addr[:], data); err != nil {
+			s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
+		}
 	}
 
 	// If state snapshotting is active, cache the data til commit. Note, this

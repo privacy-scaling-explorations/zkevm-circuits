@@ -26,6 +26,7 @@ pub(crate) struct ExtensionBranchConfig<F> {
     parent_data: [ParentData<F>; 2],
     is_placeholder: [Cell<F>; 2],
     is_extension: Cell<F>,
+    is_last_level_and_wrong_ext_case: Cell<F>,
     extension: ExtensionGadget<F>,
     branch: BranchGadget<F>,
 }
@@ -41,6 +42,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         circuit!([meta, cb], {
             // General inputs
             config.is_extension = cb.query_bool();
+            config.is_last_level_and_wrong_ext_case = cb.query_bool();
             // If we're in a placeholder, both the extension and the branch parts are
             // placeholders
             for is_s in [true, false] {
@@ -133,11 +135,17 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 key_mult_post_ext.expr(),
                 num_nibbles.expr(),
                 is_key_odd.expr(),
+                config.is_last_level_and_wrong_ext_case.expr(),
             );
             let branch = config.branch.get_post_state();
 
             // Set the new keys
             for is_s in [true, false] {
+                // The extension_branch in the last level needs to have `is_ext_last_level = true`
+                // (checked in account_leaf.rs / storage_leaf.rs).
+                // All other extension_branches need to have it `false`:
+                require!(config.parent_data[is_s.idx()].is_last_level_and_wrong_ext_case.expr() => false.expr());
+
                 ifx! {not!(config.is_placeholder[is_s.idx()].expr()) => {
                     KeyData::store(
                         cb,
@@ -158,6 +166,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         branch.mod_rlc[is_s.idx()].expr(),
                         false.expr(),
                         false.expr(),
+                        config.is_extension.expr(),
+                        config.is_last_level_and_wrong_ext_case.expr(),
                         WordLoHi::zero(),
                     );
                  } elsex {
@@ -184,6 +194,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
                         config.parent_data[is_s.idx()].rlc.expr(),
                         config.parent_data[is_s.idx()].is_root.expr(),
                         true.expr(),
+                        config.is_extension.expr(),
+                        config.is_last_level_and_wrong_ext_case.expr(),
                         branch.mod_word[is_s.idx()].clone(),
                     );
                 }}
@@ -205,8 +217,16 @@ impl<F: Field> ExtensionBranchConfig<F> {
     ) -> Result<(), Error> {
         let extension_branch = &node.extension_branch.clone().unwrap();
 
-        self.is_extension
-            .assign(region, offset, extension_branch.is_extension.scalar())?;
+        let is_extension = extension_branch.is_extension.scalar();
+        self.is_extension.assign(region, offset, is_extension)?;
+
+        let is_last_level_and_wrong_ext_case =
+            extension_branch.is_last_level_and_wrong_ext_case.scalar();
+        self.is_last_level_and_wrong_ext_case.assign(
+            region,
+            offset,
+            is_last_level_and_wrong_ext_case,
+        )?;
 
         let key_data =
             self.key_data
@@ -291,6 +311,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()],
                     false,
                     false,
+                    is_extension == 1.into(),
+                    is_last_level_and_wrong_ext_case == 1.into(),
                     WordLoHi::zero(),
                 )?;
             } else {
@@ -313,6 +335,8 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     parent_data[is_s.idx()].rlc,
                     parent_data[is_s.idx()].is_root,
                     true,
+                    is_extension == 1.into(),
+                    is_last_level_and_wrong_ext_case == 1.into(),
                     mod_node_hash_word[is_s.idx()],
                 )?;
             }

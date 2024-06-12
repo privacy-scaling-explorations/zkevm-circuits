@@ -68,10 +68,11 @@ type ExtensionBranchNode struct {
 	// extension node. IsModExtension is not set to true for the newly appeared extension node (nibbles
 	// of the extension node that caused replacement + nibbles of the newly appeared extension node =
 	// nibbles of the original extension node).
-	IsModExtension [2]bool       `json:"is_mod_extension"`
-	IsPlaceholder  [2]bool       `json:"is_placeholder"`
-	Extension      ExtensionNode `json:"extension"`
-	Branch         BranchNode    `json:"branch"`
+	IsModExtension             [2]bool       `json:"is_mod_extension"`
+	IsPlaceholder              [2]bool       `json:"is_placeholder"`
+	IsLastLevelAndWrongExtCase bool          `json:"is_last_level_and_wrong_ext_case"`
+	Extension                  ExtensionNode `json:"extension"`
+	Branch                     BranchNode    `json:"branch"`
 }
 
 type ModExtensionNode struct {
@@ -180,7 +181,7 @@ type Node struct {
 
 func GetStartNode(proofType string, sRoot, cRoot common.Hash, specialTest byte) Node {
 	s := StartNode{
-		DisablePreimageCheck: oracle.PreventHashingInSecureTrie || specialTest == 5,
+		DisablePreimageCheck: oracle.PreventHashingInSecureTrie || oracle.AccountPreventHashingInSecureTrie || specialTest == 5,
 		ProofType:            proofType,
 	}
 	var values [][]byte

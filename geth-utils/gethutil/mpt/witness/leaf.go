@@ -174,12 +174,15 @@ func prepareAccountLeafNode(addr common.Address, addrh []byte, leafS, leafC, nei
 
 	// wrongValue is used only for proof that account doesn't exist
 
+	wrongLeaf := leafC
+	wrongLen := keyLenC
+
 	offset := 0
-	nibblesNum := (keyLenC - 1) * 2
-	wrongRlpBytes[0] = leafC[0]
-	wrongRlpBytes[1] = leafC[1]
-	wrongValue[0] = leafC[2] // length
-	if leafC[3] != 32 {      // odd number of nibbles
+	nibblesNum := (wrongLen - 1) * 2
+	wrongRlpBytes[0] = wrongLeaf[0]
+	wrongRlpBytes[1] = wrongLeaf[1]
+	wrongValue[0] = wrongLeaf[2] // length
+	if wrongLeaf[3] != 32 {      // odd number of nibbles
 		nibblesNum = nibblesNum + 1
 		wrongValue[1] = addressNibbles[64-nibblesNum] + 48
 		offset = 1
@@ -555,6 +558,7 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 		ValueRlpBytes:   valueRlpBytes,
 		IsModExtension:  [2]bool{isSModExtension, isCModExtension},
 	}
+
 	keccakData := [][]byte{leafS, leafC, storage_key.Bytes()}
 	if neighbourNode != nil {
 		keccakData = append(keccakData, neighbourNode)
@@ -566,4 +570,31 @@ func prepareStorageLeafNode(leafS, leafC, neighbourNode []byte, storage_key comm
 	}
 
 	return node
+}
+
+func equipLeafWithWrongExtension(leafNode Node, keyMiddle, keyAfter, nibblesMiddle, nibblesAfter []byte) Node {
+	l := len(leafNode.Values)
+	leafNode.Values[l-modifiedExtensionNodeRowLen] = keyMiddle
+	startNibblePos := 2 // we don't need any nibbles for case keyLen = 1
+	if len(keyMiddle) > 1 && len(nibblesMiddle)%2 == 0 {
+		startNibblePos = 1
+	}
+	ind := 0
+	for j := startNibblePos; j < len(nibblesMiddle); j += 2 {
+		leafNode.Values[l-modifiedExtensionNodeRowLen+1][2+ind] = nibblesMiddle[j]
+		ind++
+	}
+
+	leafNode.Values[l-modifiedExtensionNodeRowLen+3] = keyAfter
+	startNibblePos = 2 // we don't need any nibbles for case keyLen = 1
+	if len(keyAfter) > 1 && len(nibblesAfter)%2 == 0 {
+		startNibblePos = 1
+	}
+	ind = 0
+	for j := startNibblePos; j < len(nibblesAfter); j += 2 {
+		leafNode.Values[l-modifiedExtensionNodeRowLen+4][2+ind] = nibblesAfter[j]
+		ind++
+	}
+
+	return leafNode
 }

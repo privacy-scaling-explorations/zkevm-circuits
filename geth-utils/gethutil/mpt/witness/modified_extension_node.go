@@ -13,10 +13,7 @@ import (
 // The rows added are somewhat exceptional as otherwise they do not appear.
 func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr common.Address, proof1, proof2,
 	extNibblesS, extNibblesC [][]byte,
-	key, neighbourNode []byte,
-	keyIndex, extensionNodeInd, numberOfNibbles int,
-	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool, toBeHashed *[][]byte) Node {
+	key []byte, keyIndex, numberOfNibbles int, isAccountProof bool) Node {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
@@ -34,7 +31,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 		extNibbles = extNibblesS
 	}
 
-	_, extListRlpBytesS, extValuesS := prepareExtensions(extNibbles, extensionNodeInd, longExtNode, longExtNode)
+	_, extListRlpBytesS, extValuesS := prepareExtensions(extNibbles[len(extNibbles)-1], longExtNode, longExtNode)
 
 	// Get nibbles of the extension node that gets shortened because of the newly insertd
 	// extension node:
@@ -51,17 +48,6 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 		longExtNodeKey[j] = longNibbles[j-byte(keyIndex)]
 	}
 
-	k := trie.HexToKeybytes(longExtNodeKey)
-	ky := common.BytesToHash(k)
-	var proof [][]byte
-	var err error
-	if isAccountProof {
-		proof, _, _, _, _, err = statedb.GetProof(addr)
-	} else {
-		proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
-	}
-	check(err)
-
 	// There is no short extension node when `len(longNibbles) - numberOfNibbles = 1`, in this case there
 	// is simply a branch instead.
 	shortExtNodeIsBranch := len(longNibbles)-numberOfNibbles == 1
@@ -71,6 +57,17 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 	var extValuesC [][]byte
 
 	if !shortExtNodeIsBranch {
+		k := trie.HexToKeybytes(longExtNodeKey)
+		ky := common.BytesToHash(k)
+		var proof [][]byte
+		var err error
+		if isAccountProof {
+			proof, _, _, _, _, err = statedb.GetProof(addr)
+		} else {
+			proof, _, _, _, _, err = statedb.GetStorageProof(addr, ky)
+		}
+		check(err)
+
 		if len2 > len1 {
 			isItBranch := isBranch(proof[len(proof)-1])
 
@@ -107,7 +104,7 @@ func equipLeafWithModExtensionNode(statedb *state.StateDB, leafNode Node, addr c
 		// Enable `prepareExtensionRows` call:
 		extNibbles = append(extNibbles, nibbles)
 
-		_, extListRlpBytesC, extValuesC = prepareExtensions(extNibbles, extensionNodeInd+1, shortExtNode, shortExtNode)
+		_, extListRlpBytesC, extValuesC = prepareExtensions(extNibbles[len(extNibbles)-1], shortExtNode, shortExtNode)
 	} else {
 		// When the short node is a branch (and not an extension node), we have nothing to be put in
 		// the C extension node witness (as a short node). We copy the long node (S extension node) to let

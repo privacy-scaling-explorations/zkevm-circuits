@@ -558,6 +558,14 @@ pub(crate) struct ParentData<F> {
     pub(crate) rlc: Cell<F>,
     pub(crate) is_root: Cell<F>,
     pub(crate) is_placeholder: Cell<F>,
+    // is_extension is used only in a non-existing proof / wrong extension node case -
+    // in account/storage leaf to check whether the parent is an extension node
+    pub(crate) is_extension: Cell<F>,
+    // is_last_level_and_wrong_ext_case is used only in a non-existing proof in wrong extension
+    // node case - the last branch is a placeholder in this case and the check for a branch
+    // hash being in the parent extension node needs to be ignored, but it needs to be ignored
+    // only in the last branch (the branch above the leaf into which the lookup is made)
+    pub(crate) is_last_level_and_wrong_ext_case: Cell<F>,
     pub(crate) drifted_parent_hash: WordLoHiCell<F>,
 }
 
@@ -567,6 +575,8 @@ pub(crate) struct ParentDataWitness<F> {
     pub(crate) rlc: F,
     pub(crate) is_root: bool,
     pub(crate) is_placeholder: bool,
+    pub(crate) is_extension: bool,
+    pub(crate) is_ext_last_level: bool,
     pub(crate) drifted_parent_hash: WordLoHi<F>,
 }
 
@@ -581,6 +591,8 @@ impl<F: Field> ParentData<F> {
             rlc: cb.query_cell_with_type(MptCellType::StoragePhase2),
             is_root: cb.query_cell(),
             is_placeholder: cb.query_cell(),
+            is_extension: cb.query_cell(),
+            is_last_level_and_wrong_ext_case: cb.query_cell(),
             drifted_parent_hash: cb.query_word_unchecked(),
         };
         circuit!([meta, cb.base], {
@@ -593,6 +605,8 @@ impl<F: Field> ParentData<F> {
                     parent_data.rlc.expr(),
                     parent_data.is_root.expr(),
                     parent_data.is_placeholder.expr(),
+                    parent_data.is_extension.expr(),
+                    parent_data.is_last_level_and_wrong_ext_case.expr(),
                     parent_data.drifted_parent_hash.lo().expr(),
                     parent_data.drifted_parent_hash.hi().expr(),
                 ],
@@ -601,6 +615,7 @@ impl<F: Field> ParentData<F> {
         parent_data
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn store<MB: MemoryBank<F, MptCellType>>(
         cb: &mut MPTConstraintBuilder<F>,
         memory: &mut MB,
@@ -608,6 +623,8 @@ impl<F: Field> ParentData<F> {
         rlc: Expression<F>,
         is_root: Expression<F>,
         is_placeholder: Expression<F>,
+        is_extension: Expression<F>,
+        is_ext_last_level: Expression<F>,
         drifted_parent_hash: WordLoHi<Expression<F>>,
     ) {
         memory.store(
@@ -618,6 +635,8 @@ impl<F: Field> ParentData<F> {
                 rlc,
                 is_root,
                 is_placeholder,
+                is_extension,
+                is_ext_last_level,
                 drifted_parent_hash.lo(),
                 drifted_parent_hash.hi(),
             ],
@@ -633,6 +652,8 @@ impl<F: Field> ParentData<F> {
         rlc: F,
         force_hashed: bool,
         is_placeholder: bool,
+        is_extension: bool,
+        is_ext_last_level: bool,
         drifted_parent_hash: WordLoHi<F>,
     ) -> Result<(), Error> {
         memory.witness_store(
@@ -643,6 +664,8 @@ impl<F: Field> ParentData<F> {
                 rlc,
                 force_hashed.scalar(),
                 is_placeholder.scalar(),
+                is_extension.scalar(),
+                is_ext_last_level.scalar(),
                 drifted_parent_hash.lo(),
                 drifted_parent_hash.hi(),
             ],
@@ -664,19 +687,24 @@ impl<F: Field> ParentData<F> {
         self.rlc.assign(region, offset, values[2])?;
         self.is_root.assign(region, offset, values[3])?;
         self.is_placeholder.assign(region, offset, values[4])?;
+        self.is_extension.assign(region, offset, values[5])?;
+        self.is_last_level_and_wrong_ext_case
+            .assign(region, offset, values[6])?;
         self.drifted_parent_hash
             .lo()
-            .assign(region, offset, values[5])?;
+            .assign(region, offset, values[7])?;
         self.drifted_parent_hash
             .hi()
-            .assign(region, offset, values[6])?;
+            .assign(region, offset, values[8])?;
 
         Ok(ParentDataWitness {
             hash: WordLoHi::new([values[0], values[1]]),
             rlc: values[2],
             is_root: values[3] == 1.scalar(),
             is_placeholder: values[4] == 1.scalar(),
-            drifted_parent_hash: WordLoHi::new([values[5], values[6]]),
+            is_extension: values[5] == 1.scalar(),
+            is_ext_last_level: values[6] == 1.scalar(),
+            drifted_parent_hash: WordLoHi::new([values[7], values[8]]),
         })
     }
 }
@@ -869,7 +897,6 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
             key_mult_first_odd,
         )
     } else {
-        assert!(bytes[0] == KEY_PREFIX_EVEN.scalar());
         (0.scalar(), 1.scalar())
     };
     (rlc, key_mult_prev * mult).rlc_chain_value(bytes[1..].iter().collect::<Vec<&F>>(), r)
@@ -1205,30 +1232,28 @@ impl<F: Field> DriftedGadget<F> {
 
 /// Handles wrong leaves
 #[derive(Clone, Debug, Default)]
-pub struct WrongGadget<F> {
+pub struct WrongLeafGadget<F> {
     wrong_rlp_key: ListKeyGadget<F>,
     is_key_equal: IsEqualGadget<F>,
 }
 
-impl<F: Field> WrongGadget<F> {
+impl<F: Field> WrongLeafGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
         expected_key: Expression<F>,
-        is_non_existing: Expression<F>,
+        is_wrong_leaf_case: Expression<F>,
         key_value: &RLPItemView<F>,
         key_rlc: &Expression<F>,
         expected_item: &RLPItemView<F>,
-        is_placeholder: Expression<F>,
         key_data: KeyData<F>,
         r: &Expression<F>,
     ) -> Self {
-        let mut config = WrongGadget::default();
+        let mut config = WrongLeafGadget::default();
         circuit!([meta, cb.base], {
-            // Get the previous key data
-            ifx! {(is_non_existing, not!(is_placeholder)) => {
-                // Calculate the key
+            ifx! {is_wrong_leaf_case => {
                 config.wrong_rlp_key = ListKeyGadget::construct(cb, expected_item);
+
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
                     cb,
                     config.wrong_rlp_key.key_value.clone(),
@@ -1237,13 +1262,13 @@ impl<F: Field> WrongGadget<F> {
                     r,
                 );
                 // Check that it's the key as expected
-                require!(key_rlc_wrong => expected_key);
+                require!(key_rlc_wrong => expected_key.clone());
 
                 // Now make sure this address is different than the one of the leaf
                 config.is_key_equal = IsEqualGadget::construct(
                     &mut cb.base,
                     key_rlc.expr(),
-                    expected_key,
+                    expected_key.clone(),
                 );
                 require!(config.is_key_equal.expr() => false);
                 // Make sure the lengths of the keys are the same
@@ -1276,7 +1301,6 @@ impl<F: Field> WrongGadget<F> {
                 key_data.mult,
                 r,
             );
-
             let is_key_equal_witness = self.is_key_equal.assign(
                 region,
                 offset,
@@ -1290,6 +1314,160 @@ impl<F: Field> WrongGadget<F> {
             // existing account
             Ok((key_rlc[for_placeholder_s.idx()], false.scalar()))
         }
+    }
+}
+
+/// Handles wrong extension nodes
+#[derive(Clone, Debug, Default)]
+pub struct WrongExtNodeGadget<F> {
+    is_key_equal: IsEqualGadget<F>,
+    mult_without_branch_nibble: Cell<F>,
+}
+
+impl<F: Field> WrongExtNodeGadget<F> {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn construct(
+        cb: &mut MPTConstraintBuilder<F>,
+        expected_key: Expression<F>,
+        is_wrong_ext_case: Expression<F>,
+        wrong_ext_middle: &RLPItemView<F>,
+        wrong_ext_middle_nibbles: &RLPItemView<F>,
+        wrong_ext_after: &RLPItemView<F>,
+        wrong_ext_after_nibbles: &RLPItemView<F>,
+        key_data: KeyData<F>,
+        key_data_prev: KeyData<F>,
+    ) -> Self {
+        let mut config = WrongExtNodeGadget::default();
+        circuit!([meta, cb.base], {
+            ifx! {is_wrong_ext_case => {
+                config.mult_without_branch_nibble = cb.query_cell();
+
+                // We have a key split into three parts,
+                // meaning that the first part parity doesn't
+                // tell us about the parity of the second part (depends on the third part as well).
+
+                let data0 = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles.clone()];
+
+                // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and we do not want this,
+                // the actual value we need is not!(key_data.is_odd)
+
+                // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and we do not want this,
+                // the actual value we need is !key_data.is_odd
+                // key_data_prev.is_odd = true, key_data.is_odd = true -> is_key_part_odd = true
+                // key_data_prev.is_odd = true, key_data.is_odd = false -> is_key_part_odd = false
+                // key_data_prev.is_odd = false, key_data.is_odd = true -> is_key_part_odd = false
+                // key_data_prev.is_odd = false, key_data.is_odd = false -> is_key_part_odd = true
+                let is_key_part_odd = not!(xor::expr(key_data_prev.is_odd.expr(), key_data.is_odd.expr()));
+
+                let after_middle_rlc = key_data_prev.rlc.expr()
+                    + ext_key_rlc_expr(
+                        cb,
+                        wrong_ext_middle.clone(),
+                        key_data_prev.mult.expr(),
+                        is_key_part_odd,
+                        key_data_prev.is_odd.expr(),
+                        data0
+                            .iter()
+                            .map(|item| item.bytes_be())
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .unwrap(),
+                        &cb.key_r.expr(),
+                    );
+
+                let after_two_parts_is_odd = not!(key_data.is_odd.expr());
+
+                // The total number of nibbles is odd, thus:
+                let third_part_is_odd = after_two_parts_is_odd.clone();
+
+                // We cannot use key_data.mult because it takes into account also the branch nibble.
+                let mult = config.mult_without_branch_nibble.expr();
+                ifx! {key_data.is_odd => {
+                    require!(mult => key_data.mult.expr());
+                } elsex {
+                    require!(mult.clone() * cb.key_r.expr() => key_data.mult.expr());
+                }}
+
+                let data1 = [wrong_ext_after.clone(), wrong_ext_after_nibbles.clone()];
+                let rlc = after_middle_rlc.clone()
+                    + ext_key_rlc_expr(
+                        cb,
+                        wrong_ext_after.clone(),
+                        mult.clone(),
+                        third_part_is_odd,
+                        after_two_parts_is_odd,
+                        data1
+                            .iter()
+                            .map(|item| item.bytes_be())
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .unwrap(),
+                        &cb.key_r.expr(),
+                    );
+
+                require!(rlc => expected_key);
+
+                // Make sure the "after_middle" RLC of the wrong extension node and of
+                // the "after_middle" enquired key/address are different.
+                config.is_key_equal = IsEqualGadget::construct(
+                    &mut cb.base,
+                    key_data.rlc.expr(),
+                    after_middle_rlc.expr(),
+                );
+                require!(config.is_key_equal.expr() => false);
+            }}
+            config
+        })
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        wrong_ext_middle: RLPItemWitness,
+        wrong_ext_middle_nibbles: RLPItemWitness,
+        key_data: KeyDataWitness<F>,
+        key_data_prev: KeyDataWitness<F>,
+    ) {
+        let items = [wrong_ext_middle.clone(), wrong_ext_middle_nibbles];
+
+        // key_data.is_odd (and key_data.num_nibbles) takes into account also the branch nibble and
+        // we do not want this, the actual value we need is !key_data.is_odd
+        // key_data_prev.is_odd = true, key_data.is_odd = true -> is_key_part_odd = true
+        // key_data_prev.is_odd = true, key_data.is_odd = false -> is_key_part_odd = false
+        // key_data_prev.is_odd = false, key_data.is_odd = true -> is_key_part_odd = false
+        // key_data_prev.is_odd = false, key_data.is_odd = false -> is_key_part_odd = true
+        let is_key_part_odd = key_data_prev.is_odd == key_data.is_odd;
+        let after_middle_rlc = key_data_prev.rlc
+            + ext_key_rlc_calc_value(
+                wrong_ext_middle,
+                key_data_prev.mult,
+                is_key_part_odd,
+                key_data_prev.is_odd,
+                items
+                    .iter()
+                    .map(|item| item.bytes.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                region.key_r,
+            )
+            .0;
+
+        let mut mult = key_data.mult;
+        if !key_data.is_odd && key_data.num_nibbles > 1 {
+            let iters = (key_data.num_nibbles - 1 - 1) / 2; // -1 because of the branch nibble, -1 because of being odd
+            mult = F::one();
+
+            for _ in 0..iters {
+                mult *= region.key_r;
+            }
+        }
+        let _ = self.mult_without_branch_nibble.assign(region, offset, mult);
+
+        let _ = self
+            .is_key_equal
+            .assign(region, offset, key_data.rlc, after_middle_rlc);
     }
 }
 

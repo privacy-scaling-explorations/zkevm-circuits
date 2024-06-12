@@ -66,7 +66,7 @@ func prepareBranchWitness(rows [][]byte, branch []byte, branchStart int, branchR
 }
 
 func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []byte, extValues [][]byte, key, driftedInd byte,
-	isBranchSPlaceholder, isBranchCPlaceholder, isExtension bool) Node {
+	isBranchSPlaceholder, isBranchCPlaceholder, isExtension, isLastLevel bool) Node {
 	extensionNode := ExtensionNode{
 		ListRlpBytes: extListRlpBytes,
 	}
@@ -113,10 +113,11 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	}
 
 	extensionBranch := ExtensionBranchNode{
-		IsExtension:   isExtension,
-		IsPlaceholder: [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
-		Extension:     extensionNode,
-		Branch:        branchNode,
+		IsExtension:                isExtension,
+		IsPlaceholder:              [2]bool{isBranchSPlaceholder, isBranchCPlaceholder},
+		IsLastLevelAndWrongExtCase: isLastLevel,
+		Extension:                  extensionNode,
+		Branch:                     branchNode,
 	}
 
 	values := make([][]byte, 17)
@@ -149,27 +150,32 @@ func prepareBranchNode(branch1, branch2, extNode1, extNode2, extListRlpBytes []b
 	return node
 }
 
-// getDriftedPosition returns the position in branch to which the leaf drifted because another
-// leaf has been added to the same slot. This information is stored into a branch init row.
-func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
+// getNibbles returns the nibbles of the leaf or extension node.
+func getNibbles(leafKeyRow []byte) []byte {
 	var nibbles []byte
-	if leafKeyRow[0] != 248 {
-		keyLen := int(leafKeyRow[1] - 128)
-		if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
-			if leafKeyRow[2] < 32 { // extension node
-				nibbles = append(nibbles, leafKeyRow[2]-16)
-			} else { // leaf
-				nibbles = append(nibbles, leafKeyRow[2]-48)
+	if leafKeyRow[0] < 248 {
+		var keyLen int
+		if leafKeyRow[1] > 128 {
+			keyLen = int(leafKeyRow[1] - 128)
+			if (leafKeyRow[2] != 32) && (leafKeyRow[2] != 0) { // second term is for extension node
+				if leafKeyRow[2] < 32 { // extension node
+					nibbles = append(nibbles, leafKeyRow[2]-16)
+				} else { // leaf
+					nibbles = append(nibbles, leafKeyRow[2]-48)
+				}
 			}
+			for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
+				b := leafKeyRow[3+i]
+				n1 := b / 16
+				n2 := b - n1*16
+				nibbles = append(nibbles, n1)
+				nibbles = append(nibbles, n2)
+			}
+		} else {
+			keyLen = 1
+			nibbles = append(nibbles, leafKeyRow[1]-16)
 		}
-		for i := 0; i < keyLen-1; i++ { // -1 because the first byte doesn't have any nibbles
-			b := leafKeyRow[3+i]
-			n1 := b / 16
-			n2 := b - n1*16
-			nibbles = append(nibbles, n1)
-			nibbles = append(nibbles, n2)
-		}
-	} else {
+	} else if leafKeyRow[0] == 248 {
 		keyLen := int(leafKeyRow[2] - 128)
 		if (leafKeyRow[3] != 32) && (leafKeyRow[3] != 0) { // second term is for extension node
 			if leafKeyRow[3] < 32 { // extension node
@@ -185,19 +191,26 @@ func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
 			nibbles = append(nibbles, n1)
 			nibbles = append(nibbles, n2)
 		}
+	} else {
+		panic("Not supported yet.")
 	}
 
+	return nibbles
+}
+
+// getDriftedPosition returns the position in branch to which the leaf drifted because another
+// leaf has been added to the same slot. This information is stored into a branch init row.
+func getDriftedPosition(leafKeyRow []byte, numberOfNibbles int) byte {
+	nibbles := getNibbles(leafKeyRow)
 	return nibbles[numberOfNibbles]
 }
 
 // addBranchAndPlaceholder adds to the rows a branch and its placeholder counterpart
 // (used when one of the proofs have one branch more than the other).
-func addBranchAndPlaceholder(proof1, proof2,
-	extNibblesS, extNibblesC [][]byte,
-	leafRow0, key, neighbourNode []byte,
-	keyIndex, extensionNodeInd int,
-	additionalBranch, isAccountProof, nonExistingAccountProof,
-	isShorterProofLastLeaf bool, toBeHashed *[][]byte) (bool, bool, int, Node) {
+func addBranchAndPlaceholder(proof1, proof2 [][]byte,
+	extNibblesS, extNibblesC []byte,
+	leafRow0, key []byte,
+	keyIndex int, isShorterProofLastLeaf bool) (bool, bool, int, Node) {
 	len1 := len(proof1)
 	len2 := len(proof2)
 
@@ -214,9 +227,9 @@ func addBranchAndPlaceholder(proof1, proof2,
 	if isExtension {
 		var numNibbles byte
 		if len1 > len2 {
-			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, extensionNodeInd, proof1[len1-3], proof1[len1-3])
+			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesS, proof1[len1-3], proof1[len1-3])
 		} else {
-			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesC, extensionNodeInd, proof2[len2-3], proof2[len2-3])
+			numNibbles, extListRlpBytes, extValues = prepareExtensions(extNibblesC, proof2[len2-3], proof2[len2-3])
 		}
 		numberOfNibbles = int(numNibbles)
 	}
@@ -272,7 +285,7 @@ func addBranchAndPlaceholder(proof1, proof2,
 		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 
 		node = prepareBranchNode(proof1[len1-2], proof1[len1-2], extNode, extNode, extListRlpBytes, extValues,
-			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension)
+			key[keyIndex+numberOfNibbles], driftedInd, false, true, isExtension, false)
 
 		// We now get the first nibble of the leaf that was turned into branch.
 		// This first nibble presents the position of the leaf once it moved
@@ -284,7 +297,7 @@ func addBranchAndPlaceholder(proof1, proof2,
 		driftedInd := getDriftedPosition(leafRow0, numberOfNibbles)
 
 		node = prepareBranchNode(proof2[len2-2], proof2[len2-2], extNode, extNode, extListRlpBytes, extValues,
-			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension)
+			key[keyIndex+numberOfNibbles], driftedInd, true, false, isExtension, false)
 	}
 
 	return isModifiedExtNode, isExtension, numberOfNibbles, node

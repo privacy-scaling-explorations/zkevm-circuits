@@ -2334,3 +2334,94 @@ func TestStorageDoesNotExistOnlySProof(t *testing.T) {
 
 	prepareWitness("StorageDoesNotExistOnlySProof", trieModifications, statedb)
 }
+
+func TestStorageWrongExtensionNode(t *testing.T) {
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0x40efbf12580138bc623c95757286df4e24eb81c9")
+
+	statedb.DisableLoadingRemoteAccounts()
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+
+	statedb.CreateAccount(addr)
+	statedb.IntermediateRoot(false)
+
+	key1 := common.HexToHash("0x1230000000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x1231000000000000000000000000000000000000000000000000000000000000")
+
+	val1 := common.HexToHash("0xCE9F6C9634165F91E22E58B90E3EDE393D959E47")
+	val2 := common.HexToHash("0xEC9F6C9634165F91E22E58B90E3EDE393D959E47")
+
+	statedb.SetState(addr, key1, val1)
+	statedb.SetState(addr, key2, val2)
+
+	statedb.IntermediateRoot(false)
+
+	// Returns extension node
+	key3 := common.HexToHash("0x1277000000000000000000000000000000000000000000000000000000000000")
+
+	val := common.BigToHash(big.NewInt(int64(17)))
+	trieMod := TrieModification{
+		Type:    StorageDoesNotExist,
+		Key:     key3,
+		Value:   val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("StorageWrongExtensionNode", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}
+
+func TestStorageWrongExtensionNode1(t *testing.T) {
+	// This test slightly differs from TestStorageWrongExtensionNode in key3 -
+	// TestStorageWrongExtensionNode:
+	// key3 := common.HexToHash("0x1277000000000000000000000000000000000000000000000000000000000000")
+	// TestStorageWrongExtensionNode1:
+	// key3 := common.HexToHash("0x01277000000000000000000000000000000000000000000000000000000000000")
+	// This is to test different scenarios in the computation of the nibbles RLC in the circuit.
+
+	blockNum := 0
+	blockNumberParent := big.NewInt(int64(blockNum))
+	blockHeaderParent := oracle.PrefetchBlock(blockNumberParent, true, nil)
+	database := state.NewDatabase(blockHeaderParent)
+	statedb, _ := state.New(blockHeaderParent.Root, database, nil)
+	addr := common.HexToAddress("0x40efbf12580138bc623c95757286df4e24eb81c9")
+
+	statedb.DisableLoadingRemoteAccounts()
+	oracle.PreventHashingInSecureTrie = true // to store the unchanged key
+
+	statedb.CreateAccount(addr)
+	statedb.IntermediateRoot(false)
+
+	key1 := common.HexToHash("0x01230000000000000000000000000000000000000000000000000000000000000")
+	key2 := common.HexToHash("0x01231000000000000000000000000000000000000000000000000000000000000")
+
+	val1 := common.HexToHash("0xCE9F6C9634165F91E22E58B90E3EDE393D959E47")
+	val2 := common.HexToHash("0xEC9F6C9634165F91E22E58B90E3EDE393D959E47")
+
+	statedb.SetState(addr, key1, val1)
+	statedb.SetState(addr, key2, val2)
+
+	statedb.IntermediateRoot(false)
+
+	// Returns extension node
+	key3 := common.HexToHash("0x01277000000000000000000000000000000000000000000000000000000000000")
+
+	val := common.BigToHash(big.NewInt(int64(17)))
+	trieMod := TrieModification{
+		Type:    StorageDoesNotExist,
+		Key:     key3,
+		Value:   val,
+		Address: addr,
+	}
+	trieModifications := []TrieModification{trieMod}
+
+	prepareWitness("StorageWrongExtensionNode1", trieModifications, statedb)
+
+	oracle.PreventHashingInSecureTrie = false
+}

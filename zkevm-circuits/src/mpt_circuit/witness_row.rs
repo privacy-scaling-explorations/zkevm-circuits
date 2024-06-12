@@ -138,6 +138,8 @@ pub struct ExtensionBranchNode {
     /// TODO Doc.
     pub is_extension: bool,
     /// TODO Doc.
+    pub is_last_level_and_wrong_ext_case: bool,
+    /// TODO Doc.
     pub(crate) is_mod_extension: [bool; 2],
     /// TODO Doc.
     pub is_placeholder: [bool; 2],

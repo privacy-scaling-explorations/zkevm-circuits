@@ -23,8 +23,8 @@ use crate::{
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
-            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
-            KECCAK,
+            IsPlaceholderLeafGadget, KeyData, MPTConstraintBuilder, ParentData, WrongExtNodeGadget,
+            WrongLeafGadget, KECCAK,
         },
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         MPTConfig, MPTContext, MptMemory, RlpItemType,
@@ -38,13 +38,15 @@ use crate::{
 pub(crate) struct AccountLeafConfig<F> {
     main_data: MainData<F>,
     key_data: [KeyData<F>; 2],
+    key_data_prev: KeyData<F>,
     parent_data: [ParentData<F>; 2],
     rlp_key: [ListKeyGadget<F>; 2],
     value_rlp_bytes: [[Cell<F>; 2]; 2],
     value_list_rlp_bytes: [[Cell<F>; 2]; 2],
     is_placeholder_leaf: [IsPlaceholderLeafGadget<F>; 2],
     drifted: DriftedGadget<F>,
-    wrong: WrongGadget<F>,
+    wrong_leaf: WrongLeafGadget<F>,
+    wrong_ext_node: WrongExtNodeGadget<F>,
     is_non_existing_account_proof: IsEqualGadget<F>,
     is_account_delete_mod: IsEqualGadget<F>,
     is_nonce_mod: IsEqualGadget<F>,
@@ -164,6 +166,8 @@ impl<F: Field> AccountLeafConfig<F> {
             // Constraint 4:
             parent_data[1] = ParentData::load(cb, &mut ctx.memory[parent_memory(false)], 0.expr());
 
+            config.key_data_prev = KeyData::load(cb, &mut ctx.memory[key_memory(false)], 1.expr());
+
             let key_data = &mut config.key_data;
             // Constraint 5:
             key_data[0] = KeyData::load(cb, &mut ctx.memory[key_memory(true)], 0.expr());
@@ -202,6 +206,8 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.main_data.proof_type.expr(),
                 MPTProofType::CodeHashChanged.expr(),
             );
+
+            let is_wrong_ext_case = parent_data[1].is_last_level_and_wrong_ext_case.expr();
 
             for is_s in [true, false] {
                 ifx! {not!(config.is_mod_extension[is_s.idx()].expr()) => {
@@ -267,10 +273,13 @@ impl<F: Field> AccountLeafConfig<F> {
                             key_data[is_s.idx()].is_odd.expr(),
                             &cb.key_r.expr(),
                         );
+
                     // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                     let num_nibbles =
                         num_nibbles::expr(rlp_key.key_value.len(), key_data[is_s.idx()].is_odd.expr());
-                    require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+                    ifx! {not!(is_wrong_ext_case) => {
+                        require!(key_data[is_s.idx()].num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+                    }}
 
                     // Check if the leaf is in its parent.
                     // Check is skipped for placeholder leaves which are dummy leaves.
@@ -279,7 +288,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     // Note that the constraint works for the case when there is the placeholder branch above
                     // the leaf too - in this case `parent_data.hash` contains the hash of the node above the placeholder
                     // branch.
-                    ifx! {not!(config.is_placeholder_leaf[is_s.idx()]) => {
+                    ifx! {not!(or::expr(&[config.is_placeholder_leaf[is_s.idx()].expr(), is_wrong_ext_case.clone()])) => {
                         let hash = parent_data[is_s.idx()].hash.expr();
                         require!((1.expr(), leaf_rlc, rlp_key.rlp_list.num_bytes(), hash.lo(), hash.hi()) =>> @KECCAK);
                     } elsex {
@@ -302,7 +311,9 @@ impl<F: Field> AccountLeafConfig<F> {
                                 // Note that this does not hold when there is NonExistingAccountProof wrong leaf scenario,
                                 // in this case there is a non-nil leaf. However, in this case the leaf is not a placeholder,
                                 // so the check below is not triggered.
-                                require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                                ifx! {not!(is_wrong_ext_case) => {
+                                    require!(parent_data[is_s.idx()].rlc.expr() => 128.expr());
+                                }}
                             }}
                         }}
                     }}
@@ -335,6 +346,8 @@ impl<F: Field> AccountLeafConfig<F> {
                     0.expr(),
                     true.expr(),
                     false.expr(),
+                    false.expr(),
+                    false.expr(),
                     storage_items[is_s.idx()].word(),
                 );
             }
@@ -363,17 +376,77 @@ impl<F: Field> AccountLeafConfig<F> {
                 &cb.key_r.expr(),
             );
 
+            let is_wrong_leaf_case = and::expr(&[
+                config.is_non_existing_account_proof.expr(),
+                not!(config.parent_data[1].is_extension),
+                not!(config.is_placeholder_leaf[1].expr()),
+            ]);
+
+            // When non-existing-proof, it needs to be one of the following cases:
+            // (1) wrong leaf, (2) wrong extension node, (3) nil leaf - we need to check the sum of
+            // these three cases is 1.
+            ifx! {config.is_non_existing_account_proof => {
+                require!(is_wrong_ext_case.clone() + is_wrong_leaf_case.clone() + config.is_placeholder_leaf[1].expr() => 1.expr());
+            }}
+
+            // When is_last_level_and_wrong_ext_case, the proof type needs to be non-existing
+            ifx! {is_wrong_ext_case => {
+                require!(config.is_non_existing_account_proof.expr() => 1.expr());
+            }}
+
             // Wrong leaf handling
-            config.wrong = WrongGadget::construct(
+            config.wrong_leaf = WrongLeafGadget::construct(
                 cb,
                 key_item.hash_rlc(),
-                config.is_non_existing_account_proof.expr(),
-                &config.rlp_key[true.idx()].key_value,
-                &key_rlc[true.idx()],
+                is_wrong_leaf_case,
+                &config.rlp_key[1].key_value, // C proof is used for non-existing proof
+                &key_rlc[1],
                 &wrong_bytes,
-                config.is_placeholder_leaf[true.idx()].expr(),
-                config.key_data[true.idx()].clone(),
+                config.key_data[1].clone(),
                 &cb.key_r.expr(),
+            );
+
+            // Wrong extension node handling
+            let wrong_ext_middle = ctx.rlp_item(
+                meta,
+                cb,
+                AccountRowType::LongExtNodeKey as usize,
+                RlpItemType::Key,
+            );
+            let wrong_ext_middle_nibbles = ctx.rlp_item(
+                meta,
+                cb,
+                AccountRowType::LongExtNodeNibbles as usize,
+                RlpItemType::Nibbles,
+            );
+            let wrong_ext_after = ctx.rlp_item(
+                meta,
+                cb,
+                AccountRowType::ShortExtNodeKey as usize,
+                RlpItemType::Key,
+            );
+            let wrong_ext_after_nibbles = ctx.rlp_item(
+                meta,
+                cb,
+                AccountRowType::ShortExtNodeNibbles as usize,
+                RlpItemType::Nibbles,
+            );
+
+            // The extension_branch in the last level needs has `is_last_level_and_wrong_ext_case =
+            // true` in the case of wrong extension node.
+            // All other extension_branches (above it) need to have it `false` (constraint in
+            // extension_branch.rs)
+
+            config.wrong_ext_node = WrongExtNodeGadget::construct(
+                cb,
+                key_item.hash_rlc(),
+                is_wrong_ext_case,
+                &wrong_ext_middle,
+                &wrong_ext_middle_nibbles,
+                &wrong_ext_after,
+                &wrong_ext_after_nibbles,
+                config.key_data[1].clone(), // C proof is used for non-existing proof
+                config.key_data_prev.clone(),
             );
 
             // Anything following this node is below the account
@@ -641,6 +714,8 @@ impl<F: Field> AccountLeafConfig<F> {
                 0.scalar(),
                 true,
                 false,
+                false,
+                false,
                 storage_items[is_s.idx()].word(),
             )?;
         }
@@ -692,8 +767,17 @@ impl<F: Field> AccountLeafConfig<F> {
             region.key_r,
         )?;
 
-        // Wrong leaf handling
-        self.wrong.assign(
+        // Wrong leaf / extension node handling
+        let mut key_data_prev = KeyDataWitness::default();
+        if offset > 2 {
+            key_data_prev = self.key_data_prev.witness_load(
+                region,
+                offset,
+                &mut memory[key_memory(false)],
+                2, // 2 instead of 1 because default values have already been stored above
+            )?;
+        }
+        self.wrong_leaf.assign(
             region,
             offset,
             is_non_existing_proof,
@@ -701,9 +785,21 @@ impl<F: Field> AccountLeafConfig<F> {
             &account.wrong_rlp_bytes,
             &expected_item,
             true,
-            key_data[true.idx()].clone(),
+            key_data[1].clone(),
             region.key_r,
         )?;
+
+        let wrong_ext_middle = rlp_values[AccountRowType::LongExtNodeKey as usize].clone();
+        let wrong_ext_middle_nibbles =
+            rlp_values[AccountRowType::LongExtNodeNibbles as usize].clone();
+        self.wrong_ext_node.assign(
+            region,
+            offset,
+            wrong_ext_middle,
+            wrong_ext_middle_nibbles,
+            key_data[1].clone(),
+            key_data_prev.clone(),
+        );
 
         // Anything following this node is below the account
         MainData::witness_store(

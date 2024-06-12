@@ -40,6 +40,7 @@ type SecureTrie struct {
 	hashKeyBuf       [common.HashLength]byte
 	secKeyCache      map[string][]byte
 	secKeyCacheOwner *SecureTrie // Pointer to self, replace the key cache on mismatch
+	isStorageTrie    bool
 }
 
 // NewSecure creates a trie with an existing root node from a backing database
@@ -53,7 +54,7 @@ type SecureTrie struct {
 // Loaded nodes are kept around until their 'cache generation' expires.
 // A new cache generation is created by each call to Commit.
 // cachelimit sets the number of past cache generations to keep.
-func NewSecure(root common.Hash, db *Database) (*SecureTrie, error) {
+func NewSecure(root common.Hash, db *Database, isStorageTrie bool) (*SecureTrie, error) {
 	if db == nil {
 		panic("trie.NewSecure called without a database")
 	}
@@ -61,7 +62,7 @@ func NewSecure(root common.Hash, db *Database) (*SecureTrie, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SecureTrie{trie: *trie}, nil
+	return &SecureTrie{trie: *trie, isStorageTrie: isStorageTrie}, nil
 }
 
 // Get returns the value for key stored in the trie.
@@ -202,7 +203,8 @@ func (t *SecureTrie) NodeIterator(start []byte) NodeIterator {
 // The caller must not hold onto the return value because it will become
 // invalid on the next call to hashKey or secKey.
 func (t *SecureTrie) hashKey(key []byte) []byte {
-	if !oracle.PreventHashingInSecureTrie {
+	preventHashing := (oracle.PreventHashingInSecureTrie && t.isStorageTrie) || (oracle.AccountPreventHashingInSecureTrie && !t.isStorageTrie)
+	if !preventHashing {
 		h := NewHasher(false)
 		h.sha.Reset()
 		h.sha.Write(key)
@@ -211,6 +213,9 @@ func (t *SecureTrie) hashKey(key []byte) []byte {
 		return t.hashKeyBuf[:]
 	} else {
 		// For generating special tests for MPT circuit.
+		if len(key) < 32 { // accounts
+			key = append(key, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
+		}
 		return key
 	}
 }

@@ -102,33 +102,27 @@ func (t *Trie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValueWriter) (
 			fromLevel--
 			continue
 		}
-		// var hn Node
 
 		// We need nibbles in witness for extension keys.
 		// copy n.Key before it gets changed in ProofHash
 		var nCopy []byte
 		if short, ok := n.(*ShortNode); ok {
-			if !hasTerm(short.Key) { // only for extension keys
+			if !hasTerm(short.Key) { // extension keys
 				nCopy = make([]byte, len(short.Key))
 				copy(nCopy, short.Key)
 				extNibbles = append(extNibbles, nCopy)
+			} else {
+				extNibbles = append(extNibbles, []byte{})
 			}
+		} else {
+			extNibbles = append(extNibbles, []byte{})
 		}
 
-		// n, hn = hasher.ProofHash(n)
 		n, _ = hasher.ProofHash(n)
-		// if hash, ok := hn.(HashNode); ok || i == 0 {
 		// If the node's database encoding is a hash (or is the
 		// root node), it becomes a proof element.
 		enc, _ := rlp.EncodeToBytes(n)
-		/*
-			if !ok {
-				hash = hasher.HashData(enc)
-			}
-		*/
-		// proofDb.Put(hash, enc)
 		proofDb.Put([]byte{1, 1, 1}, enc)
-		// }
 	}
 
 	isNeighbourNodeHashed := false
