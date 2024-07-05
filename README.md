@@ -1,32 +1,9 @@
-# Circuits for zkEVM
+# Archiving notice
 
-[![CI checks](https://github.com/privacy-scaling-explorations/zkevm-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/privacy-scaling-explorations/zkevm-circuits/actions/workflows/ci.yml)
+This repository is archived due to our shift from building a zkEVM by writing custom circuits to developing a general purpose zkVM.  You can read more about our direction shift in our blog: [The next chapter for zkEVM Community Edition](https://mirror.xyz/privacy-scaling-explorations.eth/hqLMwLfKmQLj773QCRLTOT-Z8sSUaTEfQpBSdTbitbs).  We don't plan to continue the development and support of the zkEVM repositories at [zkevm-circuits](https://github.com/privacy-scaling-explorations/zkevm-circuits), [zkevm-specs](https://github.com/privacy-scaling-explorations/zkevm-specs) and [zkevm-docs](https://github.com/privacy-scaling-explorations/zkevm-docs).
 
-Check out the work in progress [specification](https://github.com/privacy-scaling-explorations/zkevm-specs) to learn how it works.
-
-
-## Getting started
-
-To run the same tests as the CI, please use: `make test-all`.
-
-## Running benchmarks
-
-There are currently several benchmarks to run in the workspace in regards to the circuits.
-All use the `DEGREE` env var to specify the degree of the `K` parameter that you want
-to use for your circuit in the bench process.
--   Keccak Circuit prover benches. -> `DEGREE=16 make packed_multi_keccak_bench`
--   EVM Circuit prover benches. -> `DEGREE=18 make evm_bench`.
--   State Circuit prover benches. -> `DEGREE=18 make state_bench`
--   MPT Circuit prover benches. -> `DEGREE=15 make mpt_bench`
-
-You can also run all benchmarks by running: `make circuit_benches DEGREE=18`.
-
-## GH Actions Benchmark Results
-
-Circuit Benchmark Results are accessible here: https://grafana.zkevm-testnet.org/d/vofy8DAVz/circuit-benchmarks?orgId=1
-
-- circuit_benchmarks panel displays:
-    - overall test result
-    - timers and system statistics
-    - url for downloading prover log and sys stat files
-    - clickable sysstats_url element that loads the memory and cpu utilization profiles for the given test
+At the time of archiving this, the followings are some related developments that you might be interested in:
+- The zkEVM-CE project was developed in collaboration with Scroll and Taiko.  Scroll is still maintaining and updating their own version which you can find at [scroll-tech/zkevm-circuits](https://github.com/scroll-tech/zkevm-circuits).
+- If you are looking for a performant Keccak and sha256 circuits implementation, you can find the corresponding circuits originally developed for the zkEVM ready to be used in a halo2 circuit here [axiom-crypto/halo2-lib](https://github.com/axiom-crypto/halo2-lib/tree/community-edition/hashes/zkevm) thanks to Axiom who picked them and exposed them in a library.
+- We're still maintaining and developing our halo2 fork at [privacy-scaling-explorations/halo2](https://github.com/privacy-scaling-explorations/halo2/)
+- We're still developing Chiquito at [privacy-scaling-explorations/chiquito](https://github.com/privacy-scaling-explorations/chiquito), a zk circuit DSL that implements many of the patterns found during the development of the zkEVM (mainly circuits described as a state machine).
