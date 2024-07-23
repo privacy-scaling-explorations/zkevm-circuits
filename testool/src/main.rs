@@ -76,14 +76,15 @@ struct Args {
     v: bool,
 }
 
-fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
+fn run_single_test(
+    test: StateTest,
+    suite: TestSuite,
+    circuits_config: CircuitsConfig,
+) -> Result<()> {
     log::info!("{}", &test);
     let trace = geth_trace(test.clone())?;
     crate::utils::print_trace(trace)?;
-    log::info!(
-        "result={:?}",
-        run_test(test, TestSuite::default(), circuits_config)
-    );
+    log::info!("result={:?}", run_test(test, suite, circuits_config));
     Ok(())
 }
 
@@ -100,7 +101,7 @@ fn go() -> Result<()> {
 
     if let Some(oneliner) = &args.oneliner {
         let test = StateTest::parse_oneline_spec(oneliner)?;
-        run_single_test(test, circuits_config)?;
+        run_single_test(test, Default::default(), circuits_config)?;
         return Ok(());
     }
 
@@ -137,7 +138,11 @@ fn go() -> Result<()> {
             }
             bail!("test '{}' not found", test_id);
         }
-        run_single_test(state_tests_filtered.remove(0).clone(), circuits_config)?;
+        run_single_test(
+            state_tests_filtered.remove(0).clone(),
+            suite,
+            circuits_config,
+        )?;
         return Ok(());
     };
 
